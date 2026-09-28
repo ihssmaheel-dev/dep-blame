@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>dep-blame — Dependency History & Archaeology</title>
+  
+  <!-- Manrope Web Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
   <style>
     :root {
       --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -14,14 +20,14 @@
       --radius-md: 4px;
 
       /* Dark Theme (Default) */
-      --color-bg: #080a0f;
-      --color-bg-secondary: #0e121a;
-      --color-surface: #121722;
-      --color-surface-hover: #192030;
+      --color-bg: #090b10;
+      --color-bg-secondary: #0f131c;
+      --color-surface: #131722;
+      --color-surface-hover: #1a2030;
       --color-surface-card: rgba(18, 23, 34, 0.85);
       
-      --color-border: rgba(255, 255, 255, 0.09);
-      --color-border-hover: rgba(255, 255, 255, 0.2);
+      --color-border: rgba(255, 255, 255, 0.08);
+      --color-border-hover: rgba(255, 255, 255, 0.18);
       --color-border-focus: #6366f1;
       
       --color-text: #f8fafc;
@@ -34,21 +40,21 @@
       
       --color-added: #10b981;
       --color-added-bg: rgba(16, 185, 129, 0.12);
-      --color-added-border: rgba(16, 185, 129, 0.3);
+      --color-added-border: rgba(16, 185, 129, 0.28);
       
       --color-updated: #f59e0b;
       --color-updated-bg: rgba(245, 158, 11, 0.12);
-      --color-updated-border: rgba(245, 158, 11, 0.3);
+      --color-updated-border: rgba(245, 158, 11, 0.28);
       
       --color-removed: #f43f5e;
       --color-removed-bg: rgba(244, 63, 94, 0.12);
-      --color-removed-border: rgba(244, 63, 94, 0.3);
+      --color-removed-border: rgba(244, 63, 94, 0.28);
 
-      --pattern-dot: rgba(255, 255, 255, 0.07);
-      --pattern-glow: radial-gradient(1200px 500px at 50% 0%, rgba(99, 102, 241, 0.14), transparent 80%);
-      --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.3);
+      --pattern-grid: rgba(255, 255, 255, 0.035);
+      --pattern-radial: radial-gradient(ellipse 90% 60% at 50% -10%, rgba(99, 102, 241, 0.14), transparent);
+      --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.35);
       --shadow-drawer: -8px 0 32px rgba(0, 0, 0, 0.6);
-      --header-bg: rgba(10, 13, 19, 0.85);
+      --header-bg: rgba(9, 11, 16, 0.88);
     }
 
     [data-theme="light"] {
@@ -68,7 +74,7 @@
       
       --color-primary: #888888;
       --color-accent: #0f172a;
-      --color-accent-glow: rgba(15, 23, 42, 0.08);
+      --color-accent-glow: rgba(15, 23, 42, 0.06);
       
       --color-added: #059669;
       --color-added-bg: rgba(5, 150, 105, 0.08);
@@ -82,10 +88,10 @@
       --color-removed-bg: rgba(225, 29, 72, 0.08);
       --color-removed-border: rgba(225, 29, 72, 0.25);
 
-      --pattern-dot: rgba(15, 23, 42, 0.08);
-      --pattern-glow: radial-gradient(1200px 500px at 50% 0%, rgba(99, 102, 241, 0.06), transparent 80%);
+      --pattern-grid: rgba(15, 23, 42, 0.045);
+      --pattern-radial: radial-gradient(ellipse 90% 60% at 50% -10%, rgba(99, 102, 241, 0.06), transparent);
       --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.05);
-      --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.1);
+      --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.08);
       --header-bg: rgba(255, 255, 255, 0.9);
     }
 
@@ -93,8 +99,11 @@
 
     body {
       background-color: var(--color-bg);
-      background-image: var(--pattern-glow), radial-gradient(var(--pattern-dot) 1px, transparent 1px);
-      background-size: 100% 100%, 24px 24px;
+      background-image: 
+        var(--pattern-radial),
+        linear-gradient(to right, var(--pattern-grid) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--pattern-grid) 1px, transparent 1px);
+      background-size: 100% 100%, 32px 32px, 32px 32px;
       background-attachment: fixed;
       color: var(--color-text);
       font-family: var(--font-sans);
@@ -111,7 +120,7 @@
     ::-webkit-scrollbar-thumb { background: rgba(120, 120, 120, 0.25); border-radius: var(--radius); }
     ::-webkit-scrollbar-thumb:hover { background: rgba(120, 120, 120, 0.45); }
 
-    /* Top Edge-to-Edge Sticky Header */
+    /* Top Sticky Header */
     header {
       position: sticky;
       top: 0;
@@ -120,7 +129,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 10px 24px;
+      padding: 11px 24px;
       background: var(--header-bg);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
@@ -131,103 +140,29 @@
     .brand-section {
       display: flex;
       align-items: center;
-      gap: 14px;
-      flex-wrap: wrap;
+      gap: 12px;
     }
 
     .brand-logo {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       background: linear-gradient(135deg, #6366f1, #8b5cf6);
       color: #ffffff;
       border-radius: var(--radius-sm);
       box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
     }
 
-    .brand-info {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-
     .brand-title {
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
       letter-spacing: -0.02em;
       color: var(--color-text);
       display: flex;
       align-items: center;
       gap: 6px;
-    }
-
-    .brand-version {
-      font-size: 10.5px;
-      font-weight: 500;
-      font-family: var(--font-mono);
-      color: var(--color-text-muted);
-      background: var(--color-bg-secondary);
-      border: 1px solid var(--color-border);
-      padding: 1px 5px;
-      border-radius: var(--radius-sm);
-    }
-
-    .brand-tagline {
-      font-size: 11px;
-      color: var(--color-text-secondary);
-      font-weight: 400;
-      border-left: 1px solid var(--color-border);
-      padding-left: 10px;
-      margin-left: 4px;
-    }
-
-    @media (max-width: 900px) {
-      .brand-tagline { display: none; }
-    }
-
-    .meta-pills {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: 8px;
-    }
-
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 3px 8px;
-      border-radius: var(--radius-sm);
-      font-size: 11px;
-      font-weight: 500;
-      background: var(--color-bg-secondary);
-      border: 1px solid var(--color-border);
-      color: var(--color-text-secondary);
-    }
-
-    .pill-branch {
-      font-family: var(--font-mono);
-      color: var(--color-text);
-      font-weight: 600;
-      border-color: rgba(99, 102, 241, 0.35);
-      background: var(--color-accent-glow);
-    }
-
-    .pill-live {
-      background: var(--color-bg-secondary);
-      border-color: var(--color-border);
-      color: var(--color-text);
-      font-weight: 500;
-    }
-
-    .pulse-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 6px #10b981;
     }
 
     .header-actions {
@@ -264,7 +199,7 @@
     .app-container {
       width: 100%;
       max-width: 100%;
-      padding: 18px 24px 60px;
+      padding: 16px 24px 54px; /* padding-bottom accounts for bottom status bar */
     }
 
     /* Compact Stat Cards Ribbon */
@@ -286,7 +221,7 @@
       background: var(--color-surface-card);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
-      padding: 10px 14px;
+      padding: 9px 14px;
       transition: all 0.12s ease;
       cursor: pointer;
       display: flex;
@@ -335,8 +270,8 @@
     }
 
     .kpi-badge-icon {
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
       border-radius: var(--radius-sm);
       display: flex;
       align-items: center;
@@ -570,7 +505,7 @@
       background: transparent;
       border: none;
       color: var(--color-text-secondary);
-      padding: 4px 10px;
+      padding: 4px 11px;
       border-radius: var(--radius);
       font-size: 11px;
       font-weight: 500;
@@ -861,68 +796,11 @@
     .day-cell.heat-4 { background: #6366f1; border-color: #818cf8; color: #fff; box-shadow: 0 0 8px rgba(99, 102, 241, 0.4); }
     
     .day-cell.active-day:hover {
-      outline: 1.5px solid var(--color-border-dark);
+      outline: 1.5px solid var(--color-border-focus);
       z-index: 10;
     }
 
-    /* Analytics / Churn View */
-    .analytics-container {
-      padding: 20px;
-      display: none;
-    }
-    .analytics-container.active { display: block; }
-
-    .analytics-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    @media (max-width: 900px) {
-      .analytics-grid { grid-template-columns: 1fr; }
-    }
-
-    .analytics-section {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 16px;
-    }
-
-    .analytics-title {
-      font-size: 12.5px;
-      font-weight: 600;
-      color: var(--color-text);
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      border-bottom: 1px solid var(--color-border);
-      padding-bottom: 8px;
-    }
-
-    .churn-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 7px 0;
-      border-bottom: 1px solid var(--color-border);
-    }
-    .churn-row:last-child { border-bottom: none; }
-
-    .churn-bar-wrapper {
-      flex: 1;
-      margin: 0 14px;
-      height: 5px;
-      background: var(--color-bg-secondary);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-    .churn-bar {
-      height: 100%;
-      background: linear-gradient(90deg, #6366f1, #8b5cf6);
-    }
-
-    /* Slide-out Archaeology Drawer (Fixed, Clean, and Neat Header) */
+    /* Slide-out Archaeology Drawer */
     .drawer-overlay {
       position: fixed;
       inset: 0;
@@ -1103,10 +981,86 @@
       line-height: 1.4;
     }
 
+    /* Fixed Small Bottom Status Bar */
+    .bottom-status-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 28px;
+      background: var(--header-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--color-text-secondary);
+      z-index: 90;
+      user-select: none;
+    }
+
+    .status-left, .status-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--color-text-secondary);
+    }
+    .status-item.bold-text {
+      color: var(--color-text);
+      font-weight: 600;
+    }
+
+    .status-divider {
+      color: var(--color-border);
+    }
+
+    .status-live {
+      color: var(--color-text);
+      font-weight: 500;
+    }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+      display: inline-block;
+    }
+
+    .status-hint {
+      color: var(--color-text-muted);
+      font-family: var(--font-sans);
+      font-size: 10.5px;
+    }
+    .status-hint kbd {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      padding: 1px 4px;
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--color-text);
+    }
+
+    @media (max-width: 768px) {
+      .status-hint { display: none; }
+    }
+
     /* Toast Notification */
     .toast {
       position: fixed;
-      bottom: 20px;
+      bottom: 38px;
       right: 20px;
       background: var(--color-surface);
       border: 1px solid var(--color-border);
@@ -1151,32 +1105,7 @@
           <polyline points="8 6 2 12 8 18"></polyline>
         </svg>
       </div>
-      <div class="brand-info">
-        <div class="brand-title">
-          dep-blame
-          <span class="brand-version">v0.1.0</span>
-        </div>
-        <div class="brand-tagline">git blame, but for dependencies</div>
-      </div>
-      
-      <div class="meta-pills">
-        <span class="pill" id="repo-pill" title="Repository">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-          <span id="repo-name">repository</span>
-        </span>
-
-        <!-- Branch Name Pill -->
-        <span class="pill pill-branch" id="branch-pill" title="Active Git Branch">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
-          <span id="branch-name">main</span>
-        </span>
-
-        <span class="pill" id="pm-pill">npm</span>
-        <span class="pill pill-live">
-          <span class="pulse-dot"></span>
-          <span id="index-time">Live Index</span>
-        </span>
-      </div>
+      <div class="brand-title">dep-blame</div>
     </div>
 
     <div class="header-actions">
@@ -1294,10 +1223,6 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
             Calendar
           </button>
-          <button class="view-btn" id="view-analytics-btn">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-            Analytics
-          </button>
         </div>
       </div>
     </div>
@@ -1336,27 +1261,6 @@
         <div class="calendar-grid" id="calendar-grid"></div>
       </div>
 
-      <!-- Analytics & Churn View -->
-      <div class="analytics-container" id="analytics-view">
-        <div class="analytics-grid">
-          <div class="analytics-section">
-            <div class="analytics-title">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
-              Top Modified Dependencies (Churn)
-            </div>
-            <div id="top-packages-list"></div>
-          </div>
-
-          <div class="analytics-section">
-            <div class="analytics-title">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-              Top Authors / Engineers
-            </div>
-            <div id="top-authors-list"></div>
-          </div>
-        </div>
-      </div>
-
     </div>
 
   </div>
@@ -1376,7 +1280,7 @@
 
         <div class="drawer-meta-bar">
           <span class="badge-status added" id="drawer-status">Active</span>
-          <span class="pill" id="drawer-count">0 modifications</span>
+          <span class="status-item" id="drawer-count">0 modifications</span>
         </div>
 
         <div class="drawer-actions-bar">
@@ -1398,6 +1302,33 @@
       <div class="tree-timeline" id="drawer-timeline"></div>
     </div>
   </div>
+
+  <!-- Fixed Small Bottom Status Bar -->
+  <footer class="bottom-status-bar">
+    <div class="status-left">
+      <span class="status-item bold-text">dep-blame <span style="font-weight: normal; color: var(--color-text-muted);">v0.1.0</span></span>
+      <span class="status-divider">|</span>
+      <span class="status-item" title="Repository">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+        <span id="repo-name">repository</span>
+      </span>
+      <span class="status-divider">|</span>
+      <span class="status-item" title="Git Branch">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+        <span id="branch-name">main</span>
+      </span>
+      <span class="status-divider">|</span>
+      <span class="status-item" id="pm-pill">npm</span>
+    </div>
+    <div class="status-right">
+      <span class="status-item status-live">
+        <span class="pulse-dot"></span>
+        <span id="index-time">Live Index</span>
+      </span>
+      <span class="status-divider">|</span>
+      <span class="status-hint">Press <kbd>/</kbd> to search &bull; <kbd>1</kbd> Timeline &bull; <kbd>2</kbd> Calendar</span>
+    </div>
+  </footer>
 
   <!-- Toast Notification -->
   <div class="toast" id="toast">Copied to clipboard</div>
@@ -1587,7 +1518,6 @@
     function renderView() {
       if (currentView === 'timeline') renderTable();
       else if (currentView === 'calendar') renderCalendar();
-      else if (currentView === 'analytics') renderAnalytics();
     }
 
     function renderTable() {
@@ -1740,54 +1670,6 @@
       }).join('');
     }
 
-    function renderAnalytics() {
-      const filtered = getFilteredEvents();
-      
-      const pkgCounts = new Map();
-      for (const ev of filtered) {
-        pkgCounts.set(ev.package, (pkgCounts.get(ev.package) || 0) + 1);
-      }
-      const sortedPkgs = Array.from(pkgCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
-      const maxPkgCount = sortedPkgs[0] ? sortedPkgs[0][1] : 1;
-
-      const pkgContainer = document.getElementById('top-packages-list');
-      pkgContainer.innerHTML = sortedPkgs.map(([pkg, count]) => {
-        const pct = Math.round((count / maxPkgCount) * 100);
-        return `
-          <div class="churn-row">
-            <span class="package-name" onclick="openArchaeology('${escapeHtml(pkg)}')">${escapeHtml(pkg)}</span>
-            <div class="churn-bar-wrapper">
-              <div class="churn-bar" style="width: ${pct}%"></div>
-            </div>
-            <span style="font-size: 11px; font-weight: 600; font-family: var(--font-mono); color: var(--color-text);">${count} changes</span>
-          </div>
-        `;
-      }).join('') || '<div style="color: var(--color-text-secondary)">No data</div>';
-
-      const authorCounts = new Map();
-      for (const ev of filtered) {
-        const a = ev.author || 'Unknown';
-        authorCounts.set(a, (authorCounts.get(a) || 0) + 1);
-      }
-      const sortedAuthors = Array.from(authorCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
-      const maxAuthorCount = sortedAuthors[0] ? sortedAuthors[0][1] : 1;
-
-      const authorContainer = document.getElementById('top-authors-list');
-      authorContainer.innerHTML = sortedAuthors.map(([author, count]) => {
-        const pct = Math.round((count / maxAuthorCount) * 100);
-        const profile = getAuthorProfileUrl(author);
-        return `
-          <div class="churn-row">
-            <a href="${profile}" target="_blank" rel="noopener noreferrer" class="author-link" style="padding: 0;">${escapeHtml(author)}</a>
-            <div class="churn-bar-wrapper">
-              <div class="churn-bar" style="width: ${pct}%; background: linear-gradient(90deg, #10b981, #06b6d4);"></div>
-            </div>
-            <span style="font-size: 11px; font-weight: 600; font-family: var(--font-mono); color: var(--color-text);">${count} commits</span>
-          </div>
-        `;
-      }).join('') || '<div style="color: var(--color-text-secondary)">No data</div>';
-    }
-
     function filterByDay(dayStr) {
       document.getElementById('search-input').value = dayStr;
       currentSearch = dayStr;
@@ -1894,10 +1776,8 @@
     function switchToTimeline() {
       document.getElementById('view-timeline-btn').classList.add('active');
       document.getElementById('view-calendar-btn').classList.remove('active');
-      document.getElementById('view-analytics-btn').classList.remove('active');
       document.getElementById('timeline-view').style.display = 'block';
       document.getElementById('calendar-view').classList.remove('active');
-      document.getElementById('analytics-view').classList.remove('active');
       currentView = 'timeline';
       renderTable();
     }
@@ -1908,23 +1788,10 @@
     document.getElementById('view-calendar-btn').addEventListener('click', () => {
       document.getElementById('view-calendar-btn').classList.add('active');
       document.getElementById('view-timeline-btn').classList.remove('active');
-      document.getElementById('view-analytics-btn').classList.remove('active');
       document.getElementById('timeline-view').style.display = 'none';
       document.getElementById('calendar-view').classList.add('active');
-      document.getElementById('analytics-view').classList.remove('active');
       currentView = 'calendar';
       renderCalendar();
-    });
-
-    document.getElementById('view-analytics-btn').addEventListener('click', () => {
-      document.getElementById('view-analytics-btn').classList.add('active');
-      document.getElementById('view-timeline-btn').classList.remove('active');
-      document.getElementById('view-calendar-btn').classList.remove('active');
-      document.getElementById('timeline-view').style.display = 'none';
-      document.getElementById('calendar-view').classList.remove('active');
-      document.getElementById('analytics-view').classList.add('active');
-      currentView = 'analytics';
-      renderAnalytics();
     });
 
     // Filter pills
@@ -1966,8 +1833,6 @@
         switchToTimeline();
       } else if (e.key === '2' && document.activeElement !== searchInput) {
         document.getElementById('view-calendar-btn').click();
-      } else if (e.key === '3' && document.activeElement !== searchInput) {
-        document.getElementById('view-analytics-btn').click();
       }
     });
 

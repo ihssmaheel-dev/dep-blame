@@ -62,7 +62,7 @@ export function startServer(options = {}) {
           'Cache-Control': 'no-cache',
           'Content-Length': htmlBytes,
           'X-Content-Type-Options': 'nosniff',
-          'Content-Security-Policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+          'Content-Security-Policy': "default-src 'self'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'unsafe-inline'"
         });
         res.end(htmlContent);
         return;
