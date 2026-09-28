@@ -13,7 +13,8 @@ import { startServer } from '../src/server.js';
 const options = {
   port: { type: 'string', short: 'p' },
   host: { type: 'string' },
-  'no-open': { type: 'boolean' }
+  'no-open': { type: 'boolean' },
+  help: { type: 'boolean', short: 'h' }
 };
 
 let values;
@@ -22,6 +23,22 @@ try {
 } catch (err) {
   console.error(`Error: ${err.message}`);
   process.exit(1);
+}
+
+if (values.help) {
+  console.log(`
+\x1b[1mdep-blame UI\x1b[0m — Visual dashboard for git dependency archaeology
+
+\x1b[1mUSAGE:\x1b[0m
+  $ npx @dep-blame/ui [options]
+
+\x1b[1mOPTIONS:\x1b[0m
+  -p, --port <port>    Port to listen on (default: 4321)
+  --host <host>        Host interface to bind to (default: 127.0.0.1)
+  --no-open            Do not open browser automatically
+  -h, --help           Show this help message
+`);
+  process.exit(0);
 }
 
 const portRaw = values.port ? String(values.port).trim() : '4321';

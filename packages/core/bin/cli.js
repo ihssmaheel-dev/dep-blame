@@ -167,6 +167,12 @@ async function main() {
   }
 
   if (subCommand === 'ui') {
+    const localUiPath = path.resolve(__dirname, '../../ui/bin/cli.js');
+    if (fs.existsSync(localUiPath)) {
+      const { pathToFileURL } = await import('node:url');
+      await import(pathToFileURL(localUiPath).href);
+      return;
+    }
     console.log(`
 ${c.bold('Launch the dep-blame visual dashboard:')}
 

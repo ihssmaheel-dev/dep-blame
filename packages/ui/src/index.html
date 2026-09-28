@@ -3,393 +3,1655 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>dep-blame — Dependency History Dashboard</title>
+  <title>dep-blame — Dependency History & Archaeology</title>
   <style>
     :root {
-      --bg: #0d1117;
-      --card-bg: #161b22;
-      --border: #30363d;
-      --text: #e6edf3;
-      --text-muted: #8b949e;
-      --green: #2ea043;
-      --green-bg: rgba(46, 160, 67, 0.15);
-      --yellow: #d29922;
-      --yellow-bg: rgba(210, 153, 34, 0.15);
-      --red: #f85149;
-      --red-bg: rgba(248, 81, 73, 0.15);
-      --blue: #58a6ff;
-      --blue-bg: rgba(88, 166, 255, 0.15);
-      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --bg: #07090e;
+      --bg-surface: rgba(13, 17, 26, 0.75);
+      --bg-surface-hover: rgba(22, 28, 44, 0.85);
+      --bg-elevated: #111624;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.16);
+      --border-focus: #6366f1;
+      
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.14);
+      --emerald-border: rgba(16, 185, 129, 0.28);
+      
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.14);
+      --amber-border: rgba(245, 158, 11, 0.28);
+      
+      --rose: #f43f5e;
+      --rose-glow: rgba(244, 63, 94, 0.14);
+      --rose-border: rgba(244, 63, 94, 0.28);
+      
+      --indigo: #6366f1;
+      --indigo-glow: rgba(99, 102, 241, 0.16);
+      --indigo-border: rgba(99, 102, 241, 0.32);
+
+      --cyan: #06b6d4;
+      --cyan-glow: rgba(6, 182, 212, 0.14);
+      
+      --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", Helvetica, Arial, sans-serif;
+      
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.65);
+      --glow: radial-gradient(1200px 800px at 50% -12%, rgba(99, 102, 241, 0.16), transparent 70%);
+      --grid-pattern: linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      background: var(--bg);
+      background-color: var(--bg);
+      background-image: var(--glow), var(--grid-pattern);
+      background-size: 100% 100%, 40px 40px;
+      background-attachment: fixed;
       color: var(--text);
       font-family: var(--font-sans);
-      font-size: 14px;
+      font-size: 13.5px;
       line-height: 1.5;
-      padding: 24px;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+
+    .app-container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px 32px 64px;
+    }
+
+    /* Top Navigation Bar */
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      padding: 12px 20px;
+      background: rgba(13, 17, 26, 0.72);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
       margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
     }
-    .logo-group { display: flex; align-items: center; gap: 12px; }
-    h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
-      background: var(--border);
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .brand-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .brand-tagline {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+
+    .meta-pills {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
       color: var(--text-muted);
     }
-    .badge-blue { background: var(--blue-bg); color: var(--blue); }
-    .badge-green { background: var(--green-bg); color: var(--green); }
-    .badge-yellow { background: var(--yellow-bg); color: var(--yellow); }
-    .badge-red { background: var(--red-bg); color: var(--red); }
 
-    .stats-row {
+    .pill-live {
+      background: var(--emerald-glow);
+      border-color: var(--emerald-border);
+      color: var(--emerald);
+      font-weight: 600;
+    }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+      animation: pulse 2.2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: var(--border-hover);
+      transform: translateY(-1px);
+    }
+    .btn-secondary:active {
+      transform: translateY(0);
+    }
+
+    /* KPI Metric Cards Grid */
+    .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(4, 1fr);
       gap: 16px;
       margin-bottom: 24px;
     }
-    .stat-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-    }
-    .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
-    .stat-value { font-size: 24px; font-weight: 700; }
 
-    .toolbar {
+    @media (max-width: 1080px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .kpi-grid { grid-template-columns: 1fr; }
+    }
+
+    .kpi-card {
+      background: var(--bg-surface);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .kpi-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+      background: var(--bg-surface-hover);
+    }
+
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+    }
+
+    .kpi-card.indigo::before { background: linear-gradient(90deg, transparent, var(--indigo), transparent); }
+    .kpi-card.emerald::before { background: linear-gradient(90deg, transparent, var(--emerald), transparent); }
+    .kpi-card.amber::before { background: linear-gradient(90deg, transparent, var(--amber), transparent); }
+    .kpi-card.rose::before { background: linear-gradient(90deg, transparent, var(--rose), transparent); }
+
+    .kpi-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .kpi-title {
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    .kpi-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s ease;
+    }
+    .kpi-card:hover .kpi-icon {
+      transform: scale(1.1);
+    }
+
+    .kpi-card.indigo .kpi-icon { background: var(--indigo-glow); color: var(--indigo); border: 1px solid var(--indigo-border); }
+    .kpi-card.emerald .kpi-icon { background: var(--emerald-glow); color: var(--emerald); border: 1px solid var(--emerald-border); }
+    .kpi-card.amber .kpi-icon { background: var(--amber-glow); color: var(--amber); border: 1px solid var(--amber-border); }
+    .kpi-card.rose .kpi-icon { background: var(--rose-glow); color: var(--rose); border: 1px solid var(--rose-border); }
+
+    .kpi-value {
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+      margin-bottom: 4px;
+      color: #fff;
+    }
+
+    .kpi-subtitle {
+      font-size: 12px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Controls Panel & Filters */
+    .controls-panel {
+      background: var(--bg-surface);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 16px;
+      gap: 14px;
+      box-shadow: var(--shadow-sm);
     }
-    .search-box {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 14px;
-      width: 280px;
-      outline: none;
-    }
-    .search-box:focus { border-color: var(--blue); }
 
-    .filter-tabs { display: flex; gap: 6px; }
-    .tab-btn {
-      background: transparent;
+    .left-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      flex: 1;
+    }
+
+    .search-wrapper {
+      position: relative;
+      min-width: 280px;
+      flex: 1;
+      max-width: 420px;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+
+    .search-input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.35);
       border: 1px solid var(--border);
-      color: var(--text-muted);
-      padding: 6px 12px;
-      border-radius: 6px;
+      border-radius: 9px;
+      padding: 8px 36px 8px 36px;
+      color: var(--text);
       font-size: 13px;
-      cursor: pointer;
-      font-weight: 500;
+      outline: none;
       transition: all 0.15s ease;
     }
-    .tab-btn:hover { background: var(--card-bg); color: var(--text); }
-    .tab-btn.active {
-      background: var(--card-bg);
-      border-color: var(--blue);
-      color: var(--blue);
+    .search-input:focus {
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+      background: rgba(0, 0, 0, 0.55);
     }
+    .search-input::placeholder { color: var(--text-dim); }
 
-    .table-container {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow-x: auto;
-    }
-    table { width: 100%; border-collapse: collapse; text-align: left; }
-    th {
-      background: rgba(255, 255, 255, 0.02);
-      border-bottom: 1px solid var(--border);
-      padding: 10px 14px;
-      font-size: 12px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      font-weight: 600;
-    }
-    td {
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
-      font-size: 13px;
-    }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255, 255, 255, 0.02); }
-
-    .pkg-name {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      color: var(--blue);
+    .search-clear {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-dim);
       cursor: pointer;
-    }
-    .pkg-name:hover { text-decoration: underline; }
-    .version-tag { font-family: var(--font-mono); font-size: 12px; }
-    .commit-sha { font-family: var(--font-mono); color: var(--text-muted); font-size: 12px; }
-
-    /* Drawer Modal */
-    .drawer-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
       display: none;
-      justify-content: flex-end;
-      z-index: 100;
+      padding: 2px;
     }
-    .drawer-overlay.active { display: flex; }
-    .drawer {
-      background: var(--card-bg);
-      width: 520px;
-      max-width: 90vw;
-      height: 100%;
-      border-left: 1px solid var(--border);
-      padding: 24px;
-      overflow-y: auto;
-      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
+    .search-clear:hover { color: #fff; }
+
+    .shortcut-badge {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--text-dim);
+      pointer-events: none;
     }
-    .drawer-header {
+
+    .filter-pills {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
     }
-    .close-btn {
+
+    .filter-btn {
       background: transparent;
       border: none;
       color: var(--text-muted);
-      font-size: 20px;
+      padding: 6px 12px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .filter-btn:hover { color: var(--text); }
+    .filter-btn.active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    }
+
+    .filter-count {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 10.5px;
+      background: rgba(255, 255, 255, 0.08);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .select-dropdown {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      outline: none;
       cursor: pointer;
     }
-    .timeline { position: relative; padding-left: 20px; margin-top: 16px; }
-    .timeline::before {
-      content: '';
-      position: absolute;
-      left: 6px;
-      top: 6px;
-      bottom: 6px;
-      width: 2px;
-      background: var(--border);
+    .select-dropdown:focus {
+      border-color: var(--indigo);
     }
-    .timeline-item { position: relative; margin-bottom: 24px; }
-    .timeline-item::before {
-      content: '';
-      position: absolute;
-      left: -20px;
-      top: 4px;
-      width: 10px;
-      height: 10px;
+
+    .right-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .view-toggle {
+      display: flex;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+    }
+
+    .view-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .view-btn:hover { color: var(--text); }
+    .view-btn.active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Content Card Container */
+    .content-card {
+      background: var(--bg-surface);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Modern Responsive Table */
+    .table-responsive {
+      overflow-x: auto;
+      width: 100%;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    thead th {
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border);
+      padding: 13px 18px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    thead th.sortable {
+      cursor: pointer;
+    }
+    thead th.sortable:hover {
+      color: #fff;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s ease;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    td {
+      padding: 13px 18px;
+      font-size: 13px;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .badge-status.added {
+      background: var(--emerald-glow);
+      color: var(--emerald);
+      border: 1px solid var(--emerald-border);
+    }
+    .badge-status.updated {
+      background: var(--amber-glow);
+      color: var(--amber);
+      border: 1px solid var(--amber-border);
+    }
+    .badge-status.removed {
+      background: var(--rose-glow);
+      color: var(--rose);
+      border: 1px solid var(--rose-border);
+    }
+
+    .package-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .package-name {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: #93c5fd;
+      cursor: pointer;
+      transition: color 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    .package-name:hover {
+      color: #bfdbfe;
+      background: rgba(99, 102, 241, 0.12);
+      text-decoration: underline;
+    }
+
+    .diff-pill {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .diff-from { color: var(--rose); opacity: 0.95; }
+    .diff-to { color: var(--emerald); font-weight: 600; }
+    .diff-arrow { color: var(--text-dim); }
+
+    .dep-type-tag {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(99, 102, 241, 0.1);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.2);
+    }
+
+    .manifest-badge {
+      display: inline-block;
+      max-width: 170px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      background: rgba(255, 255, 255, 0.04);
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    .author-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .author-avatar {
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
-      background: var(--blue);
+      background: linear-gradient(135deg, #475569, #334155);
+      color: #f1f5f9;
+      font-size: 10px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-transform: uppercase;
     }
-    .timeline-item.added::before { background: var(--green); }
-    .timeline-item.updated::before { background: var(--yellow); }
-    .timeline-item.removed::before { background: var(--red); }
+
+    .commit-tag {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--indigo);
+      background: var(--indigo-glow);
+      border: 1px solid var(--indigo-border);
+      padding: 2px 7px;
+      border-radius: 5px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .commit-tag:hover {
+      background: rgba(99, 102, 241, 0.26);
+      transform: translateY(-1px);
+    }
+
+    /* Calendar Grid View */
+    .calendar-container {
+      padding: 24px;
+      display: none;
+    }
+    .calendar-container.active { display: block; }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .month-card {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .month-header {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      color: #f1f5f9;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .weekdays-row {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .days-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+
+    .day-cell {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11.5px;
+      border-radius: 6px;
+      color: var(--text-dim);
+      position: relative;
+      cursor: default;
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .day-cell.empty { opacity: 0; pointer-events: none; }
+    .day-cell.active-day {
+      background: var(--indigo-glow);
+      border: 1px solid var(--indigo-border);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .day-cell.heat-1 { background: rgba(99, 102, 241, 0.15); border-color: rgba(99, 102, 241, 0.25); color: #c7d2fe; }
+    .day-cell.heat-2 { background: rgba(99, 102, 241, 0.35); border-color: rgba(99, 102, 241, 0.45); color: #fff; }
+    .day-cell.heat-3 { background: rgba(99, 102, 241, 0.6); border-color: rgba(99, 102, 241, 0.7); color: #fff; }
+    .day-cell.heat-4 { background: #6366f1; border-color: #818cf8; color: #fff; box-shadow: 0 0 10px rgba(99, 102, 241, 0.5); }
+    
+    .day-cell.active-day:hover {
+      transform: scale(1.18);
+      z-index: 10;
+    }
+
+    /* Analytics / Churn View */
+    .analytics-container {
+      padding: 28px;
+      display: none;
+    }
+    .analytics-container.active { display: block; }
+
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 900px) {
+      .analytics-grid { grid-template-columns: 1fr; }
+    }
+
+    .analytics-section {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .analytics-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .churn-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .churn-row:last-child { border-bottom: none; }
+
+    .churn-bar-wrapper {
+      flex: 1;
+      margin: 0 16px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .churn-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1, #a855f7);
+      border-radius: 3px;
+    }
+
+    /* Slide-out Archaeology Drawer */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: none;
+      justify-content: flex-end;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    .drawer-overlay.active {
+      display: flex;
+      opacity: 1;
+    }
+
+    .drawer {
+      background: #0d111a;
+      border-left: 1px solid var(--border);
+      width: 600px;
+      max-width: 92vw;
+      height: 100%;
+      padding: 32px 28px;
+      overflow-y: auto;
+      box-shadow: var(--shadow-lg);
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+    }
+    .drawer-overlay.active .drawer {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .drawer-pkg-title {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: #fff;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .drawer-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .btn-action-small {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    .btn-action-small:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    .close-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .close-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    /* Vertical Timeline Tree in Drawer */
+    .tree-timeline {
+      position: relative;
+      padding-left: 28px;
+      margin-top: 14px;
+      flex: 1;
+    }
+    .tree-timeline::before {
+      content: '';
+      position: absolute;
+      left: 10px;
+      top: 14px;
+      bottom: 24px;
+      width: 2px;
+      background: linear-gradient(180deg, var(--indigo) 0%, rgba(99, 102, 241, 0.1) 100%);
+    }
+
+    .timeline-node {
+      position: relative;
+      margin-bottom: 24px;
+    }
+
+    .node-icon {
+      position: absolute;
+      left: -28px;
+      top: 2px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #0d111a;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+    .timeline-node.added .node-icon { border-color: var(--emerald); color: var(--emerald); }
+    .timeline-node.updated .node-icon { border-color: var(--amber); color: var(--amber); }
+    .timeline-node.removed .node-icon { border-color: var(--rose); color: var(--rose); }
+
+    .node-card {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      transition: all 0.15s ease;
+    }
+    .node-card:hover {
+      border-color: var(--border-hover);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .node-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+    }
+
+    .node-version {
+      font-size: 13.5px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      margin-bottom: 6px;
+      color: #f1f5f9;
+    }
+
+    .node-msg {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(18, 24, 38, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-hover);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 9px;
+      font-size: 13px;
+      box-shadow: var(--shadow-lg);
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* Empty state */
+    .empty-state {
+      padding: 64px 20px;
+      text-align: center;
+      color: var(--text-dim);
+    }
+    .empty-icon {
+      margin-bottom: 12px;
+      color: var(--text-muted);
+      opacity: 0.5;
+    }
+
+    /* Skeleton shimmer for loading */
+    @keyframes shimmer {
+      0% { opacity: 0.5; }
+      50% { opacity: 0.85; }
+      100% { opacity: 0.5; }
+    }
+    .skeleton {
+      animation: shimmer 1.5s infinite;
+    }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="logo-group">
-      <h1>dep-blame</h1>
-      <span class="badge badge-blue" id="repo-badge">repository</span>
-      <span class="badge" id="pm-badge">package manager</span>
-    </div>
-    <div>
-      <span class="badge" id="generated-badge">Live Index</span>
-    </div>
-  </header>
+  <div class="app-container">
+    
+    <!-- Top Header -->
+    <header>
+      <div class="brand-section">
+        <div class="brand-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <div class="brand-title">
+            dep-blame
+            <span style="font-size: 11px; font-weight: normal; color: var(--text-dim); margin-left: 2px;">v0.1.0</span>
+          </div>
+          <div class="brand-tagline">git blame, but for your dependencies</div>
+        </div>
+        
+        <div class="meta-pills">
+          <span class="pill" id="repo-pill" title="Target Repository">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            <span id="repo-name">repository</span>
+          </span>
+          <span class="pill" id="pm-pill">npm</span>
+          <span class="pill pill-live">
+            <span class="pulse-dot"></span>
+            <span id="index-time">Live Index</span>
+          </span>
+        </div>
+      </div>
 
-  <div class="stats-row">
-    <div class="stat-card">
-      <div class="stat-label">Total Events</div>
-      <div class="stat-value" id="stat-total">0</div>
+      <div class="header-actions">
+        <button class="btn-secondary" id="export-json-btn" title="Download dependency events as JSON">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Export JSON
+        </button>
+        <button class="btn-secondary" id="refresh-btn" title="Rescan git history">
+          <svg id="sync-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Sync History
+        </button>
+      </div>
+    </header>
+
+    <!-- Hero KPI Metric Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card indigo" onclick="setFilter('all')">
+        <div class="kpi-header">
+          <span class="kpi-title">Total Modifications</span>
+          <div class="kpi-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+        </div>
+        <div class="kpi-value" id="kpi-total">0</div>
+        <div class="kpi-subtitle" id="kpi-distinct">Across 0 distinct packages</div>
+      </div>
+
+      <div class="kpi-card emerald" onclick="setFilter('added')">
+        <div class="kpi-header">
+          <span class="kpi-title">Packages Added</span>
+          <div class="kpi-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </div>
+        </div>
+        <div class="kpi-value" style="color: var(--emerald)" id="kpi-added">0</div>
+        <div class="kpi-subtitle">New dependencies introduced</div>
+      </div>
+
+      <div class="kpi-card amber" onclick="setFilter('updated')">
+        <div class="kpi-header">
+          <span class="kpi-title">Version Upgrades</span>
+          <div class="kpi-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+          </div>
+        </div>
+        <div class="kpi-value" style="color: var(--amber)" id="kpi-updated">0</div>
+        <div class="kpi-subtitle">Upgrades & bumps tracked</div>
+      </div>
+
+      <div class="kpi-card rose" onclick="setFilter('removed')">
+        <div class="kpi-header">
+          <span class="kpi-title">Packages Removed</span>
+          <div class="kpi-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </div>
+        </div>
+        <div class="kpi-value" style="color: var(--rose)" id="kpi-removed">0</div>
+        <div class="kpi-subtitle">Deprecations & cleanups</div>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Added</div>
-      <div class="stat-value" style="color: var(--green)" id="stat-added">0</div>
+
+    <!-- Controls Panel (Search, Filter Tabs, Workspace Dropdown, View Switcher) -->
+    <div class="controls-panel">
+      <div class="left-controls">
+        <div class="search-wrapper">
+          <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" class="search-input" id="search-input" placeholder="Search package name, author, SHA, commit..." />
+          <button class="search-clear" id="search-clear" title="Clear search">✕</button>
+          <span class="shortcut-badge">/</span>
+        </div>
+
+        <div class="filter-pills">
+          <button class="filter-btn active" data-filter="all">All <span class="filter-count" id="count-all">0</span></button>
+          <button class="filter-btn" data-filter="added">+ Added <span class="filter-count" id="count-added">0</span></button>
+          <button class="filter-btn" data-filter="updated">↑ Updated <span class="filter-count" id="count-updated">0</span></button>
+          <button class="filter-btn" data-filter="removed">- Removed <span class="filter-count" id="count-removed">0</span></button>
+        </div>
+
+        <select class="select-dropdown" id="manifest-filter" title="Filter by Manifest / Workspace">
+          <option value="all">All Manifests</option>
+        </select>
+      </div>
+
+      <div class="right-controls">
+        <div class="view-toggle">
+          <button class="view-btn active" id="view-timeline-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            Timeline
+          </button>
+          <button class="view-btn" id="view-calendar-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            Calendar
+          </button>
+          <button class="view-btn" id="view-analytics-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+            Analytics
+          </button>
+        </div>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Updated</div>
-      <div class="stat-value" style="color: var(--yellow)" id="stat-updated">0</div>
+
+    <!-- Main Content Card -->
+    <div class="content-card">
+      
+      <!-- Table View -->
+      <div class="table-responsive" id="timeline-view">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable" onclick="toggleSort('date')">Date <span id="sort-date-icon">↓</span></th>
+              <th>Action</th>
+              <th class="sortable" onclick="toggleSort('package')">Dependency <span id="sort-pkg-icon"></span></th>
+              <th>Version Diff</th>
+              <th>Type</th>
+              <th>Manifest</th>
+              <th>Author</th>
+              <th>Commit</th>
+            </tr>
+          </thead>
+          <tbody id="events-tbody">
+            <tr>
+              <td colspan="8" class="empty-state skeleton">
+                <svg class="empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <div>Scanning repository git history...</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Calendar View -->
+      <div class="calendar-container" id="calendar-view">
+        <div class="calendar-grid" id="calendar-grid"></div>
+      </div>
+
+      <!-- Analytics & Churn View -->
+      <div class="analytics-container" id="analytics-view">
+        <div class="analytics-grid">
+          <div class="analytics-section">
+            <div class="analytics-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+              Top Modified Dependencies (Churn)
+            </div>
+            <div id="top-packages-list"></div>
+          </div>
+
+          <div class="analytics-section">
+            <div class="analytics-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              Top Authors / Engineers
+            </div>
+            <div id="top-authors-list"></div>
+          </div>
+        </div>
+      </div>
+
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Removed</div>
-      <div class="stat-value" style="color: var(--red)" id="stat-removed">0</div>
-    </div>
+
   </div>
 
-  <div class="toolbar">
-    <input type="text" class="search-box" id="search-input" placeholder="Search package name..." />
-    <div class="filter-tabs">
-      <button class="tab-btn active" data-filter="all">All</button>
-      <button class="tab-btn" data-filter="added">+ Added</button>
-      <button class="tab-btn" data-filter="updated">↑ Updated</button>
-      <button class="tab-btn" data-filter="removed">- Removed</button>
-    </div>
-  </div>
-
-  <div class="table-container">
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Type</th>
-          <th>Package</th>
-          <th>Change</th>
-          <th>Manifest</th>
-          <th>Author</th>
-          <th>Commit</th>
-        </tr>
-      </thead>
-      <tbody id="events-tbody">
-        <tr>
-          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 32px;">Loading dependency history...</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- Archaeology Drawer -->
+  <!-- Slide-out Archaeology Drawer -->
   <div class="drawer-overlay" id="drawer-overlay">
     <div class="drawer">
       <div class="drawer-header">
         <div>
-          <h2 id="drawer-title" style="font-family: var(--font-mono); font-size: 18px;">package-name</h2>
-          <span class="badge" id="drawer-status">Active</span>
+          <div class="drawer-pkg-title">
+            <span id="drawer-title">package-name</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge-status added" id="drawer-status">Active</span>
+            <span style="font-size: 11.5px; color: var(--text-dim);" id="drawer-count">0 historical modifications</span>
+          </div>
+          <div class="drawer-actions">
+            <button class="btn-action-small" id="drawer-copy-md" title="Copy markdown changelog">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy Markdown
+            </button>
+            <a class="btn-action-small" id="drawer-npm-link" target="_blank" rel="noopener noreferrer">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+              npm package
+            </a>
+          </div>
         </div>
-        <button class="close-btn" id="drawer-close">&times;</button>
+        <button class="close-btn" id="drawer-close" title="Close (Esc)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       </div>
-      <div id="drawer-content" class="timeline"></div>
+
+      <div class="drawer-subtitle" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 12px;">
+        Chronological Git Archaeology Timeline:
+      </div>
+
+      <div class="tree-timeline" id="drawer-timeline"></div>
     </div>
   </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">Copied to clipboard</div>
 
   <script>
     let allEvents = [];
     let currentFilter = 'all';
     let currentSearch = '';
+    let currentManifest = 'all';
+    let currentView = 'timeline';
+    let sortField = 'date';
+    let sortAsc = false;
+    let selectedPkgName = null;
+
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
     async function loadData() {
+      const syncIcon = document.getElementById('sync-icon');
+      if (syncIcon) syncIcon.style.animation = 'spin 1s linear infinite';
+      
       try {
         const res = await fetch('/api/events');
         const data = await res.json();
         allEvents = data.events || [];
 
-        document.getElementById('repo-badge').textContent = data.repository || 'repository';
-        document.getElementById('pm-badge').textContent = data.packageManager || 'npm';
-        document.getElementById('generated-badge').textContent = 'Indexed at ' + new Date(data.generatedAt).toLocaleTimeString();
+        document.getElementById('repo-name').textContent = data.repository || 'repository';
+        document.getElementById('pm-pill').textContent = data.packageManager || 'npm';
+        document.getElementById('index-time').textContent = 'Indexed ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+        populateManifestOptions();
         updateStats();
-        renderTable();
+        renderView();
       } catch (err) {
         document.getElementById('events-tbody').innerHTML = `
-          <tr><td colspan="7" style="text-align: center; color: var(--red); padding: 32px;">
-            Failed to load events from /api/events.
+          <tr><td colspan="8" class="empty-state" style="color: var(--rose)">
+            Failed to fetch dependency events from /api/events.
           </td></tr>
         `;
+      } finally {
+        if (syncIcon) syncIcon.style.animation = '';
+      }
+    }
+
+    function populateManifestOptions() {
+      const manifests = Array.from(new Set(allEvents.map(e => e.manifest).filter(Boolean))).sort();
+      const select = document.getElementById('manifest-filter');
+      select.innerHTML = '<option value="all">All Manifests (' + manifests.length + ')</option>';
+      for (const m of manifests) {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        select.appendChild(opt);
       }
     }
 
     function updateStats() {
-      document.getElementById('stat-total').textContent = allEvents.length;
-      document.getElementById('stat-added').textContent = allEvents.filter(e => e.type === 'added').length;
-      document.getElementById('stat-updated').textContent = allEvents.filter(e => e.type === 'updated').length;
-      document.getElementById('stat-removed').textContent = allEvents.filter(e => e.type === 'removed').length;
+      const added = allEvents.filter(e => e.type === 'added').length;
+      const updated = allEvents.filter(e => e.type === 'updated').length;
+      const removed = allEvents.filter(e => e.type === 'removed').length;
+      const distinct = new Set(allEvents.map(e => e.package)).size;
+
+      document.getElementById('kpi-total').textContent = allEvents.length.toLocaleString();
+      document.getElementById('kpi-distinct').textContent = `Across ${distinct} distinct packages`;
+      document.getElementById('kpi-added').textContent = added.toLocaleString();
+      document.getElementById('kpi-updated').textContent = updated.toLocaleString();
+      document.getElementById('kpi-removed').textContent = removed.toLocaleString();
+
+      document.getElementById('count-all').textContent = allEvents.length;
+      document.getElementById('count-added').textContent = added;
+      document.getElementById('count-updated').textContent = updated;
+      document.getElementById('count-removed').textContent = removed;
+    }
+
+    function setFilter(type) {
+      currentFilter = type;
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === type);
+      });
+      renderView();
+    }
+
+    function getFilteredEvents() {
+      return allEvents.filter(ev => {
+        if (currentFilter !== 'all' && ev.type !== currentFilter) return false;
+        if (currentManifest !== 'all' && ev.manifest !== currentManifest) return false;
+        if (currentSearch) {
+          const q = currentSearch.toLowerCase();
+          const matchPkg = (ev.package || '').toLowerCase().includes(q);
+          const matchAuthor = (ev.author || '').toLowerCase().includes(q);
+          const matchSha = (ev.commit || '').toLowerCase().includes(q);
+          const matchMsg = (ev.message || '').toLowerCase().includes(q);
+          const matchTo = (ev.to || '').toLowerCase().includes(q);
+          const matchFrom = (ev.from || '').toLowerCase().includes(q);
+          if (!matchPkg && !matchAuthor && !matchSha && !matchMsg && !matchTo && !matchFrom) return false;
+        }
+        return true;
+      });
+    }
+
+    function getSortedEvents() {
+      const events = getFilteredEvents();
+      return events.sort((a, b) => {
+        let valA = a[sortField] || '';
+        let valB = b[sortField] || '';
+        if (sortField === 'date') {
+          valA = new Date(valA).getTime() || 0;
+          valB = new Date(valB).getTime() || 0;
+        }
+        if (valA < valB) return sortAsc ? -1 : 1;
+        if (valA > valB) return sortAsc ? 1 : -1;
+        return 0;
+      });
+    }
+
+    function toggleSort(field) {
+      if (sortField === field) {
+        sortAsc = !sortAsc;
+      } else {
+        sortField = field;
+        sortAsc = false;
+      }
+      document.getElementById('sort-date-icon').textContent = sortField === 'date' ? (sortAsc ? '↑' : '↓') : '';
+      document.getElementById('sort-pkg-icon').textContent = sortField === 'package' ? (sortAsc ? '↑' : '↓') : '';
+      renderTable();
+    }
+
+    function renderView() {
+      if (currentView === 'timeline') renderTable();
+      else if (currentView === 'calendar') renderCalendar();
+      else if (currentView === 'analytics') renderAnalytics();
     }
 
     function renderTable() {
       const tbody = document.getElementById('events-tbody');
-      const filtered = allEvents.filter(ev => {
-        if (currentFilter !== 'all' && ev.type !== currentFilter) return false;
-        if (currentSearch && !ev.package.toLowerCase().includes(currentSearch.toLowerCase())) return false;
-        return true;
-      });
+      const filtered = getSortedEvents();
 
       if (filtered.length === 0) {
         tbody.innerHTML = `
-          <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 32px;">
-            No events match your search or filter.
+          <tr><td colspan="8" class="empty-state">
+            <svg class="empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <div>No events matching your filter or search query.</div>
+            <button class="btn-secondary" style="margin-top: 12px;" onclick="resetFilters()">Reset Filters</button>
           </td></tr>
         `;
         return;
       }
 
       tbody.innerHTML = filtered.map(ev => {
-        const date = (ev.date || '').slice(0, 10);
-        let badgeClass = 'badge-yellow';
-        let typeLabel = '↑ updated';
-        let changeText = `${ev.from || '?'} &rarr; ${ev.to || '?'}`;
+        const dateStr = (ev.date || '').slice(0, 10);
+        let badgeClass = 'updated';
+        let badgeLabel = '↑ Updated';
 
         if (ev.type === 'added') {
-          badgeClass = 'badge-green';
-          typeLabel = '+ added';
-          changeText = ev.to || '';
+          badgeClass = 'added';
+          badgeLabel = '+ Added';
         } else if (ev.type === 'removed') {
-          badgeClass = 'badge-red';
-          typeLabel = '- removed';
-          changeText = `was ${ev.from || ''}`;
+          badgeClass = 'removed';
+          badgeLabel = '- Removed';
         }
+
+        let changeHtml = '';
+        if (ev.type === 'added') {
+          changeHtml = `<span class="diff-to">${escapeHtml(ev.to || '')}</span>`;
+        } else if (ev.type === 'removed') {
+          changeHtml = `<span class="diff-from">was ${escapeHtml(ev.from || '')}</span>`;
+        } else {
+          changeHtml = `
+            <span class="diff-from">${escapeHtml(ev.from || '?')}</span>
+            <span class="diff-arrow">&rarr;</span>
+            <span class="diff-to">${escapeHtml(ev.to || '?')}</span>
+          `;
+        }
+
+        const authorInitial = (ev.author || 'U')[0].toUpperCase();
+        const typeBadge = ev.is_direct 
+          ? `<span class="dep-type-tag">direct</span>` 
+          : `<span class="dep-type-tag" style="background: rgba(255,255,255,0.05); color: var(--text-dim); border-color: var(--border);">dep</span>`;
 
         return `
           <tr>
-            <td style="color: var(--text-muted); font-family: var(--font-mono);">${date}</td>
-            <td><span class="badge ${badgeClass}">${typeLabel}</span></td>
-            <td><span class="pkg-name" onclick="openArchaeology('${ev.package}')">${ev.package}</span></td>
-            <td><span class="version-tag">${changeText}</span></td>
-            <td style="color: var(--text-muted); font-size: 12px;">${ev.manifest}</td>
-            <td style="color: var(--text-muted);">${ev.author}</td>
-            <td><span class="commit-sha" title="${ev.message || ''}">${ev.commit}</span></td>
+            <td style="color: var(--text-muted); font-family: var(--font-mono); font-size: 12px;">${dateStr}</td>
+            <td><span class="badge-status ${badgeClass}">${badgeLabel}</span></td>
+            <td>
+              <div class="package-cell">
+                <span class="package-name" onclick="openArchaeology('${escapeHtml(ev.package)}')" title="Click to view archaeology lifecycle">
+                  ${escapeHtml(ev.package)}
+                </span>
+              </div>
+            </td>
+            <td><div class="diff-pill">${changeHtml}</div></td>
+            <td>${typeBadge}</td>
+            <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
+            <td>
+              <div class="author-cell">
+                <div class="author-avatar">${authorInitial}</div>
+                <span style="color: var(--text-muted); font-size: 12.5px;">${escapeHtml(ev.author || '')}</span>
+              </div>
+            </td>
+            <td>
+              <span class="commit-tag" onclick="copyText('${ev.commit}', 'Commit SHA copied!')" title="${escapeHtml(ev.message || '')} (click to copy)">
+                ${ev.commit}
+              </span>
+            </td>
           </tr>
         `;
       }).join('');
     }
 
+    function renderCalendar() {
+      const grid = document.getElementById('calendar-grid');
+      const filtered = getFilteredEvents();
+
+      // Group by year-month
+      const monthMap = new Map();
+      for (const ev of filtered) {
+        if (!ev.date) continue;
+        const key = ev.date.slice(0, 7);
+        if (!monthMap.has(key)) monthMap.set(key, []);
+        monthMap.get(key).push(ev);
+      }
+
+      if (monthMap.size === 0) {
+        grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 48px; text-align: center; color: var(--text-dim)">No activity found in calendar view.</div>';
+        return;
+      }
+
+      const sortedMonths = Array.from(monthMap.keys()).sort();
+      grid.innerHTML = sortedMonths.map(ym => {
+        const [yearStr, monthStr] = ym.split('-');
+        const year = parseInt(yearStr, 10);
+        const month = parseInt(monthStr, 10) - 1;
+        const monthEvents = monthMap.get(ym) || [];
+
+        const dayEventMap = new Map();
+        for (const ev of monthEvents) {
+          const day = parseInt(ev.date.slice(8, 10), 10);
+          if (!dayEventMap.has(day)) dayEventMap.set(day, []);
+          dayEventMap.get(day).push(ev);
+        }
+
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        let cellsHtml = '';
+        for (let i = 0; i < firstDay; i++) {
+          cellsHtml += '<div class="day-cell empty"></div>';
+        }
+
+        for (let d = 1; d <= daysInMonth; d++) {
+          const hasEvents = dayEventMap.has(d);
+          const evCount = hasEvents ? dayEventMap.get(d).length : 0;
+          if (hasEvents) {
+            let heatClass = 'heat-1';
+            if (evCount > 8) heatClass = 'heat-4';
+            else if (evCount > 4) heatClass = 'heat-3';
+            else if (evCount > 1) heatClass = 'heat-2';
+            
+            const dayStr = `${ym}-${String(d).padStart(2, '0')}`;
+            cellsHtml += `<div class="day-cell active-day ${heatClass}" onclick="filterByDay('${dayStr}')" title="${d}th: ${evCount} change(s) (click to filter)">${d}</div>`;
+          } else {
+            cellsHtml += `<div class="day-cell">${d}</div>`;
+          }
+        }
+
+        return `
+          <div class="month-card">
+            <div class="month-header">
+              <span>${MONTHS[month]} ${year}</span>
+              <span style="font-size: 11.5px; color: var(--text-dim); font-weight: normal">${monthEvents.length} event(s)</span>
+            </div>
+            <div class="weekdays-row">
+              <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+            </div>
+            <div class="days-grid">
+              ${cellsHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderAnalytics() {
+      const filtered = getFilteredEvents();
+      
+      // Top packages
+      const pkgCounts = new Map();
+      for (const ev of filtered) {
+        pkgCounts.set(ev.package, (pkgCounts.get(ev.package) || 0) + 1);
+      }
+      const sortedPkgs = Array.from(pkgCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const maxPkgCount = sortedPkgs[0] ? sortedPkgs[0][1] : 1;
+
+      const pkgContainer = document.getElementById('top-packages-list');
+      pkgContainer.innerHTML = sortedPkgs.map(([pkg, count]) => {
+        const pct = Math.round((count / maxPkgCount) * 100);
+        return `
+          <div class="churn-row">
+            <span class="package-name" onclick="openArchaeology('${escapeHtml(pkg)}')">${escapeHtml(pkg)}</span>
+            <div class="churn-bar-wrapper">
+              <div class="churn-bar" style="width: ${pct}%"></div>
+            </div>
+            <span style="font-size: 12px; font-weight: 600; font-family: var(--font-mono); color: var(--indigo);">${count} changes</span>
+          </div>
+        `;
+      }).join('') || '<div style="color: var(--text-dim)">No data</div>';
+
+      // Top authors
+      const authorCounts = new Map();
+      for (const ev of filtered) {
+        const a = ev.author || 'Unknown';
+        authorCounts.set(a, (authorCounts.get(a) || 0) + 1);
+      }
+      const sortedAuthors = Array.from(authorCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const maxAuthorCount = sortedAuthors[0] ? sortedAuthors[0][1] : 1;
+
+      const authorContainer = document.getElementById('top-authors-list');
+      authorContainer.innerHTML = sortedAuthors.map(([author, count]) => {
+        const pct = Math.round((count / maxAuthorCount) * 100);
+        return `
+          <div class="churn-row">
+            <span style="font-size: 13px; color: var(--text);">${escapeHtml(author)}</span>
+            <div class="churn-bar-wrapper">
+              <div class="churn-bar" style="width: ${pct}%; background: linear-gradient(90deg, #10b981, #06b6d4);"></div>
+            </div>
+            <span style="font-size: 12px; font-weight: 600; font-family: var(--font-mono); color: var(--emerald);">${count} commits</span>
+          </div>
+        `;
+      }).join('') || '<div style="color: var(--text-dim)">No data</div>';
+    }
+
+    function filterByDay(dayStr) {
+      document.getElementById('search-input').value = dayStr;
+      currentSearch = dayStr;
+      document.getElementById('search-clear').style.display = 'block';
+      switchToTimeline();
+    }
+
+    function resetFilters() {
+      currentFilter = 'all';
+      currentSearch = '';
+      currentManifest = 'all';
+      document.getElementById('search-input').value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      document.getElementById('manifest-filter').value = 'all';
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === 'all');
+      });
+      renderView();
+    }
+
     function openArchaeology(pkgName) {
+      selectedPkgName = pkgName;
       const pkgEvents = allEvents.filter(e => e.package === pkgName);
       if (pkgEvents.length === 0) return;
 
       document.getElementById('drawer-title').textContent = pkgName;
-      const latest = pkgEvents[pkgEvents.length - 1];
+      document.getElementById('drawer-count').textContent = `${pkgEvents.length} historical modification(s)`;
+      document.getElementById('drawer-npm-link').href = `https://www.npmjs.com/package/${encodeURIComponent(pkgName)}`;
 
+      const latest = pkgEvents[pkgEvents.length - 1];
       const statusBadge = document.getElementById('drawer-status');
       if (latest.type === 'removed') {
-        statusBadge.className = 'badge badge-red';
-        statusBadge.textContent = 'Removed';
+        statusBadge.className = 'badge-status removed';
+        statusBadge.textContent = 'Currently Removed';
       } else {
-        statusBadge.className = 'badge badge-green';
+        statusBadge.className = 'badge-status added';
         statusBadge.textContent = 'Active ' + (latest.to || '');
       }
 
-      const timelineContainer = document.getElementById('drawer-content');
-      timelineContainer.innerHTML = pkgEvents.map(ev => {
-        const date = (ev.date || '').slice(0, 10);
+      const timeline = document.getElementById('drawer-timeline');
+      timeline.innerHTML = pkgEvents.map(ev => {
+        const dateStr = (ev.date || '').slice(0, 10);
+        let iconSvg = '';
+        if (ev.type === 'added') {
+          iconSvg = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+        } else if (ev.type === 'removed') {
+          iconSvg = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+        } else {
+          iconSvg = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>`;
+        }
+
+        let actionText = '';
+        if (ev.type === 'added') actionText = `Added version <span style="color: var(--emerald)">${escapeHtml(ev.to || '')}</span>`;
+        else if (ev.type === 'removed') actionText = `Removed dependency (was ${escapeHtml(ev.from || '')})`;
+        else actionText = `Upgraded ${escapeHtml(ev.from || '')} &rarr; <span style="color: var(--amber)">${escapeHtml(ev.to || '')}</span>`;
+
         return `
-          <div class="timeline-item ${ev.type}">
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 2px;">
-              ${date} &bull; <span class="commit-sha">${ev.commit}</span> by ${ev.author}
-            </div>
-            <div style="font-weight: 600; margin-bottom: 4px;">
-              ${ev.type === 'added' ? 'Added version ' + ev.to : ev.type === 'updated' ? 'Updated ' + ev.from + ' &rarr; ' + ev.to : 'Removed (was ' + ev.from + ')'}
-            </div>
-            <div style="font-size: 12px; color: var(--text-muted);">
-              ${ev.message || ''}
+          <div class="timeline-node ${ev.type}">
+            <div class="node-icon">${iconSvg}</div>
+            <div class="node-card">
+              <div class="node-meta">
+                <span>${dateStr}</span>
+                <span class="commit-tag" onclick="copyText('${ev.commit}', 'Commit SHA copied!')">${ev.commit}</span>
+              </div>
+              <div class="node-version">${actionText}</div>
+              <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
+              <div style="font-size: 11px; color: var(--text-dim); margin-top: 6px;">
+                by ${escapeHtml(ev.author || 'Unknown')} in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span>
+              </div>
             </div>
           </div>
         `;
@@ -398,28 +1660,155 @@
       document.getElementById('drawer-overlay').classList.add('active');
     }
 
-    document.getElementById('drawer-close').addEventListener('click', () => {
+    function closeArchaeology() {
       document.getElementById('drawer-overlay').classList.remove('active');
+      selectedPkgName = null;
+    }
+
+    function copyText(text, msg = 'Copied to clipboard!') {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(msg);
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function switchToTimeline() {
+      document.getElementById('view-timeline-btn').classList.add('active');
+      document.getElementById('view-calendar-btn').classList.remove('active');
+      document.getElementById('view-analytics-btn').classList.remove('active');
+      document.getElementById('timeline-view').style.display = 'block';
+      document.getElementById('calendar-view').classList.remove('active');
+      document.getElementById('analytics-view').classList.remove('active');
+      currentView = 'timeline';
+      renderTable();
+    }
+
+    // View toggles
+    document.getElementById('view-timeline-btn').addEventListener('click', switchToTimeline);
+
+    document.getElementById('view-calendar-btn').addEventListener('click', () => {
+      document.getElementById('view-calendar-btn').classList.add('active');
+      document.getElementById('view-timeline-btn').classList.remove('active');
+      document.getElementById('view-analytics-btn').classList.remove('active');
+      document.getElementById('timeline-view').style.display = 'none';
+      document.getElementById('calendar-view').classList.add('active');
+      document.getElementById('analytics-view').classList.remove('active');
+      currentView = 'calendar';
+      renderCalendar();
     });
 
-    document.getElementById('drawer-overlay').addEventListener('click', (e) => {
-      if (e.target.id === 'drawer-overlay') {
-        document.getElementById('drawer-overlay').classList.remove('active');
-      }
+    document.getElementById('view-analytics-btn').addEventListener('click', () => {
+      document.getElementById('view-analytics-btn').classList.add('active');
+      document.getElementById('view-timeline-btn').classList.remove('active');
+      document.getElementById('view-calendar-btn').classList.remove('active');
+      document.getElementById('timeline-view').style.display = 'none';
+      document.getElementById('calendar-view').classList.remove('active');
+      document.getElementById('analytics-view').classList.add('active');
+      currentView = 'analytics';
+      renderAnalytics();
     });
 
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    // Filter pills
+    document.querySelectorAll('.filter-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentFilter = btn.dataset.filter;
-        renderTable();
+        setFilter(btn.dataset.filter);
       });
     });
 
-    document.getElementById('search-input').addEventListener('input', (e) => {
+    // Manifest selector
+    document.getElementById('manifest-filter').addEventListener('change', (e) => {
+      currentManifest = e.target.value;
+      renderView();
+    });
+
+    // Live search
+    const searchInput = document.getElementById('search-input');
+    const searchClear = document.getElementById('search-clear');
+    searchInput.addEventListener('input', (e) => {
       currentSearch = e.target.value.trim();
-      renderTable();
+      searchClear.style.display = currentSearch ? 'block' : 'none';
+      renderView();
+    });
+
+    searchClear.addEventListener('click', () => {
+      searchInput.value = '';
+      currentSearch = '';
+      searchClear.style.display = 'none';
+      renderView();
+      searchInput.focus();
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === '/' || (e.ctrlKey && e.key === 'k') || (e.metaKey && e.key === 'k')) && document.activeElement !== searchInput) {
+        e.preventDefault();
+        searchInput.focus();
+      } else if (e.key === 'Escape') {
+        if (document.getElementById('drawer-overlay').classList.contains('active')) {
+          closeArchaeology();
+        } else if (document.activeElement === searchInput) {
+          searchInput.blur();
+        }
+      } else if (e.key === '1' && document.activeElement !== searchInput) {
+        switchToTimeline();
+      } else if (e.key === '2' && document.activeElement !== searchInput) {
+        document.getElementById('view-calendar-btn').click();
+      } else if (e.key === '3' && document.activeElement !== searchInput) {
+        document.getElementById('view-analytics-btn').click();
+      }
+    });
+
+    // Drawer events
+    document.getElementById('drawer-close').addEventListener('click', closeArchaeology);
+    document.getElementById('drawer-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'drawer-overlay') closeArchaeology();
+    });
+
+    // Copy Markdown Summary for drawer
+    document.getElementById('drawer-copy-md').addEventListener('click', () => {
+      if (!selectedPkgName) return;
+      const pkgEvents = allEvents.filter(e => e.package === selectedPkgName);
+      let md = `### Dependency Archaeology: \`${selectedPkgName}\`\n\n`;
+      md += `| Date | Action | From | To | Commit | Author |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+      for (const ev of pkgEvents) {
+        const d = (ev.date || '').slice(0, 10);
+        md += `| ${d} | ${ev.type} | ${ev.from || '-'} | ${ev.to || '-'} | ${ev.commit} | ${ev.author || '-'} |\n`;
+      }
+      copyText(md, `Copied ${selectedPkgName} markdown changelog!`);
+    });
+
+    // Export JSON
+    document.getElementById('export-json-btn').addEventListener('click', () => {
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(allEvents, null, 2));
+      const a = document.createElement('a');
+      a.setAttribute('href', dataStr);
+      a.setAttribute('download', `dep-blame-${document.getElementById('repo-name').textContent || 'export'}.json`);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast('Exported dep-blame events as JSON');
+    });
+
+    // Sync button
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      loadData();
+      showToast('Synced with git repository!');
     });
 
     loadData();
