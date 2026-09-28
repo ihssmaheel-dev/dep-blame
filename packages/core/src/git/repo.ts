@@ -88,6 +88,21 @@ export async function getCurrentHead(cwd: string = process.cwd()): Promise<strin
 }
 
 /**
+ * Gets the current branch name, or short SHA if detached HEAD.
+ */
+export async function getCurrentBranch(cwd: string = process.cwd()): Promise<string> {
+  try {
+    const { stdout } = await execGit(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+    const branch = stdout.trim();
+    if (branch && branch !== 'HEAD') return branch;
+    const { stdout: sha } = await execGit(['rev-parse', '--short', 'HEAD'], cwd);
+    return sha.trim() || 'HEAD';
+  } catch {
+    return 'main';
+  }
+}
+
+/**
  * Checks if candidate is an ancestor of target commit.
  */
 export async function isAncestor(candidateSha: string, targetSha: string = 'HEAD', cwd: string = process.cwd()): Promise<boolean> {

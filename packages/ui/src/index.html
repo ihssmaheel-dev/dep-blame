@@ -1,79 +1,137 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>dep-blame — Dependency History & Archaeology</title>
   <style>
     :root {
-      --color-bg: #ffffff;
-      --color-bg-secondary: #fafafa;
-      --color-surface: #ffffff;
-      --color-border: #e5e5e5;
-      --color-border-hover: #cccccc;
-      --color-border-dark: #000000;
-      
-      --color-text: #000000;
-      --color-text-secondary: #666666;
-      --color-text-muted: #888888;
-      
-      --color-primary: #888888;
-      --color-secondary: #aaaaaa;
-      --color-accent: #000000;
+      --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
       
       --radius: 0px;
       --radius-sm: 2px;
+      --radius-md: 4px;
+
+      /* Dark Theme (Default) */
+      --color-bg: #080a0f;
+      --color-bg-secondary: #0e121a;
+      --color-surface: #121722;
+      --color-surface-hover: #192030;
+      --color-surface-card: rgba(18, 23, 34, 0.85);
       
-      --spacing-base: 10px;
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+      --color-border: rgba(255, 255, 255, 0.09);
+      --color-border-hover: rgba(255, 255, 255, 0.2);
+      --color-border-focus: #6366f1;
       
-      --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.04);
-      --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.08);
+      --color-text: #f8fafc;
+      --color-text-secondary: #94a3b8;
+      --color-text-muted: #64748b;
+      
+      --color-primary: #888888;
+      --color-accent: #6366f1;
+      --color-accent-glow: rgba(99, 102, 241, 0.15);
+      
+      --color-added: #10b981;
+      --color-added-bg: rgba(16, 185, 129, 0.12);
+      --color-added-border: rgba(16, 185, 129, 0.3);
+      
+      --color-updated: #f59e0b;
+      --color-updated-bg: rgba(245, 158, 11, 0.12);
+      --color-updated-border: rgba(245, 158, 11, 0.3);
+      
+      --color-removed: #f43f5e;
+      --color-removed-bg: rgba(244, 63, 94, 0.12);
+      --color-removed-border: rgba(244, 63, 94, 0.3);
+
+      --pattern-dot: rgba(255, 255, 255, 0.07);
+      --pattern-glow: radial-gradient(1200px 500px at 50% 0%, rgba(99, 102, 241, 0.14), transparent 80%);
+      --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.3);
+      --shadow-drawer: -8px 0 32px rgba(0, 0, 0, 0.6);
+      --header-bg: rgba(10, 13, 19, 0.85);
+    }
+
+    [data-theme="light"] {
+      --color-bg: #f8fafc;
+      --color-bg-secondary: #f1f5f9;
+      --color-surface: #ffffff;
+      --color-surface-hover: #f8fafc;
+      --color-surface-card: rgba(255, 255, 255, 0.95);
+      
+      --color-border: #e2e8f0;
+      --color-border-hover: #cbd5e1;
+      --color-border-focus: #0f172a;
+      
+      --color-text: #0f172a;
+      --color-text-secondary: #64748b;
+      --color-text-muted: #94a3b8;
+      
+      --color-primary: #888888;
+      --color-accent: #0f172a;
+      --color-accent-glow: rgba(15, 23, 42, 0.08);
+      
+      --color-added: #059669;
+      --color-added-bg: rgba(5, 150, 105, 0.08);
+      --color-added-border: rgba(5, 150, 105, 0.25);
+      
+      --color-updated: #d97706;
+      --color-updated-bg: rgba(217, 119, 6, 0.08);
+      --color-updated-border: rgba(217, 119, 6, 0.25);
+      
+      --color-removed: #e11d48;
+      --color-removed-bg: rgba(225, 29, 72, 0.08);
+      --color-removed-border: rgba(225, 29, 72, 0.25);
+
+      --pattern-dot: rgba(15, 23, 42, 0.08);
+      --pattern-glow: radial-gradient(1200px 500px at 50% 0%, rgba(99, 102, 241, 0.06), transparent 80%);
+      --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.1);
+      --header-bg: rgba(255, 255, 255, 0.9);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       background-color: var(--color-bg);
+      background-image: var(--pattern-glow), radial-gradient(var(--pattern-dot) 1px, transparent 1px);
+      background-size: 100% 100%, 24px 24px;
+      background-attachment: fixed;
       color: var(--color-text);
       font-family: var(--font-sans);
-      font-size: 12px;
-      line-height: 16px;
+      font-size: 12.5px;
+      line-height: 1.5;
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
 
     /* Scrollbars */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--color-bg); }
-    ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: var(--radius); }
-    ::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(120, 120, 120, 0.25); border-radius: var(--radius); }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(120, 120, 120, 0.45); }
 
-    .app-container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 30px 40px 60px;
-    }
-
-    /* Top Navigation / Header */
+    /* Top Edge-to-Edge Sticky Header */
     header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      width: 100%;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 16px 20px;
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      margin-bottom: 30px;
+      padding: 10px 24px;
+      background: var(--header-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--color-border);
       box-shadow: var(--shadow-subtle);
     }
 
     .brand-section {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
       flex-wrap: wrap;
     }
 
@@ -81,46 +139,66 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 32px;
-      height: 32px;
-      background: #000000;
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
       color: #ffffff;
-      border-radius: var(--radius);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
     }
 
     .brand-info {
       display: flex;
-      flex-direction: column;
+      align-items: baseline;
+      gap: 8px;
     }
 
     .brand-title {
-      font-size: 16px;
-      font-weight: 600;
+      font-size: 15px;
+      font-weight: 700;
       letter-spacing: -0.02em;
       color: var(--color-text);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+    }
+
+    .brand-version {
+      font-size: 10.5px;
+      font-weight: 500;
+      font-family: var(--font-mono);
+      color: var(--color-text-muted);
+      background: var(--color-bg-secondary);
+      border: 1px solid var(--color-border);
+      padding: 1px 5px;
+      border-radius: var(--radius-sm);
     }
 
     .brand-tagline {
       font-size: 11px;
       color: var(--color-text-secondary);
       font-weight: 400;
+      border-left: 1px solid var(--color-border);
+      padding-left: 10px;
+      margin-left: 4px;
+    }
+
+    @media (max-width: 900px) {
+      .brand-tagline { display: none; }
     }
 
     .meta-pills {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-left: 10px;
+      gap: 8px;
+      margin-left: 8px;
     }
 
     .pill {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 8px;
+      gap: 5px;
+      padding: 3px 8px;
       border-radius: var(--radius-sm);
       font-size: 11px;
       font-weight: 500;
@@ -129,54 +207,72 @@
       color: var(--color-text-secondary);
     }
 
-    .pill-live {
-      background: #ffffff;
-      border-color: #000000;
-      color: #000000;
+    .pill-branch {
+      font-family: var(--font-mono);
+      color: var(--color-text);
       font-weight: 600;
+      border-color: rgba(99, 102, 241, 0.35);
+      background: var(--color-accent-glow);
+    }
+
+    .pill-live {
+      background: var(--color-bg-secondary);
+      border-color: var(--color-border);
+      color: var(--color-text);
+      font-weight: 500;
     }
 
     .pulse-dot {
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #000000;
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
     }
 
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .btn-secondary {
+    .btn-action {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       background: var(--color-surface);
       border: 1px solid var(--color-border);
       color: var(--color-text);
-      padding: 7px 14px;
+      padding: 6px 12px;
       border-radius: var(--radius);
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 500;
       cursor: pointer;
-      transition: all 0.1s ease;
+      font-family: var(--font-sans);
+      transition: all 0.12s ease;
     }
-    .btn-secondary:hover {
-      background: var(--color-bg-secondary);
+    .btn-action:hover {
+      background: var(--color-surface-hover);
       border-color: var(--color-border-hover);
     }
-    .btn-secondary:active {
-      background: #f0f0f0;
+
+    .theme-toggle-btn {
+      padding: 6px 9px;
     }
 
-    /* KPI Metric Cards Grid */
+    /* Full Width Container */
+    .app-container {
+      width: 100%;
+      max-width: 100%;
+      padding: 18px 24px 60px;
+    }
+
+    /* Compact Stat Cards Ribbon */
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
-      margin-bottom: 30px;
+      gap: 12px;
+      margin-bottom: 16px;
     }
 
     @media (max-width: 1024px) {
@@ -187,84 +283,102 @@
     }
 
     .kpi-card {
-      background: var(--color-surface);
+      background: var(--color-surface-card);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
-      padding: 20px;
-      transition: border-color 0.15s ease;
+      padding: 10px 14px;
+      transition: all 0.12s ease;
       cursor: pointer;
-      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
     .kpi-card:hover {
-      border-color: #000000;
+      border-color: var(--color-border-hover);
+      transform: translateY(-1px);
     }
 
-    .kpi-header {
+    .kpi-content {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
+      flex-direction: column;
     }
 
     .kpi-title {
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--color-text-secondary);
+      margin-bottom: 2px;
     }
 
-    .kpi-icon {
-      width: 24px;
-      height: 24px;
+    .kpi-value-row {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--color-text-secondary);
+      align-items: baseline;
+      gap: 8px;
     }
 
     .kpi-value {
-      font-size: 26px;
-      font-weight: 600;
-      letter-spacing: -0.03em;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
       font-variant-numeric: tabular-nums;
-      margin-bottom: 4px;
       color: var(--color-text);
       line-height: 1.1;
     }
 
     .kpi-subtitle {
-      font-size: 11px;
+      font-size: 10.5px;
       color: var(--color-text-muted);
     }
 
-    /* Controls Panel & Filters */
+    .kpi-badge-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--color-border);
+      background: var(--color-bg-secondary);
+      color: var(--color-text-secondary);
+    }
+
+    .kpi-card.added .kpi-value { color: var(--color-added); }
+    .kpi-card.updated .kpi-value { color: var(--color-updated); }
+    .kpi-card.removed .kpi-value { color: var(--color-removed); }
+
+    /* Controls Panel */
     .controls-panel {
-      background: var(--color-surface);
+      background: var(--color-surface-card);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
-      padding: 14px 18px;
-      margin-bottom: 20px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
 
     .left-controls {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       flex-wrap: wrap;
       flex: 1;
     }
 
     .search-wrapper {
       position: relative;
-      min-width: 260px;
+      min-width: 240px;
       flex: 1;
-      max-width: 400px;
+      max-width: 360px;
     }
 
     .search-icon {
@@ -272,7 +386,7 @@
       left: 10px;
       top: 50%;
       transform: translateY(-50%);
-      color: var(--color-text-secondary);
+      color: var(--color-text-muted);
       pointer-events: none;
     }
 
@@ -281,7 +395,7 @@
       background: var(--color-surface);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
-      padding: 8px 32px 8px 32px;
+      padding: 6px 30px 6px 30px;
       color: var(--color-text);
       font-size: 12px;
       outline: none;
@@ -289,13 +403,13 @@
       font-family: var(--font-sans);
     }
     .search-input:focus {
-      border-color: #000000;
+      border-color: var(--color-border-focus);
     }
     .search-input::placeholder { color: var(--color-text-muted); }
 
     .search-clear {
       position: absolute;
-      right: 10px;
+      right: 8px;
       top: 50%;
       transform: translateY(-50%);
       background: none;
@@ -303,23 +417,22 @@
       color: var(--color-text-secondary);
       cursor: pointer;
       display: none;
-      padding: 2px;
-      font-size: 12px;
+      font-size: 11px;
     }
-    .search-clear:hover { color: #000000; }
+    .search-clear:hover { color: var(--color-text); }
 
     .shortcut-badge {
       position: absolute;
-      right: 10px;
+      right: 8px;
       top: 50%;
       transform: translateY(-50%);
       font-size: 10px;
       font-family: var(--font-mono);
       background: var(--color-bg-secondary);
       border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 1px 4px;
-      color: var(--color-text-secondary);
+      border-radius: var(--radius-sm);
+      padding: 0 4px;
+      color: var(--color-text-muted);
       pointer-events: none;
     }
 
@@ -336,56 +449,113 @@
       background: transparent;
       border: none;
       color: var(--color-text-secondary);
-      padding: 5px 11px;
+      padding: 4px 10px;
       border-radius: var(--radius);
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 500;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       transition: all 0.1s ease;
       font-family: var(--font-sans);
     }
-    .filter-btn:hover { color: #000000; }
+    .filter-btn:hover { color: var(--color-text); }
     .filter-btn.active {
-      background: #000000;
-      color: #ffffff;
-      font-weight: 500;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-weight: 600;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-subtle);
     }
 
     .filter-count {
       display: inline-block;
-      padding: 1px 5px;
-      border-radius: var(--radius);
+      padding: 0 4px;
+      border-radius: var(--radius-sm);
       font-size: 10px;
-      background: rgba(120, 120, 120, 0.15);
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
       font-variant-numeric: tabular-nums;
     }
-    .filter-btn.active .filter-count {
-      background: rgba(255, 255, 255, 0.25);
-      color: #ffffff;
+
+    /* Custom Dropdown (No native select!) */
+    .custom-dropdown {
+      position: relative;
     }
 
-    .select-dropdown {
+    .custom-dropdown-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
       background: var(--color-surface);
       border: 1px solid var(--color-border);
       color: var(--color-text);
-      padding: 6px 10px;
+      padding: 5px 10px;
       border-radius: var(--radius);
       font-size: 11.5px;
-      outline: none;
       cursor: pointer;
       font-family: var(--font-sans);
+      user-select: none;
+      min-width: 140px;
+      justify-content: space-between;
     }
-    .select-dropdown:focus {
-      border-color: #000000;
+    .custom-dropdown-btn:hover {
+      border-color: var(--color-border-hover);
+    }
+
+    .dropdown-chevron {
+      color: var(--color-text-secondary);
+      transition: transform 0.15s ease;
+    }
+    .custom-dropdown.open .dropdown-chevron {
+      transform: rotate(180deg);
+    }
+
+    .custom-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      z-index: 50;
+      min-width: 200px;
+      max-height: 240px;
+      overflow-y: auto;
+      display: none;
+      padding: 4px;
+    }
+    .custom-dropdown.open .custom-dropdown-menu {
+      display: block;
+    }
+
+    .dropdown-item {
+      padding: 6px 10px;
+      font-size: 11.5px;
+      color: var(--color-text-secondary);
+      border-radius: var(--radius);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: background 0.1s ease;
+    }
+    .dropdown-item:hover {
+      background: var(--color-bg-secondary);
+      color: var(--color-text);
+    }
+    .dropdown-item.selected {
+      background: var(--color-bg-secondary);
+      color: var(--color-text);
+      font-weight: 600;
     }
 
     .right-controls {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
     .view-toggle {
@@ -400,31 +570,35 @@
       background: transparent;
       border: none;
       color: var(--color-text-secondary);
-      padding: 5px 12px;
+      padding: 4px 10px;
       border-radius: var(--radius);
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 500;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       transition: all 0.1s ease;
       font-family: var(--font-sans);
     }
-    .view-btn:hover { color: #000000; }
+    .view-btn:hover { color: var(--color-text); }
     .view-btn.active {
-      background: #000000;
-      color: #ffffff;
-      font-weight: 500;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-weight: 600;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-subtle);
     }
 
     /* Content Card Container */
     .content-card {
-      background: var(--color-surface);
+      background: var(--color-surface-card);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
       overflow: hidden;
       box-shadow: var(--shadow-subtle);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
 
     /* Technical Minimal Table */
@@ -442,8 +616,8 @@
     thead th {
       background: var(--color-bg-secondary);
       border-bottom: 1px solid var(--color-border);
-      padding: 10px 16px;
-      font-size: 11px;
+      padding: 9px 14px;
+      font-size: 10.5px;
       font-weight: 600;
       color: var(--color-text-secondary);
       text-transform: uppercase;
@@ -452,24 +626,18 @@
       user-select: none;
     }
 
-    thead th.sortable {
-      cursor: pointer;
-    }
-    thead th.sortable:hover {
-      color: #000000;
-    }
+    thead th.sortable { cursor: pointer; }
+    thead th.sortable:hover { color: var(--color-text); }
 
     tbody tr {
       border-bottom: 1px solid var(--color-border);
       transition: background 0.1s ease;
     }
     tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover {
-      background: var(--color-bg-secondary);
-    }
+    tbody tr:hover { background: var(--color-surface-hover); }
 
     td {
-      padding: 10px 16px;
+      padding: 9px 14px;
       font-size: 12px;
       vertical-align: middle;
       white-space: nowrap;
@@ -480,109 +648,121 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 2px 7px;
+      padding: 2px 6px;
       border-radius: var(--radius-sm);
-      font-size: 11px;
-      font-weight: 500;
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      color: var(--color-text);
+      font-size: 10.5px;
+      font-weight: 600;
+      border: 1px solid transparent;
     }
     .badge-status.added {
-      border-color: #000000;
-      font-weight: 600;
+      background: var(--color-added-bg);
+      color: var(--color-added);
+      border-color: var(--color-added-border);
     }
     .badge-status.updated {
-      border-color: #888888;
-      color: #333333;
+      background: var(--color-updated-bg);
+      color: var(--color-updated);
+      border-color: var(--color-updated-border);
     }
     .badge-status.removed {
-      border-color: #e5e5e5;
-      color: #777777;
-      text-decoration: line-through;
+      background: var(--color-removed-bg);
+      color: var(--color-removed);
+      border-color: var(--color-removed-border);
     }
 
     .package-cell {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
     .package-name {
       font-family: var(--font-mono);
       font-weight: 600;
-      color: #000000;
+      color: var(--color-text);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 2px 4px;
-      border-radius: var(--radius);
+      padding: 1px 4px;
+      border-radius: var(--radius-sm);
     }
     .package-name:hover {
       text-decoration: underline;
-      background: #f0f0f0;
+      background: var(--color-bg-secondary);
+      color: var(--color-accent);
     }
 
     .diff-pill {
       font-family: var(--font-mono);
-      font-size: 11.5px;
+      font-size: 11px;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      background: var(--color-bg-secondary);
-      padding: 2px 8px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--color-border);
-    }
-
-    .diff-from { color: var(--color-text-secondary); }
-    .diff-to { color: #000000; font-weight: 600; }
-    .diff-arrow { color: var(--color-text-muted); }
-
-    .dep-type-tag {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      padding: 1px 5px;
-      border-radius: var(--radius);
-      background: var(--color-bg-secondary);
-      color: var(--color-text-secondary);
-      border: 1px solid var(--color-border);
-    }
-    .dep-type-tag.direct {
-      background: #000000;
-      color: #ffffff;
-      border-color: #000000;
-    }
-
-    .manifest-badge {
-      display: inline-block;
-      max-width: 180px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-size: 11px;
-      color: var(--color-text-secondary);
-      font-family: var(--font-mono);
+      gap: 5px;
       background: var(--color-bg-secondary);
       padding: 2px 6px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--color-border);
     }
 
-    .author-cell {
-      display: flex;
+    .diff-from { color: var(--color-removed); }
+    .diff-to { color: var(--color-added); font-weight: 600; }
+    .diff-arrow { color: var(--color-text-muted); }
+
+    .dep-type-tag {
+      font-size: 9.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 1px 5px;
+      border-radius: var(--radius-sm);
+      background: var(--color-bg-secondary);
+      color: var(--color-text-secondary);
+      border: 1px solid var(--color-border);
+    }
+    .dep-type-tag.direct {
+      background: var(--color-accent-glow);
+      color: var(--color-accent);
+      border-color: rgba(99, 102, 241, 0.3);
+    }
+
+    .manifest-badge {
+      display: inline-block;
+      max-width: 170px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 10.5px;
+      color: var(--color-text-secondary);
+      font-family: var(--font-mono);
+      background: var(--color-bg-secondary);
+      padding: 1px 6px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--color-border);
+    }
+
+    /* Author Link Redirect */
+    .author-link {
+      display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
+      text-decoration: none;
+      color: var(--color-text);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      padding: 1px 4px;
+      transition: all 0.1s ease;
+    }
+    .author-link:hover {
+      background: var(--color-bg-secondary);
+      text-decoration: underline;
     }
 
     .author-avatar {
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       border-radius: var(--radius-sm);
-      background: #000000;
+      background: linear-gradient(135deg, #475569, #334155);
       color: #ffffff;
-      font-size: 10px;
+      font-size: 9.5px;
       font-weight: 600;
       display: flex;
       align-items: center;
@@ -592,48 +772,48 @@
 
     .commit-tag {
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 10.5px;
       color: var(--color-text);
       background: var(--color-bg-secondary);
       border: 1px solid var(--color-border);
-      padding: 2px 6px;
+      padding: 2px 5px;
       border-radius: var(--radius-sm);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 3px;
       transition: all 0.1s ease;
     }
     .commit-tag:hover {
-      border-color: #000000;
-      background: #ffffff;
+      border-color: var(--color-border-hover);
+      background: var(--color-surface);
     }
 
     /* Calendar Grid View */
     .calendar-container {
-      padding: 24px;
+      padding: 20px;
       display: none;
     }
     .calendar-container.active { display: block; }
 
     .calendar-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
     }
 
     .month-card {
       background: var(--color-surface);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
-      padding: 16px;
+      padding: 14px;
     }
 
     .month-header {
       font-weight: 600;
-      font-size: 13px;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
+      font-size: 12.5px;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
       border-bottom: 1px solid var(--color-border);
       color: var(--color-text);
       display: flex;
@@ -645,16 +825,16 @@
       display: grid;
       grid-template-columns: repeat(7, 1fr);
       text-align: center;
-      font-size: 10.5px;
+      font-size: 10px;
       color: var(--color-text-secondary);
       font-weight: 600;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .days-grid {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
+      gap: 3px;
     }
 
     .day-cell {
@@ -662,7 +842,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      font-size: 10.5px;
       border-radius: var(--radius-sm);
       color: var(--color-text-secondary);
       position: relative;
@@ -675,19 +855,19 @@
       cursor: pointer;
       font-weight: 600;
     }
-    .day-cell.heat-1 { background: #f0f0f0; border-color: #e5e5e5; color: #333333; }
-    .day-cell.heat-2 { background: #dcdcdc; border-color: #cccccc; color: #111111; }
-    .day-cell.heat-3 { background: #888888; border-color: #777777; color: #ffffff; }
-    .day-cell.heat-4 { background: #000000; border-color: #000000; color: #ffffff; }
+    .day-cell.heat-1 { background: rgba(99, 102, 241, 0.15); border-color: rgba(99, 102, 241, 0.25); color: var(--color-text); }
+    .day-cell.heat-2 { background: rgba(99, 102, 241, 0.35); border-color: rgba(99, 102, 241, 0.45); color: #fff; }
+    .day-cell.heat-3 { background: rgba(99, 102, 241, 0.65); border-color: rgba(99, 102, 241, 0.75); color: #fff; }
+    .day-cell.heat-4 { background: #6366f1; border-color: #818cf8; color: #fff; box-shadow: 0 0 8px rgba(99, 102, 241, 0.4); }
     
     .day-cell.active-day:hover {
-      outline: 1px solid #000000;
+      outline: 1.5px solid var(--color-border-dark);
       z-index: 10;
     }
 
     /* Analytics / Churn View */
     .analytics-container {
-      padding: 24px;
+      padding: 20px;
       display: none;
     }
     .analytics-container.active { display: block; }
@@ -695,7 +875,7 @@
     .analytics-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
+      gap: 16px;
     }
     @media (max-width: 900px) {
       .analytics-grid { grid-template-columns: 1fr; }
@@ -705,14 +885,14 @@
       background: var(--color-surface);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
-      padding: 18px;
+      padding: 16px;
     }
 
     .analytics-title {
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 600;
       color: var(--color-text);
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -724,29 +904,31 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 0;
+      padding: 7px 0;
       border-bottom: 1px solid var(--color-border);
     }
     .churn-row:last-child { border-bottom: none; }
 
     .churn-bar-wrapper {
       flex: 1;
-      margin: 0 16px;
-      height: 4px;
+      margin: 0 14px;
+      height: 5px;
       background: var(--color-bg-secondary);
       border-radius: var(--radius);
       overflow: hidden;
     }
     .churn-bar {
       height: 100%;
-      background: #000000;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
     }
 
-    /* Slide-out Archaeology Drawer */
+    /* Slide-out Archaeology Drawer (Fixed, Clean, and Neat Header) */
     .drawer-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.35);
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
       display: none;
       justify-content: flex-end;
       z-index: 1000;
@@ -762,9 +944,9 @@
       background: var(--color-surface);
       border-left: 1px solid var(--color-border);
       width: 580px;
-      max-width: 90vw;
+      max-width: 92vw;
       height: 100%;
-      padding: 28px 24px;
+      padding: 24px 20px;
       overflow-y: auto;
       box-shadow: var(--shadow-drawer);
       transform: translateX(100%);
@@ -776,54 +958,32 @@
       transform: translateX(0);
     }
 
+    /* Neat Clean Drawer Header */
     .drawer-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 20px;
+      margin-bottom: 18px;
       padding-bottom: 16px;
       border-bottom: 1px solid var(--color-border);
     }
 
-    .drawer-pkg-title {
-      font-size: 18px;
-      font-weight: 600;
-      font-family: var(--font-mono);
-      color: #000000;
-      margin-bottom: 8px;
+    .drawer-top-row {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      margin-bottom: 12px;
     }
 
-    .drawer-actions {
+    .drawer-pkg-title {
+      font-size: 18px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--color-text);
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-top: 10px;
     }
 
-    .btn-action-small {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 4px 8px;
-      border-radius: var(--radius);
-      font-size: 11px;
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-text);
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.1s ease;
-    }
-    .btn-action-small:hover {
-      border-color: #000000;
+    .drawer-close-btn {
       background: var(--color-bg-secondary);
-    }
-
-    .close-btn {
-      background: var(--color-surface);
       border: 1px solid var(--color-border);
       color: var(--color-text-secondary);
       width: 28px;
@@ -835,9 +995,42 @@
       cursor: pointer;
       transition: all 0.1s ease;
     }
-    .close-btn:hover {
-      border-color: #000000;
-      color: #000000;
+    .drawer-close-btn:hover {
+      border-color: var(--color-border-hover);
+      color: var(--color-text);
+    }
+
+    .drawer-meta-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .drawer-actions-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-action-small {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      background: var(--color-bg-secondary);
+      border: 1px solid var(--color-border);
+      color: var(--color-text);
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.1s ease;
+    }
+    .btn-action-small:hover {
+      background: var(--color-surface-hover);
+      border-color: var(--color-border-hover);
     }
 
     /* Vertical Timeline Tree in Drawer */
@@ -859,7 +1052,7 @@
 
     .timeline-node {
       position: relative;
-      margin-bottom: 20px;
+      margin-bottom: 18px;
     }
 
     .node-icon {
@@ -869,39 +1062,39 @@
       width: 15px;
       height: 15px;
       border-radius: 50%;
-      background: #ffffff;
-      border: 1.5px solid #000000;
+      background: var(--color-surface);
+      border: 1.5px solid var(--color-border);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 9px;
     }
-    .timeline-node.added .node-icon { background: #000000; color: #ffffff; }
-    .timeline-node.updated .node-icon { background: #888888; border-color: #888888; color: #ffffff; }
-    .timeline-node.removed .node-icon { background: #ffffff; border-color: #aaaaaa; color: #aaaaaa; }
+    .timeline-node.added .node-icon { background: var(--color-added); border-color: var(--color-added); color: #ffffff; }
+    .timeline-node.updated .node-icon { background: var(--color-updated); border-color: var(--color-updated); color: #ffffff; }
+    .timeline-node.removed .node-icon { background: var(--color-removed); border-color: var(--color-removed); color: #ffffff; }
 
     .node-card {
       background: var(--color-bg-secondary);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
-      padding: 12px 14px;
+      padding: 10px 12px;
     }
 
     .node-meta {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
       font-size: 11px;
       color: var(--color-text-secondary);
     }
 
     .node-version {
-      font-size: 12.5px;
+      font-size: 12px;
       font-weight: 600;
       font-family: var(--font-mono);
       margin-bottom: 4px;
-      color: #000000;
+      color: var(--color-text);
     }
 
     .node-msg {
@@ -910,24 +1103,25 @@
       line-height: 1.4;
     }
 
-    /* Toast notification */
+    /* Toast Notification */
     .toast {
       position: fixed;
       bottom: 20px;
       right: 20px;
-      background: #000000;
-      color: #ffffff;
-      padding: 9px 16px;
-      border-radius: var(--radius);
-      font-size: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      color: var(--color-text);
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 11.5px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
       transform: translateY(60px);
       opacity: 0;
       transition: all 0.2s ease;
       z-index: 2000;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
     }
     .toast.show {
       transform: translateY(0);
@@ -936,115 +1130,137 @@
 
     /* Empty state */
     .empty-state {
-      padding: 48px 20px;
+      padding: 40px 20px;
       text-align: center;
       color: var(--color-text-secondary);
     }
     .empty-icon {
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       color: var(--color-text-muted);
     }
   </style>
 </head>
 <body>
 
-  <div class="app-container">
-    
-    <!-- Top Header -->
-    <header>
-      <div class="brand-section">
-        <div class="brand-logo">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="16 18 22 12 16 6"></polyline>
-            <polyline points="8 6 2 12 8 18"></polyline>
-          </svg>
-        </div>
-        <div class="brand-info">
-          <div class="brand-title">
-            dep-blame
-            <span style="font-size: 11px; font-weight: normal; color: var(--color-text-muted);">v0.1.0</span>
-          </div>
-          <div class="brand-tagline">git blame, but for your dependencies</div>
-        </div>
-        
-        <div class="meta-pills">
-          <span class="pill" id="repo-pill" title="Target Repository">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-            <span id="repo-name">repository</span>
-          </span>
-          <span class="pill" id="pm-pill">npm</span>
-          <span class="pill pill-live">
-            <span class="pulse-dot"></span>
-            <span id="index-time">Live Index</span>
-          </span>
-        </div>
+  <!-- Top Sticky Header -->
+  <header>
+    <div class="brand-section">
+      <div class="brand-logo">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>
       </div>
-
-      <div class="header-actions">
-        <button class="btn-secondary" id="export-json-btn" title="Download dependency events as JSON">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          Export JSON
-        </button>
-        <button class="btn-secondary" id="refresh-btn" title="Rescan git history">
-          <svg id="sync-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-          Sync History
-        </button>
-      </div>
-    </header>
-
-    <!-- KPI Metric Cards Grid -->
-    <div class="kpi-grid">
-      <div class="kpi-card" onclick="setFilter('all')">
-        <div class="kpi-header">
-          <span class="kpi-title">Total Modifications</span>
-          <div class="kpi-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-          </div>
+      <div class="brand-info">
+        <div class="brand-title">
+          dep-blame
+          <span class="brand-version">v0.1.0</span>
         </div>
-        <div class="kpi-value" id="kpi-total">0</div>
-        <div class="kpi-subtitle" id="kpi-distinct">Across 0 distinct packages</div>
+        <div class="brand-tagline">git blame, but for dependencies</div>
       </div>
+      
+      <div class="meta-pills">
+        <span class="pill" id="repo-pill" title="Repository">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+          <span id="repo-name">repository</span>
+        </span>
 
-      <div class="kpi-card" onclick="setFilter('added')">
-        <div class="kpi-header">
-          <span class="kpi-title">Packages Added</span>
-          <div class="kpi-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          </div>
-        </div>
-        <div class="kpi-value" id="kpi-added">0</div>
-        <div class="kpi-subtitle">New dependencies introduced</div>
-      </div>
+        <!-- Branch Name Pill -->
+        <span class="pill pill-branch" id="branch-pill" title="Active Git Branch">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+          <span id="branch-name">main</span>
+        </span>
 
-      <div class="kpi-card" onclick="setFilter('updated')">
-        <div class="kpi-header">
-          <span class="kpi-title">Version Upgrades</span>
-          <div class="kpi-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
-          </div>
-        </div>
-        <div class="kpi-value" id="kpi-updated">0</div>
-        <div class="kpi-subtitle">Upgrades & bumps tracked</div>
-      </div>
-
-      <div class="kpi-card" onclick="setFilter('removed')">
-        <div class="kpi-header">
-          <span class="kpi-title">Packages Removed</span>
-          <div class="kpi-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-          </div>
-        </div>
-        <div class="kpi-value" id="kpi-removed">0</div>
-        <div class="kpi-subtitle">Deprecations & cleanups</div>
+        <span class="pill" id="pm-pill">npm</span>
+        <span class="pill pill-live">
+          <span class="pulse-dot"></span>
+          <span id="index-time">Live Index</span>
+        </span>
       </div>
     </div>
 
-    <!-- Controls Panel (Search, Filter Tabs, Workspace Dropdown, View Switcher) -->
+    <div class="header-actions">
+      <!-- Dark / Light Theme Toggle -->
+      <button class="btn-action theme-toggle-btn" id="theme-toggle" title="Toggle Theme (Dark / Light)">
+        <svg id="theme-icon-dark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+        <svg id="theme-icon-light" style="display: none;" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+
+      <button class="btn-action" id="export-json-btn" title="Export events JSON">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Export
+      </button>
+      <button class="btn-action" id="refresh-btn" title="Rescan git repository">
+        <svg id="sync-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        Sync
+      </button>
+    </div>
+  </header>
+
+  <!-- Full Width Main Workspace -->
+  <div class="app-container">
+
+    <!-- Compact Stat Cards Ribbon -->
+    <div class="kpi-grid">
+      <div class="kpi-card" onclick="setFilter('all')">
+        <div class="kpi-content">
+          <span class="kpi-title">Total Modifications</span>
+          <div class="kpi-value-row">
+            <span class="kpi-value" id="kpi-total">0</span>
+            <span class="kpi-subtitle" id="kpi-distinct">Across 0 distinct packages</span>
+          </div>
+        </div>
+        <div class="kpi-badge-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </div>
+      </div>
+
+      <div class="kpi-card added" onclick="setFilter('added')">
+        <div class="kpi-content">
+          <span class="kpi-title">Packages Added</span>
+          <div class="kpi-value-row">
+            <span class="kpi-value" id="kpi-added">0</span>
+            <span class="kpi-subtitle">New introduced</span>
+          </div>
+        </div>
+        <div class="kpi-badge-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </div>
+      </div>
+
+      <div class="kpi-card updated" onclick="setFilter('updated')">
+        <div class="kpi-content">
+          <span class="kpi-title">Version Upgrades</span>
+          <div class="kpi-value-row">
+            <span class="kpi-value" id="kpi-updated">0</span>
+            <span class="kpi-subtitle">Bumps tracked</span>
+          </div>
+        </div>
+        <div class="kpi-badge-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+        </div>
+      </div>
+
+      <div class="kpi-card removed" onclick="setFilter('removed')">
+        <div class="kpi-content">
+          <span class="kpi-title">Packages Removed</span>
+          <div class="kpi-value-row">
+            <span class="kpi-value" id="kpi-removed">0</span>
+            <span class="kpi-subtitle">Deprecations</span>
+          </div>
+        </div>
+        <div class="kpi-badge-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls Panel (Search, Filter Tabs, Custom Dropdown, View Switcher) -->
     <div class="controls-panel">
       <div class="left-controls">
         <div class="search-wrapper">
-          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          <input type="text" class="search-input" id="search-input" placeholder="Search package name, author, SHA, commit..." />
+          <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" class="search-input" id="search-input" placeholder="Search dependency, author, SHA, commit..." />
           <button class="search-clear" id="search-clear" title="Clear search">✕</button>
           <span class="shortcut-badge">/</span>
         </div>
@@ -1056,9 +1272,16 @@
           <button class="filter-btn" data-filter="removed">- Removed <span class="filter-count" id="count-removed">0</span></button>
         </div>
 
-        <select class="select-dropdown" id="manifest-filter" title="Filter by Manifest / Workspace">
-          <option value="all">All Manifests</option>
-        </select>
+        <!-- Custom Styled Dropdown (No native select!) -->
+        <div class="custom-dropdown" id="manifest-dropdown">
+          <button type="button" class="custom-dropdown-btn" id="manifest-dropdown-btn">
+            <span id="manifest-selected-label">All Manifests</span>
+            <svg class="dropdown-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="custom-dropdown-menu" id="manifest-dropdown-menu">
+            <div class="dropdown-item selected" data-value="all">All Manifests</div>
+          </div>
+        </div>
       </div>
 
       <div class="right-controls">
@@ -1101,7 +1324,7 @@
             <tr>
               <td colspan="8" class="empty-state">
                 <svg class="empty-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                <div>Scanning repository git history...</div>
+                <div>Scanning repository history...</div>
               </td>
             </tr>
           </tbody>
@@ -1118,7 +1341,7 @@
         <div class="analytics-grid">
           <div class="analytics-section">
             <div class="analytics-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
               Top Modified Dependencies (Churn)
             </div>
             <div id="top-packages-list"></div>
@@ -1126,7 +1349,7 @@
 
           <div class="analytics-section">
             <div class="analytics-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
               Top Authors / Engineers
             </div>
             <div id="top-authors-list"></div>
@@ -1138,36 +1361,38 @@
 
   </div>
 
-  <!-- Slide-out Archaeology Drawer -->
+  <!-- Slide-out Archaeology Drawer (Fixed, Clean, and Neat Header) -->
   <div class="drawer-overlay" id="drawer-overlay">
     <div class="drawer">
       <div class="drawer-header">
-        <div>
+        <div class="drawer-top-row">
           <div class="drawer-pkg-title">
             <span id="drawer-title">package-name</span>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="badge-status added" id="drawer-status">Active</span>
-            <span style="font-size: 11px; color: var(--color-text-secondary);" id="drawer-count">0 historical modifications</span>
-          </div>
-          <div class="drawer-actions">
-            <button class="btn-action-small" id="drawer-copy-md" title="Copy markdown changelog">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              Copy Markdown
-            </button>
-            <a class="btn-action-small" id="drawer-npm-link" target="_blank" rel="noopener noreferrer">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-              npm package
-            </a>
-          </div>
+          <button class="drawer-close-btn" id="drawer-close" title="Close (Esc)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
         </div>
-        <button class="close-btn" id="drawer-close" title="Close (Esc)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
+
+        <div class="drawer-meta-bar">
+          <span class="badge-status added" id="drawer-status">Active</span>
+          <span class="pill" id="drawer-count">0 modifications</span>
+        </div>
+
+        <div class="drawer-actions-bar">
+          <button class="btn-action-small" id="drawer-copy-md" title="Copy markdown summary">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            Copy Markdown
+          </button>
+          <a class="btn-action-small" id="drawer-npm-link" target="_blank" rel="noopener noreferrer">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            npm package
+          </a>
+        </div>
       </div>
 
-      <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin-bottom: 12px;">
-        Chronological Git Archaeology Timeline:
+      <div style="font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin-bottom: 8px;">
+        Chronological Archaeology Timeline:
       </div>
 
       <div class="tree-timeline" id="drawer-timeline"></div>
@@ -1189,6 +1414,42 @@
 
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+    // Theme Management (Dark Theme Default)
+    function initTheme() {
+      const savedTheme = localStorage.getItem('dep-blame-theme') || 'dark';
+      setTheme(savedTheme);
+
+      document.getElementById('theme-toggle').addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') || 'dark';
+        const next = current === 'dark' ? 'light' : 'dark';
+        setTheme(next);
+      });
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('dep-blame-theme', theme);
+      const darkIcon = document.getElementById('theme-icon-dark');
+      const lightIcon = document.getElementById('theme-icon-light');
+      if (theme === 'dark') {
+        darkIcon.style.display = 'block';
+        lightIcon.style.display = 'none';
+      } else {
+        darkIcon.style.display = 'none';
+        lightIcon.style.display = 'block';
+      }
+    }
+
+    // Author profile redirection link
+    function getAuthorProfileUrl(author) {
+      if (!author || author === 'Unknown') return '#';
+      const clean = author.trim().replace(/^@/, '');
+      if (/^[a-zA-Z0-9_\-]+$/.test(clean)) {
+        return `https://github.com/${encodeURIComponent(clean)}`;
+      }
+      return `https://github.com/search?q=${encodeURIComponent(clean)}&type=users`;
+    }
+
     async function loadData() {
       const syncIcon = document.getElementById('sync-icon');
       if (syncIcon) syncIcon.style.animation = 'spin 1s linear infinite';
@@ -1199,15 +1460,16 @@
         allEvents = data.events || [];
 
         document.getElementById('repo-name').textContent = data.repository || 'repository';
+        document.getElementById('branch-name').textContent = data.branch || 'main';
         document.getElementById('pm-pill').textContent = data.packageManager || 'npm';
         document.getElementById('index-time').textContent = 'Indexed ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        populateManifestOptions();
+        populateManifestDropdown();
         updateStats();
         renderView();
       } catch (err) {
         document.getElementById('events-tbody').innerHTML = `
-          <tr><td colspan="8" class="empty-state" style="color: #000000">
+          <tr><td colspan="8" class="empty-state" style="color: var(--color-removed)">
             Failed to fetch dependency events from /api/events.
           </td></tr>
         `;
@@ -1216,17 +1478,40 @@
       }
     }
 
-    function populateManifestOptions() {
+    // Custom Dropdown Populator (No native select)
+    function populateManifestDropdown() {
       const manifests = Array.from(new Set(allEvents.map(e => e.manifest).filter(Boolean))).sort();
-      const select = document.getElementById('manifest-filter');
-      select.innerHTML = '<option value="all">All Manifests (' + manifests.length + ')</option>';
+      const menu = document.getElementById('manifest-dropdown-menu');
+      
+      let html = `<div class="dropdown-item ${currentManifest === 'all' ? 'selected' : ''}" data-value="all">All Manifests (${manifests.length})</div>`;
       for (const m of manifests) {
-        const opt = document.createElement('option');
-        opt.value = m;
-        opt.textContent = m;
-        select.appendChild(opt);
+        html += `<div class="dropdown-item ${currentManifest === m ? 'selected' : ''}" data-value="${escapeHtml(m)}">${escapeHtml(m)}</div>`;
       }
+      menu.innerHTML = html;
+
+      menu.querySelectorAll('.dropdown-item').forEach(item => {
+        item.addEventListener('click', () => {
+          currentManifest = item.dataset.value;
+          document.getElementById('manifest-selected-label').textContent = currentManifest === 'all' ? 'All Manifests' : currentManifest;
+          menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
+          item.classList.add('selected');
+          document.getElementById('manifest-dropdown').classList.remove('open');
+          renderView();
+        });
+      });
     }
+
+    // Dropdown toggle & click outside
+    const manifestDropdown = document.getElementById('manifest-dropdown');
+    document.getElementById('manifest-dropdown-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      manifestDropdown.classList.toggle('open');
+    });
+    window.addEventListener('click', (e) => {
+      if (!manifestDropdown.contains(e.target)) {
+        manifestDropdown.classList.remove('open');
+      }
+    });
 
     function updateStats() {
       const added = allEvents.filter(e => e.type === 'added').length;
@@ -1314,7 +1599,7 @@
           <tr><td colspan="8" class="empty-state">
             <svg class="empty-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             <div>No events matching your filter or search query.</div>
-            <button class="btn-secondary" style="margin-top: 10px;" onclick="resetFilters()">Reset Filters</button>
+            <button class="btn-action" style="margin-top: 10px;" onclick="resetFilters()">Reset Filters</button>
           </td></tr>
         `;
         return;
@@ -1351,9 +1636,11 @@
           ? `<span class="dep-type-tag direct">direct</span>` 
           : `<span class="dep-type-tag">dep</span>`;
 
+        const authorProfile = getAuthorProfileUrl(ev.author);
+
         return `
           <tr>
-            <td style="color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11.5px;">${dateStr}</td>
+            <td style="color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11px;">${dateStr}</td>
             <td><span class="badge-status ${badgeClass}">${badgeLabel}</span></td>
             <td>
               <div class="package-cell">
@@ -1366,10 +1653,10 @@
             <td>${typeBadge}</td>
             <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
             <td>
-              <div class="author-cell">
+              <a href="${authorProfile}" target="_blank" rel="noopener noreferrer" class="author-link" title="View profile on GitHub">
                 <div class="author-avatar">${authorInitial}</div>
-                <span style="color: var(--color-text-secondary); font-size: 12px;">${escapeHtml(ev.author || '')}</span>
-              </div>
+                <span class="author-name">${escapeHtml(ev.author || '')}</span>
+              </a>
             </td>
             <td>
               <span class="commit-tag" onclick="copyText('${ev.commit}', 'Commit SHA copied!')" title="${escapeHtml(ev.message || '')} (click to copy)">
@@ -1385,7 +1672,6 @@
       const grid = document.getElementById('calendar-grid');
       const filtered = getFilteredEvents();
 
-      // Group by year-month
       const monthMap = new Map();
       for (const ev of filtered) {
         if (!ev.date) continue;
@@ -1431,7 +1717,7 @@
             else if (evCount > 1) heatClass = 'heat-2';
             
             const dayStr = `${ym}-${String(d).padStart(2, '0')}`;
-            cellsHtml += `<div class="day-cell active-day ${heatClass}" onclick="filterByDay('${dayStr}')" title="${d}th: ${evCount} change(s) (click to filter)">${d}</div>`;
+            cellsHtml += `<div class="day-cell active-day ${heatClass}" onclick="filterByDay('${dayStr}')" title="${d}th: ${evCount} change(s)">${d}</div>`;
           } else {
             cellsHtml += `<div class="day-cell">${d}</div>`;
           }
@@ -1441,7 +1727,7 @@
           <div class="month-card">
             <div class="month-header">
               <span>${MONTHS[month]} ${year}</span>
-              <span style="font-size: 11px; color: var(--color-text-secondary); font-weight: normal">${monthEvents.length} event(s)</span>
+              <span style="font-size: 10.5px; color: var(--color-text-secondary); font-weight: normal">${monthEvents.length} event(s)</span>
             </div>
             <div class="weekdays-row">
               <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
@@ -1457,7 +1743,6 @@
     function renderAnalytics() {
       const filtered = getFilteredEvents();
       
-      // Top packages
       const pkgCounts = new Map();
       for (const ev of filtered) {
         pkgCounts.set(ev.package, (pkgCounts.get(ev.package) || 0) + 1);
@@ -1474,12 +1759,11 @@
             <div class="churn-bar-wrapper">
               <div class="churn-bar" style="width: ${pct}%"></div>
             </div>
-            <span style="font-size: 11.5px; font-weight: 600; font-family: var(--font-mono);">${count} changes</span>
+            <span style="font-size: 11px; font-weight: 600; font-family: var(--font-mono); color: var(--color-text);">${count} changes</span>
           </div>
         `;
       }).join('') || '<div style="color: var(--color-text-secondary)">No data</div>';
 
-      // Top authors
       const authorCounts = new Map();
       for (const ev of filtered) {
         const a = ev.author || 'Unknown';
@@ -1491,13 +1775,14 @@
       const authorContainer = document.getElementById('top-authors-list');
       authorContainer.innerHTML = sortedAuthors.map(([author, count]) => {
         const pct = Math.round((count / maxAuthorCount) * 100);
+        const profile = getAuthorProfileUrl(author);
         return `
           <div class="churn-row">
-            <span style="font-size: 12px; color: var(--color-text);">${escapeHtml(author)}</span>
+            <a href="${profile}" target="_blank" rel="noopener noreferrer" class="author-link" style="padding: 0;">${escapeHtml(author)}</a>
             <div class="churn-bar-wrapper">
-              <div class="churn-bar" style="width: ${pct}%; background: #666666;"></div>
+              <div class="churn-bar" style="width: ${pct}%; background: linear-gradient(90deg, #10b981, #06b6d4);"></div>
             </div>
-            <span style="font-size: 11.5px; font-weight: 600; font-family: var(--font-mono);">${count} commits</span>
+            <span style="font-size: 11px; font-weight: 600; font-family: var(--font-mono); color: var(--color-text);">${count} commits</span>
           </div>
         `;
       }).join('') || '<div style="color: var(--color-text-secondary)">No data</div>';
@@ -1516,20 +1801,21 @@
       currentManifest = 'all';
       document.getElementById('search-input').value = '';
       document.getElementById('search-clear').style.display = 'none';
-      document.getElementById('manifest-filter').value = 'all';
+      document.getElementById('manifest-selected-label').textContent = 'All Manifests';
       document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.filter === 'all');
       });
       renderView();
     }
 
+    // Archaeology Drawer
     function openArchaeology(pkgName) {
       selectedPkgName = pkgName;
       const pkgEvents = allEvents.filter(e => e.package === pkgName);
       if (pkgEvents.length === 0) return;
 
       document.getElementById('drawer-title').textContent = pkgName;
-      document.getElementById('drawer-count').textContent = `${pkgEvents.length} historical modification(s)`;
+      document.getElementById('drawer-count').textContent = `${pkgEvents.length} total changes`;
       document.getElementById('drawer-npm-link').href = `https://www.npmjs.com/package/${encodeURIComponent(pkgName)}`;
 
       const latest = pkgEvents[pkgEvents.length - 1];
@@ -1551,9 +1837,11 @@
         else actionSymbol = '↑';
 
         let actionText = '';
-        if (ev.type === 'added') actionText = `Added version ${escapeHtml(ev.to || '')}`;
+        if (ev.type === 'added') actionText = `Added version <span style="color: var(--color-added)">${escapeHtml(ev.to || '')}</span>`;
         else if (ev.type === 'removed') actionText = `Removed dependency (was ${escapeHtml(ev.from || '')})`;
-        else actionText = `Upgraded ${escapeHtml(ev.from || '')} &rarr; ${escapeHtml(ev.to || '')}`;
+        else actionText = `Upgraded ${escapeHtml(ev.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ev.to || '')}</span>`;
+
+        const authorProfile = getAuthorProfileUrl(ev.author);
 
         return `
           <div class="timeline-node ${ev.type}">
@@ -1565,8 +1853,8 @@
               </div>
               <div class="node-version">${actionText}</div>
               <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
-              <div style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px;">
-                by ${escapeHtml(ev.author || 'Unknown')} in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span>
+              <div style="font-size: 10.5px; color: var(--color-text-secondary); margin-top: 5px;">
+                by <a href="${authorProfile}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">${escapeHtml(ev.author || 'Unknown')}</a> in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span>
               </div>
             </div>
           </div>
@@ -1646,12 +1934,6 @@
       });
     });
 
-    // Manifest selector
-    document.getElementById('manifest-filter').addEventListener('change', (e) => {
-      currentManifest = e.target.value;
-      renderView();
-    });
-
     // Live search
     const searchInput = document.getElementById('search-input');
     const searchClear = document.getElementById('search-clear');
@@ -1718,7 +2000,7 @@
       document.body.appendChild(a);
       a.click();
       a.remove();
-      showToast('Exported dep-blame events as JSON');
+      showToast('Exported events as JSON');
     });
 
     // Sync button
@@ -1727,6 +2009,7 @@
       showToast('Synced with git repository!');
     });
 
+    initTheme();
     loadData();
   </script>
 </body>

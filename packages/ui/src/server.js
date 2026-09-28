@@ -74,6 +74,7 @@ export function startServer(options = {}) {
         const json = JSON.stringify({
           schemaVersion: 1,
           repository: result.repository,
+          branch: result.branch || 'main',
           packageManager: result.packageManager,
           generatedAt: new Date().toISOString(),
           events: result.events

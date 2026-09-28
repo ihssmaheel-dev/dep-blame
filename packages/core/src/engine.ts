@@ -4,6 +4,7 @@ import {
   checkGit,
   getRepoRoot,
   getCurrentHead,
+  getCurrentBranch,
   isShallowRepo,
   isAncestor
 } from './git/repo.js';
@@ -120,6 +121,7 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
 
   // Step 3: Cheap HEAD detection first (sync fs, no git history walk).
   const detected = detectPackageManager(repoRoot);
+  const branch = await getCurrentBranch(repoRoot);
 
   // Step 4: Cache management — opened BEFORE expensive historic discovery
   // so warm hits (`cached_head === HEAD`) return without ever running
@@ -140,6 +142,7 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
       cache.close();
       return {
         repository: repoName,
+        branch,
         packageManager: detected.packageManager,
         events,
         isShallow,
@@ -343,6 +346,7 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
 
   return {
     repository: repoName,
+    branch,
     packageManager: detected.packageManager,
     events: allEvents,
     isShallow,

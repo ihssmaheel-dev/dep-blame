@@ -15,6 +15,7 @@ export {
   checkGit,
   getRepoRoot,
   getCurrentHead,
+  getCurrentBranch,
   getGitCommonDir,
   isShallowRepo,
   isAncestor,

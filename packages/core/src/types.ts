@@ -59,6 +59,7 @@ export interface EngineOptions {
 
 export interface EngineResult {
   repository: string;
+  branch?: string;
   packageManager: 'npm' | 'pnpm' | 'yarn' | 'bun';
   events: DependencyEvent[];
   isShallow: boolean;
