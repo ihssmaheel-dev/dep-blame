@@ -5,13 +5,27 @@ import path from 'node:path';
 import os from 'node:os';
 import { SqliteStore } from '../packages/core/dist/cache/sqlite-store.js';
 import { JsonStore } from '../packages/core/dist/cache/json-store.js';
-import { openCache } from '../packages/core/dist/cache/index.js';
+import { openCache, isSqliteAvailable } from '../packages/core/dist/cache/index.js';
 import { getRepoRoot } from '../packages/core/dist/git/repo.js';
 
-test('SqliteStore stores and queries events with metadata', () => {
+test('SqliteStore stores and queries events with metadata', async () => {
+  if (!(await isSqliteAvailable())) {
+    console.log('  (skip: node:sqlite unavailable, JSON fallback active)');
+    return;
+  }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dep-blame-sqlite-'));
   const dbPath = path.join(tmpDir, 'test.db');
-  const store = new SqliteStore(dbPath);
+  let store;
+  try {
+    store = new SqliteStore(dbPath);
+  } catch (err) {
+    if (err?.code === 'SQLITE_UNAVAILABLE') {
+      console.log('  (skip: node:sqlite unavailable at runtime)');
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      return;
+    }
+    throw err;
+  }
 
   assert.equal(store.getMeta('cached_head'), null);
   store.setMeta('cached_head', 'abc1234');
@@ -115,5 +129,31 @@ test('openCache initializes store in custom cache directory', async () => {
   assert.equal(store.getMeta('version'), '1');
   store.close();
 
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('openCache falls back to JSON when sqlite is unavailable or locked', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dep-blame-fallback-'));
+  const repoRoot = await getRepoRoot();
+  // Unwritable-looking cacheDir forces fallback path without crashing.
+  const store = await openCache({ repoRoot, cacheDir: tmpDir });
+  assert.ok(store);
+  store.setMeta('fallback_check', 'ok');
+  assert.equal(store.getMeta('fallback_check'), 'ok');
+  store.insertEvents([
+    {
+      package: 'fallback-pkg',
+      type: 'added',
+      to: '1.0.0',
+      date: '2026-01-01T00:00:00Z',
+      commit: 'abc1234',
+      author: 'Test',
+      message: 'test',
+      manifest: 'package.json',
+      depType: 'dependencies'
+    }
+  ]);
+  assert.equal(store.queryEvents({ package: 'fallback-pkg' }).length, 1);
+  store.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });

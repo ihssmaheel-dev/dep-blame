@@ -144,32 +144,60 @@ function batchReadBlobsChunk(
     });
 
     child.on('error', (err) => {
+      if (isSettled) return;
       cleanup();
       reject(err);
     });
 
     child.on('close', (code) => {
+      if (isSettled) return;
       cleanup();
       if (code !== 0 && requestIndex < requests.length) {
         reject(new Error(`git cat-file --batch exited with code ${code}: ${stderr}`));
       } else {
+        // Fill any unanswered requests (e.g. short reads) with null.
+        for (let i = requestIndex; i < requests.length; i++) {
+          const req = requests[i];
+          const key = `${req.commit}:${req.path}`;
+          if (!results.has(key)) results.set(key, null);
+        }
         resolve(results);
       }
     });
 
+    // Swallow EPIPE when git exits early; close handler surfaces the error.
+    child.stdin.on('error', () => {});
+
+    // Validate requests to avoid malformed batch lines.
+    for (const req of requests) {
+      if (!req || !/^[0-9a-f]{4,40}$/i.test(req.commit) || !req.path || req.path.includes('\n')) {
+        cleanup();
+        child.kill();
+        return reject(new Error(`Invalid blob request: ${JSON.stringify(req)}`));
+      }
+    }
+
     // Write requests to stdin with backpressure support
     let writeIdx = 0;
     function writeMore() {
-      while (writeIdx < requests.length) {
-        const req = requests[writeIdx];
-        writeIdx++;
-        const canContinue = child.stdin.write(`${req.commit}:${req.path}\n`);
-        if (!canContinue) {
-          child.stdin.once('drain', writeMore);
-          return;
+      try {
+        while (writeIdx < requests.length) {
+          const req = requests[writeIdx];
+          writeIdx++;
+          const canContinue = child.stdin.write(`${req.commit}:${req.path}\n`);
+          if (!canContinue) {
+            child.stdin.once('drain', writeMore);
+            return;
+          }
+        }
+        child.stdin.end();
+      } catch (err: any) {
+        if (!isSettled) {
+          cleanup();
+          child.kill();
+          reject(err);
         }
       }
-      child.stdin.end();
     }
 
     writeMore();

@@ -1,20 +1,68 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { DetectedPackageManager } from '../types.js';
+
+const execFileAsync = promisify(execFile);
 
 function toPosixPath(p: string): string {
   return p.split(path.sep).join('/');
 }
 
+export const KNOWN_MANIFEST_BASENAMES = [
+  'package.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb'
+];
+
+function isManifestBasename(base: string): boolean {
+  return KNOWN_MANIFEST_BASENAMES.includes(base);
+}
+
 /**
  * Resolves workspace glob patterns to find child package.json files.
+ * Supports `*` (one level) and `**` (recursive) segments.
  */
 export function resolveWorkspaceManifests(repoRoot: string, workspaceGlobs: string[]): string[] {
   const manifests = new Set<string>();
 
+  const collectRecursive = (dir: string): void => {
+    let entries: any[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const pkg = path.join(full, 'package.json');
+        if (fs.existsSync(pkg)) {
+          manifests.add(toPosixPath(path.relative(repoRoot, pkg)));
+        }
+        collectRecursive(full);
+      }
+    }
+  };
+
   for (const pattern of workspaceGlobs) {
     const cleanPattern = pattern.trim();
     if (!cleanPattern || cleanPattern.startsWith('!')) continue;
+
+    // Recursive glob e.g. "packages/**"
+    if (cleanPattern.includes('**')) {
+      const prefix = cleanPattern.split('**')[0].replace(/\/$/, '');
+      const baseDir = prefix ? path.join(repoRoot, prefix) : repoRoot;
+      if (fs.existsSync(baseDir) && fs.statSync(baseDir).isDirectory()) {
+        collectRecursive(baseDir);
+      }
+      continue;
+    }
 
     // Direct match e.g. "packages/core"
     if (!cleanPattern.includes('*')) {
@@ -25,7 +73,7 @@ export function resolveWorkspaceManifests(repoRoot: string, workspaceGlobs: stri
       continue;
     }
 
-    // Pattern like "packages/*" or "apps/*"
+    // Single-star pattern like "packages/*" or "apps/*" (also "packages/*/app")
     const prefix = cleanPattern.replace(/\/\*.*$/, '');
     const parentDir = path.join(repoRoot, prefix);
 
@@ -141,4 +189,74 @@ export function detectPackageManager(repoRoot: string): DetectedPackageManager {
     isMonorepo,
     workspaceGlobs
   };
+}
+
+/**
+ * Discovers every manifest path that ever existed in history.
+ * Fixes HEAD-only detection: a workspace deleted before HEAD would
+ * otherwise vanish from `git log -- <paths>` entirely.
+ *
+ * Capped and best-effort — never throws.
+ */
+export async function discoverHistoricManifests(
+  repoRoot: string,
+  maxPaths = 300
+): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      [
+        'log',
+        '--all',
+        '--full-history',
+        '--format=',
+        '--name-only',
+        '--diff-filter=AMR',
+        '--',
+        'package.json',
+        '**/package.json',
+        'package-lock.json',
+        '**/package-lock.json',
+        'pnpm-lock.yaml',
+        '**/pnpm-lock.yaml',
+        'yarn.lock',
+        '**/yarn.lock',
+        'bun.lock',
+        '**/bun.lock',
+        'bun.lockb',
+        '**/bun.lockb'
+      ],
+      { cwd: repoRoot, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }
+    );
+    const found = new Set<string>();
+    for (const line of stdout.split('\n')) {
+      const f = line.trim();
+      if (!f) continue;
+      const base = f.split('/').pop() || '';
+      if (!isManifestBasename(base)) continue;
+      // Skip absurd paths (submodule dumps, generated fixtures).
+      if (f.length > 256 || f.includes('node_modules/.')) continue;
+      found.add(f);
+      if (found.size >= maxPaths) break;
+    }
+    return Array.from(found).sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Merges HEAD-detected paths with historic paths.
+ * Current filesystem wins ordering; historic-only paths appended.
+ */
+export function mergeManifestPaths(current: string[], historic: string[]): string[] {
+  const seen = new Set(current);
+  const out = [...current];
+  for (const h of historic) {
+    if (!seen.has(h)) {
+      seen.add(h);
+      out.push(h);
+    }
+  }
+  return out;
 }

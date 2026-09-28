@@ -7,7 +7,7 @@ process.on('warning', (warning) => {
 });
 
 import { parseArgs } from 'node:util';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { startServer } from '../src/server.js';
 
 const options = {
@@ -24,8 +24,35 @@ try {
   process.exit(1);
 }
 
-const port = values.port ? parseInt(values.port, 10) : 4321;
+const portRaw = values.port ? String(values.port).trim() : '4321';
+const port = parseInt(portRaw, 10);
+if (!Number.isInteger(port) || port < 0 || port > 65535) {
+  console.error(`Error: invalid --port "${values.port}". Expected 0-65535.`);
+  process.exit(1);
+}
 const host = values.host || '127.0.0.1';
+if (typeof host !== 'string' || /[\s;|&$`'"\\]/.test(host) || host.length > 255) {
+  console.error(`Error: invalid --host "${values.host}".`);
+  process.exit(1);
+}
+if (host === '0.0.0.0' || host === '::') {
+  console.warn('Warning: binding to all interfaces. Prefer 127.0.0.1 unless you need LAN access.');
+}
+
+function openBrowser(url) {
+  // No shell interpolation: argv only, so --host can't inject commands.
+  try {
+    if (process.platform === 'win32') {
+      execFile('cmd', ['/c', 'start', '', url], { windowsHide: true }, () => {});
+    } else if (process.platform === 'darwin') {
+      execFile('open', [url], { windowsHide: true }, () => {});
+    } else {
+      execFile('xdg-open', [url], { windowsHide: true }, () => {});
+    }
+  } catch {
+    // Browser launch is best-effort.
+  }
+}
 
 async function main() {
   try {
@@ -34,9 +61,7 @@ async function main() {
     console.log(`  Press Ctrl+C to stop the server.\n`);
 
     if (!values['no-open']) {
-      // Cross-platform open browser
-      const startCmd = process.platform === 'win32' ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
-      exec(`${startCmd} ${url}`, { windowsHide: true }, () => {});
+      openBrowser(url);
     }
   } catch (err) {
     console.error(`Failed to start UI server: ${err.message}`);

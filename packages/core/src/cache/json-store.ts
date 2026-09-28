@@ -1,10 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import type { DependencyEvent, FilterOptions, StoreInterface } from '../types.js';
+
+export const JSON_CACHE_SCHEMA_VERSION = '2';
 
 interface JsonCacheData {
   meta: Record<string, string>;
   events: DependencyEvent[];
+}
+
+function isValidEvent(e: any): e is DependencyEvent {
+  return (
+    e &&
+    typeof e === 'object' &&
+    typeof e.package === 'string' &&
+    (e.type === 'added' || e.type === 'updated' || e.type === 'removed') &&
+    typeof e.date === 'string' &&
+    typeof e.commit === 'string' &&
+    typeof e.manifest === 'string'
+  );
 }
 
 export class JsonStore implements StoreInterface {
@@ -28,19 +43,46 @@ export class JsonStore implements StoreInterface {
         const raw = fs.readFileSync(this.filePath, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          this.data = {
-            meta: parsed.meta || {},
-            events: Array.isArray(parsed.events) ? parsed.events : []
-          };
+          const events = Array.isArray(parsed.events) ? parsed.events.filter(isValidEvent) : [];
+          const meta = parsed.meta && typeof parsed.meta === 'object' ? parsed.meta : {};
+          // Drop incompatible caches from older schema versions.
+          if (meta.schema_version && meta.schema_version !== JSON_CACHE_SCHEMA_VERSION) {
+            this.data = { meta: { schema_version: JSON_CACHE_SCHEMA_VERSION }, events: [] };
+            return;
+          }
+          const cleanMeta: Record<string, string> = {};
+          for (const [k, v] of Object.entries(meta)) cleanMeta[k] = String(v);
+          this.data = { meta: cleanMeta, events };
         }
       } catch {
         this.data = { meta: {}, events: [] };
       }
     }
+    if (!this.data.meta.schema_version) {
+      this.data.meta.schema_version = JSON_CACHE_SCHEMA_VERSION;
+    }
   }
 
   save(): void {
-    fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2), 'utf8');
+    // Atomic write: tmp + rename so a crash never leaves half-written JSON.
+    const dir = path.dirname(this.filePath);
+    const tmp = path.join(dir, `.cache-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), 'utf8');
+      fs.renameSync(tmp, this.filePath);
+    } catch {
+      try {
+        fs.rmSync(tmp, { force: true });
+      } catch {
+        // Ignore cleanup failures.
+      }
+      // Last-resort direct write (e.g. cross-device rename issues).
+      try {
+        fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2), 'utf8');
+      } catch {
+        // Cache is best-effort; never crash analysis on write failure.
+      }
+    }
   }
 
   getMeta(key: string): string | null {

@@ -106,7 +106,12 @@ export async function resolveBaseRef(
   candidateRef?: string,
   cwd: string = process.cwd()
 ): Promise<{ baseRef: string; baseSha: string | null }> {
-  let baseRef = candidateRef;
+  let baseRef = candidateRef?.trim() || '';
+
+  // Guard against passing a time window (7d/30d) as a git ref for `ci --since`.
+  if (baseRef && /^(\d+)(d|w|mo|m|y)$/i.test(baseRef)) {
+    baseRef = '';
+  }
 
   if (!baseRef) {
     try {
@@ -129,13 +134,53 @@ export async function resolveBaseRef(
 
   try {
     const { stdout } = await execGit(['merge-base', baseRef, 'HEAD'], cwd);
-    return { baseRef, baseSha: stdout.trim() };
+    return { baseRef: baseRef!, baseSha: stdout.trim() };
   } catch {
     try {
-      const { stdout } = await execGit(['rev-parse', baseRef], cwd);
-      return { baseRef, baseSha: stdout.trim() };
+      const { stdout } = await execGit(['rev-parse', baseRef!], cwd);
+      return { baseRef: baseRef!, baseSha: stdout.trim() };
     } catch {
-      return { baseRef, baseSha: null };
+      return { baseRef: baseRef!, baseSha: null };
     }
   }
+}
+
+/**
+ * Returns the author date (ISO 8601) of a commit, or null if unresolvable.
+ */
+export async function getCommitDate(sha: string, cwd: string = process.cwd()): Promise<string | null> {
+  if (!sha || !/^[0-9a-f]{4,40}$/i.test(sha.trim())) return null;
+  try {
+    const { stdout } = await execGit(['show', '-s', '--format=%aI', sha], cwd);
+    const d = stdout.trim().split('\n')[0]?.trim();
+    return d || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lists full commit SHAs in `baseSha..HEAD` (newest last not guaranteed).
+ * Used by CI mode to scope events to the PR range without relying on
+ * short-SHA string equality.
+ */
+export async function getCommitsInRange(
+  baseSha: string,
+  cwd: string = process.cwd(),
+  manifestPaths: string[] = []
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!baseSha || !/^[0-9a-f]{4,40}$/i.test(baseSha.trim())) return out;
+  const args = ['log', '--format=%H', `${baseSha}..HEAD`];
+  if (manifestPaths.length > 0) args.push('--', ...manifestPaths);
+  try {
+    const { stdout } = await execGit(args, cwd);
+    for (const line of stdout.split('\n')) {
+      const sha = line.trim();
+      if (/^[0-9a-f]{40}$/i.test(sha)) out.add(sha);
+    }
+  } catch {
+    // Empty set -> caller falls back to date-based filtering.
+  }
+  return out;
 }

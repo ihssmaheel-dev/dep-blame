@@ -1,11 +1,34 @@
-import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import type { DependencyEvent, FilterOptions, StoreInterface } from '../types.js';
+
+export const CACHE_SCHEMA_VERSION = '2';
+
+function loadDatabaseSync(): any {
+  try {
+    const require = createRequire(import.meta.url);
+    // Synchronous load so `new SqliteStore()` preserves its API.
+    // Throws on Node without node:sqlite (<=22 without flag) -> caller falls back.
+    const mod = require('node:sqlite');
+    const DatabaseSync = mod.DatabaseSync || mod.default?.DatabaseSync || mod.default;
+    if (!DatabaseSync) {
+      throw new Error('node:sqlite does not export DatabaseSync');
+    }
+    return DatabaseSync;
+  } catch (err: any) {
+    const e: any = new Error(
+      'node:sqlite is unavailable in this Node runtime. Falling back to JSON cache.'
+    );
+    e.code = 'SQLITE_UNAVAILABLE';
+    e.cause = err;
+    throw e;
+  }
+}
 
 export class SqliteStore implements StoreInterface {
   filePath: string;
-  db: DatabaseSync;
+  db: any;
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -14,8 +37,15 @@ export class SqliteStore implements StoreInterface {
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    const DatabaseSync = loadDatabaseSync();
     this.db = new DatabaseSync(filePath);
     this.initSchema();
+    // Record schema version for future migrations.
+    try {
+      this.setMeta('schema_version', CACHE_SCHEMA_VERSION);
+    } catch {
+      // Ignore meta write failures on read-only caches.
+    }
   }
 
   initSchema(): void {
@@ -31,8 +61,9 @@ export class SqliteStore implements StoreInterface {
       CREATE TABLE IF NOT EXISTS meta (
         key TEXT PRIMARY KEY,
         value TEXT
-      );
-
+      )
+    `);
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         package TEXT NOT NULL,
@@ -46,12 +77,13 @@ export class SqliteStore implements StoreInterface {
         manifest TEXT NOT NULL,
         dep_type TEXT NOT NULL,
         is_direct INTEGER NOT NULL DEFAULT 1
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_events_package ON events(package);
-      CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
-      CREATE INDEX IF NOT EXISTS idx_events_manifest ON events(manifest);
+      )
     `);
+
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_package ON events(package)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_manifest ON events(manifest)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_commit ON events(commit_sha)`);
 
     // Schema migration for existing databases created before is_direct was added
     try {
@@ -81,8 +113,10 @@ export class SqliteStore implements StoreInterface {
       return;
     }
 
-    this.db.exec('BEGIN TRANSACTION');
+    let inTx = false;
     try {
+      this.db.exec('BEGIN IMMEDIATE');
+      inTx = true;
       const stmt = this.db.prepare(`
         INSERT INTO events (
           package, type, from_version, to_version,
@@ -106,8 +140,13 @@ export class SqliteStore implements StoreInterface {
         );
       }
       this.db.exec('COMMIT');
+      inTx = false;
     } catch (err) {
-      this.db.exec('ROLLBACK');
+      try {
+        if (inTx) this.db.exec('ROLLBACK');
+      } catch {
+        // Ignore rollback failures.
+      }
       throw err;
     }
   }
@@ -137,8 +176,10 @@ export class SqliteStore implements StoreInterface {
     }
 
     if (filter.workspace) {
-      conditions.push('manifest LIKE ?');
-      params.push(`%${filter.workspace}%`);
+      // Escape LIKE wildcards so `web%` doesn't match `website`.
+      const escaped = String(filter.workspace).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+      conditions.push('manifest LIKE ? ESCAPE \'\\\'');
+      params.push(`%${escaped}%`);
     }
 
     if (filter.directOnly) {
@@ -173,15 +214,31 @@ export class SqliteStore implements StoreInterface {
   }
 
   clear(): void {
+    // Separate execs: some SQLite builds reject multi-statement strings.
     try {
-      this.db.exec('DELETE FROM events; DELETE FROM meta;');
+      this.db.exec('DELETE FROM events');
+    } catch {
+      // Ignore
+    }
+    try {
+      this.db.exec('DELETE FROM meta');
     } catch {
       try {
-        this.db.exec('DROP TABLE IF EXISTS events; DROP TABLE IF EXISTS meta;');
-        this.initSchema();
+        this.db.exec('DROP TABLE IF EXISTS events');
       } catch {
         // Ignore
       }
+      try {
+        this.db.exec('DROP TABLE IF EXISTS meta');
+      } catch {
+        // Ignore
+      }
+      this.initSchema();
+    }
+    try {
+      this.setMeta('schema_version', CACHE_SCHEMA_VERSION);
+    } catch {
+      // Ignore
     }
   }
 

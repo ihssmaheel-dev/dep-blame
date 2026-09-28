@@ -8,13 +8,13 @@ import {
 } from './git/repo.js';
 import { getManifestCommits } from './git/log.js';
 import { batchReadBlobs } from './git/batch.js';
-import { detectPackageManager } from './manifest/detect.js';
+import { detectPackageManager, discoverHistoricManifests, mergeManifestPaths } from './manifest/detect.js';
 import { parsePackageJson } from './manifest/package-json.js';
 import { parseNpmLockfile } from './manifest/lockfiles/npm.js';
 import { parsePnpmLockfile } from './manifest/lockfiles/pnpm.js';
 import { parseYarnLockfile } from './manifest/lockfiles/yarn.js';
 import { parseBunLockfile } from './manifest/lockfiles/bun.js';
-import { diffSnapshots } from './diff/snapshot-diff.js';
+import { diffSnapshots, createLockfileLowFiEvent } from './diff/snapshot-diff.js';
 import { openCache } from './cache/index.js';
 import type {
   BlobRequest,
@@ -24,7 +24,10 @@ import type {
   EngineResult
 } from './types.js';
 
-async function parseAnyManifest(filePath: string, content?: string | null): Promise<Map<string, DependencyEntry>> {
+async function parseAnyManifest(
+  filePath: string,
+  content?: string | null
+): Promise<Map<string, DependencyEntry> | null> {
   if (!content) return new Map();
 
   if (filePath.endsWith('package.json')) {
@@ -88,9 +91,18 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     };
   }
 
-  // Step 3: Manifest detection
+  // Step 3: Manifest detection (HEAD + historic union so deleted
+  // workspaces don't vanish from history).
   const detected = detectPackageManager(repoRoot);
-  const manifestPaths = detected.manifestPaths;
+  let manifestPaths = detected.manifestPaths;
+  try {
+    const historic = await discoverHistoricManifests(repoRoot);
+    if (historic.length > 0) {
+      manifestPaths = mergeManifestPaths(manifestPaths, historic);
+    }
+  } catch {
+    // Best-effort; HEAD paths alone still produce correct (if partial) results.
+  }
 
   // Step 4: Cache management
   const cache = await openCache({ repoRoot, cacheDir });
@@ -174,7 +186,9 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
       const content = blobs.get(`${sinceCommit}:${p}`);
       if (content) {
         const parsed = await parseAnyManifest(p, content);
-        snapshots.set(p, parsed);
+        // null = unparsable (missing yaml parser): don't seed snapshot so
+        // future commits still emit low-fi signals instead of fake diffs.
+        if (parsed !== null) snapshots.set(p, parsed);
       }
     }
   }
@@ -182,7 +196,10 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
   const newEvents: DependencyEvent[] = [];
 
   for (const c of commits) {
-    const packagesModifiedInCommit = new Set<string>();
+    // Packages already explained by a package.json diff in this commit.
+    // Name-based (not `manifest:name`) so root + workspace lockfiles dedup
+    // correctly: direct manifest wins over resolved lockfile.
+    const directPackagesInCommit = new Set<string>();
 
     // First process all package.json files (root and workspace manifests)
     for (const f of c.files) {
@@ -193,7 +210,7 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
 
         const events = diffSnapshots(prevMap, currMap, c, f);
         for (const ev of events) {
-          packagesModifiedInCommit.add(`${f}:${ev.package}`);
+          directPackagesInCommit.add(ev.package);
           newEvents.push(ev);
         }
         snapshots.set(f, currMap);
@@ -204,13 +221,34 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     for (const f of c.files) {
       if (!f.endsWith('package.json')) {
         const content = blobs.get(`${c.commit}:${f}`);
-        const currMap = content ? await parseAnyManifest(f, content) : new Map<string, DependencyEntry>();
+        if (!content) {
+          // Deleted lockfile: diff against empty so removals surface.
+          const prevMap = snapshots.get(f) || new Map<string, DependencyEntry>();
+          if (prevMap.size > 0) {
+            const lockEvents = diffSnapshots(prevMap, new Map(), c, f);
+            for (const ev of lockEvents) {
+              if (!directPackagesInCommit.has(ev.package)) newEvents.push(ev);
+            }
+          }
+          snapshots.set(f, new Map());
+          continue;
+        }
+        const currMap = await parseAnyManifest(f, content);
+        if (currMap === null) {
+          // Parser unavailable (missing optional `yaml`): emit one honest
+          // low-fidelity event instead of silence — but only when the commit
+          // didn't already produce direct package.json events (those win).
+          // Don't update snapshot so a future install of `yaml` re-indexes.
+          if (directPackagesInCommit.size === 0) {
+            newEvents.push(createLockfileLowFiEvent(c, f));
+          }
+          continue;
+        }
         const prevMap = snapshots.get(f) || new Map<string, DependencyEntry>();
 
         const lockEvents = diffSnapshots(prevMap, currMap, c, f);
         for (const ev of lockEvents) {
-          const directKey = `package.json:${ev.package}`;
-          if (!packagesModifiedInCommit.has(directKey)) {
+          if (!directPackagesInCommit.has(ev.package)) {
             newEvents.push(ev);
           }
         }

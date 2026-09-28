@@ -34,7 +34,9 @@ export async function getManifestCommits(
     args.push('--reverse');
   }
 
-  // Record separator \x1e, Unit separator \x1f
+  // Never --follow with multiple paths: git silently drops it past one path.
+  // Record separator \x1e, Unit separator \x1f (control chars can't appear in
+  // normal commit text, so plain split() is safe).
   args.push('--format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f', '--name-only', range);
 
   if (manifestPaths && manifestPaths.length > 0) {
@@ -72,10 +74,14 @@ export async function getManifestCommits(
     const message = parts[3].trim();
     const rawFiles = parts[4] || '';
 
-    // Files are listed after subject, separated by newlines
+    if (!/^[0-9a-f]{40}$/i.test(commit)) continue;
+
+    // Files are listed after subject, separated by newlines.
+    // Git always emits forward slashes, even on Windows — do not mangle
+    // literal backslashes in exotic filenames.
     const files = rawFiles
       .split('\n')
-      .map((f) => f.trim().replace(/\\/g, '/')) // Normalize to posix forward slashes
+      .map((f) => f.trim())
       .filter((f) => f.length > 0);
 
     commits.push({

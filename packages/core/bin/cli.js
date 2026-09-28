@@ -13,7 +13,10 @@ import { fileURLToPath } from 'node:url';
 import {
   runDepBlame,
   getRepoRoot,
+  getCurrentHead,
   resolveBaseRef,
+  getCommitDate,
+  getCommitsInRange,
   renderEventTable,
   renderArchaeologyView,
   renderCalendarView,
@@ -38,21 +41,29 @@ function getVersion() {
 function parseSinceOption(since) {
   if (!since) return undefined;
 
-  const match = since.match(/^(\d+)([dwmy])$/i);
+  const trimmed = String(since).trim();
+  // Windows: 7d, 30d, 2w, 6m (months, backcompat), 1y, plus 12h, 30min, 90s.
+  // `m` = months (spec backcompat); use min/mins for minutes, M/mo for months.
+  const match = trimmed.match(/^(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks|mo|mos|month|months|y|yr|yrs|year|years)$/i);
   if (match) {
     const count = parseInt(match[1], 10);
+    if (!Number.isSafeInteger(count) || count < 0 || count > 100000) return undefined;
     const unit = match[2].toLowerCase();
     const now = new Date();
 
-    if (unit === 'd') now.setDate(now.getDate() - count);
-    else if (unit === 'w') now.setDate(now.getDate() - count * 7);
-    else if (unit === 'm') now.setMonth(now.getMonth() - count);
-    else if (unit === 'y') now.setFullYear(now.getFullYear() - count);
+    if (['s', 'sec', 'secs', 'second', 'seconds'].includes(unit)) now.setSeconds(now.getSeconds() - count);
+    else if (['min', 'mins', 'minute', 'minutes'].includes(unit)) now.setMinutes(now.getMinutes() - count);
+    else if (['h', 'hr', 'hrs', 'hour', 'hours'].includes(unit)) now.setHours(now.getHours() - count);
+    else if (['d', 'day', 'days'].includes(unit)) now.setDate(now.getDate() - count);
+    else if (['w', 'week', 'weeks'].includes(unit)) now.setDate(now.getDate() - count * 7);
+    else if (['m', 'mo', 'mos', 'month', 'months'].includes(unit)) now.setMonth(now.getMonth() - count);
+    else if (['y', 'yr', 'yrs', 'year', 'years'].includes(unit)) now.setFullYear(now.getFullYear() - count);
+    else return undefined;
 
     return now.toISOString();
   }
 
-  const parsed = new Date(since);
+  const parsed = new Date(trimmed);
   if (!isNaN(parsed.getTime())) {
     return parsed.toISOString();
   }
@@ -178,17 +189,47 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
     const { baseRef, baseSha } = await resolveBaseRef(values.since, repoRoot);
 
     try {
+      // Use the incremental cache like every other command — CI runners
+      // with a warm .git cache stay fast; cold runners do one full scan.
       const result = await runDepBlame({
-        noCache: true,
+        noCache: values['no-cache'] || false,
+        clearCache: values['clear-cache'] || false,
         cacheDir: values['cache-dir'],
         filter
       });
 
       let ciEvents = result.events;
       if (baseSha) {
-        const baseIndex = result.events.findIndex((e) => e.commit === baseSha.slice(0, 7));
-        if (baseIndex !== -1) {
-          ciEvents = result.events.slice(baseIndex + 1);
+        // Primary: exact commit-range membership (prefix-safe for short SHAs).
+        let rangeSet = null;
+        try {
+          rangeSet = await getCommitsInRange(baseSha, repoRoot, []);
+        } catch {
+          rangeSet = null;
+        }
+        if (rangeSet && rangeSet.size > 0) {
+          const inRange = (shortSha) => {
+            if (!shortSha) return false;
+            for (const full of rangeSet) {
+              if (full.startsWith(shortSha) || shortSha.startsWith(full.slice(0, 7))) return true;
+            }
+            return false;
+          };
+          const ranged = ciEvents.filter((e) => inRange(e.commit));
+          // Only adopt range filtering if it actually matched something;
+          // otherwise fall back to date filtering (e.g. shallow clones).
+          if (ranged.length > 0 || ciEvents.length === 0) {
+            ciEvents = ranged;
+          } else {
+            const baseDate = await getCommitDate(baseSha, repoRoot);
+            if (baseDate) ciEvents = ciEvents.filter((e) => e.date >= baseDate);
+          }
+        } else {
+          // Fallback: date-based (works even when range listing fails).
+          const baseDate = await getCommitDate(baseSha, repoRoot);
+          if (baseDate) {
+            ciEvents = ciEvents.filter((e) => e.date >= baseDate);
+          }
         }
       }
 
@@ -222,7 +263,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
   if (values.since) {
     const sinceDate = parseSinceOption(values.since);
     if (!sinceDate) {
-      console.error(c.red(`Invalid --since value: "${values.since}". Use e.g. 7d, 30d, 2w, 6m, 1y or ISO date.`));
+      console.error(c.red(`Invalid --since value: "${values.since}". Use e.g. 7d, 30d, 2w, 6mo, 1y, 12h, 30min or ISO date.`));
       process.exit(1);
     }
     filter.since = sinceDate;

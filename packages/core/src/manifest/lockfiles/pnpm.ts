@@ -1,23 +1,37 @@
 import type { DependencyEntry, DepType } from '../../types.js';
 
+let yamlMissingWarned = false;
+
 /**
- * Lazy loads the 'yaml' module or logs an actionable warning.
+ * Lazy loads the 'yaml' module or logs an actionable warning (once).
+ * Returns null when unavailable so the caller can emit a low-fidelity
+ * lockfile event instead of silent nothing.
  */
 async function loadYamlParser(): Promise<any | null> {
   try {
     const mod = await import('yaml');
-    return mod.default || mod;
+    return (mod as any).default || mod;
   } catch {
-    console.error('⚠ pnpm-lock.yaml detected but the `yaml` parser isn\'t installed.');
-    console.error('  Run: npm install yaml   (or reinstall without --omit=optional)');
+    if (!yamlMissingWarned) {
+      yamlMissingWarned = true;
+      console.error('⚠ pnpm-lock.yaml detected but the `yaml` parser isn\'t installed.');
+      console.error('  Run: npm install yaml   (or reinstall without --omit=optional)');
+    }
     return null;
   }
 }
 
+export function isYamlMissingForPnpm(): boolean {
+  return yamlMissingWarned;
+}
+
 /**
  * Parses pnpm-lock.yaml into a normalized Map of dependencies.
+ * Returns null when the YAML parser is unavailable (caller: low-fi event).
  */
-export async function parsePnpmLockfile(content?: string | null): Promise<Map<string, DependencyEntry>> {
+export async function parsePnpmLockfile(
+  content?: string | null
+): Promise<Map<string, DependencyEntry> | null> {
   const map = new Map<string, DependencyEntry>();
   if (!content || typeof content !== 'string') {
     return map;
@@ -25,7 +39,7 @@ export async function parsePnpmLockfile(content?: string | null): Promise<Map<st
 
   const yaml = await loadYamlParser();
   if (!yaml) {
-    return map;
+    return null;
   }
 
   let parsed: any;
@@ -65,6 +79,7 @@ export async function parsePnpmLockfile(content?: string | null): Promise<Map<st
     const root = parsed.importers['.'] || parsed.importers['/'] || {};
     extractSection(root.dependencies, 'dependencies');
     extractSection(root.devDependencies, 'devDependencies');
+    extractSection(root.peerDependencies, 'peerDependencies');
     extractSection(root.optionalDependencies, 'optionalDependencies');
     return map;
   }
@@ -72,6 +87,7 @@ export async function parsePnpmLockfile(content?: string | null): Promise<Map<st
   // pnpm v5 (root dependencies & devDependencies)
   extractSection(parsed.dependencies, 'dependencies');
   extractSection(parsed.devDependencies, 'devDependencies');
+  extractSection(parsed.peerDependencies, 'peerDependencies');
   extractSection(parsed.optionalDependencies, 'optionalDependencies');
 
   return map;
