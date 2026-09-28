@@ -1,5 +1,8 @@
 export { runDepBlame } from './engine.js';
 export { renderEventTable } from './render/table.js';
+export { renderArchaeologyView } from './render/archaeology.js';
+export { renderCalendarView } from './render/calendar.js';
+export { renderStatsView } from './render/stats.js';
 export { renderJson } from './render/json.js';
 export { diffSnapshots } from './diff/snapshot-diff.js';
 export { openCache } from './cache/index.js';

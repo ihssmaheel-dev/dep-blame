@@ -12,6 +12,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runDepBlame } from '../src/engine.js';
 import { renderEventTable } from '../src/render/table.js';
+import { renderArchaeologyView } from '../src/render/archaeology.js';
+import { renderCalendarView } from '../src/render/calendar.js';
+import { renderStatsView } from '../src/render/stats.js';
 import { renderJson } from '../src/render/json.js';
 import { c } from '../src/render/ansi.js';
 
@@ -61,10 +64,13 @@ ${c.bold('USAGE:')}
 
 ${c.bold('COMMANDS:')}
   ${c.cyan('list')}                     Flat chronological event list (default)
-  ${c.cyan('pkg <package>')}            Full history of one package
+  ${c.cyan('pkg <package>')}            Full history of one package ("archaeology" view)
+  ${c.cyan('calendar')}                 Month-grid visualization in the terminal
+  ${c.cyan('stats')}                    Aggregate counts, churn rate, top modified packages
   ${c.cyan('added')}                    Filter: only added events
   ${c.cyan('updated')}                  Filter: only updated events
   ${c.cyan('removed')}                  Filter: only removed events
+  ${c.cyan('changes')}                  Filter changes within a time-window (use with --since)
 
 ${c.bold('OPTIONS:')}
   ${c.yellow('--since <window>')}         Time window (e.g. 7d, 30d, 2w, 6m, 1y, or ISO date)
@@ -77,9 +83,10 @@ ${c.bold('OPTIONS:')}
 
 ${c.bold('EXAMPLES:')}
   $ npx dep-blame
-  $ npx dep-blame list --since 30d
   $ npx dep-blame pkg react
-  $ npx dep-blame --verbose
+  $ npx dep-blame calendar
+  $ npx dep-blame stats
+  $ npx dep-blame list --since 30d
   $ npx dep-blame --json
 `);
 }
@@ -133,17 +140,21 @@ async function main() {
     filter.since = sinceDate;
   }
 
+  let targetPkg = null;
+
   if (subCommand === 'added' || subCommand === 'updated' || subCommand === 'removed') {
     filter.type = subCommand;
   } else if (subCommand === 'pkg') {
-    const pkgName = positionals[1];
-    if (!pkgName) {
+    targetPkg = positionals[1];
+    if (!targetPkg) {
       console.error(c.red(`Error: Missing package name for 'pkg' command.`));
       console.error(`Usage: dep-blame pkg <package-name>`);
       process.exit(1);
     }
-    filter.package = pkgName;
-  } else if (subCommand !== 'list') {
+    filter.package = targetPkg;
+  } else if (subCommand === 'calendar' || subCommand === 'stats' || subCommand === 'list' || subCommand === 'changes') {
+    // Valid command
+  } else {
     console.error(c.red(`Unknown command: "${subCommand}"`));
     console.error(`Run 'dep-blame --help' for available commands.`);
     process.exit(1);
@@ -165,6 +176,15 @@ async function main() {
           events: result.events
         })
       );
+      return;
+    }
+
+    if (subCommand === 'pkg' && targetPkg) {
+      console.log(renderArchaeologyView(targetPkg, result.events));
+    } else if (subCommand === 'calendar') {
+      console.log(renderCalendarView(result.events));
+    } else if (subCommand === 'stats') {
+      console.log(renderStatsView(result.events));
     } else {
       console.log(renderEventTable(result.events, { verbose: values.verbose }));
     }
