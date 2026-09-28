@@ -1,0 +1,21 @@
+{
+  "name": "dep-blame",
+  "version": "0.1.0",
+  "description": "See exactly how your project's dependencies changed over time.",
+  "bin": {
+    "dep-blame": "./bin/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "dependencies": {},
+  "optionalDependencies": {
+    "yaml": "^2.x"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ]
+}

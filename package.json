@@ -1,0 +1,11 @@
+{
+  "name": "dep-blame-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --test test/**/*.test.js"
+  }
+}
