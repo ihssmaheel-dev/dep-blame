@@ -2,6 +2,8 @@
   "name": "dep-blame",
   "version": "0.1.0",
   "description": "See exactly how your project's dependencies changed over time.",
+  "main": "./src/index.js",
+  "exports": "./src/index.js",
   "bin": {
     "dep-blame": "./bin/cli.js"
   },

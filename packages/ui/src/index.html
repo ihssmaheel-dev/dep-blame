@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dep-blame — Dependency History Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --green: #2ea043;
+      --green-bg: rgba(46, 160, 67, 0.15);
+      --yellow: #d29922;
+      --yellow-bg: rgba(210, 153, 34, 0.15);
+      --red: #f85149;
+      --red-bg: rgba(248, 81, 73, 0.15);
+      --blue: #58a6ff;
+      --blue-bg: rgba(88, 166, 255, 0.15);
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 24px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo-group { display: flex; align-items: center; gap: 12px; }
+    h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--border);
+      color: var(--text-muted);
+    }
+    .badge-blue { background: var(--blue-bg); color: var(--blue); }
+    .badge-green { background: var(--green-bg); color: var(--green); }
+    .badge-yellow { background: var(--yellow-bg); color: var(--yellow); }
+    .badge-red { background: var(--red-bg); color: var(--red); }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
+    .stat-value { font-size: 24px; font-weight: 700; }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .search-box {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      width: 280px;
+      outline: none;
+    }
+    .search-box:focus { border-color: var(--blue); }
+
+    .filter-tabs { display: flex; gap: 6px; }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+    .tab-btn:hover { background: var(--card-bg); color: var(--text); }
+    .tab-btn.active {
+      background: var(--card-bg);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th {
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+    .pkg-name {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--blue);
+      cursor: pointer;
+    }
+    .pkg-name:hover { text-decoration: underline; }
+    .version-tag { font-family: var(--font-mono); font-size: 12px; }
+    .commit-sha { font-family: var(--font-mono); color: var(--text-muted); font-size: 12px; }
+
+    /* Drawer Modal */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      justify-content: flex-end;
+      z-index: 100;
+    }
+    .drawer-overlay.active { display: flex; }
+    .drawer {
+      background: var(--card-bg);
+      width: 520px;
+      max-width: 90vw;
+      height: 100%;
+      border-left: 1px solid var(--border);
+      padding: 24px;
+      overflow-y: auto;
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
+    }
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .timeline { position: relative; padding-left: 20px; margin-top: 16px; }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 6px;
+      top: 6px;
+      bottom: 6px;
+      width: 2px;
+      background: var(--border);
+    }
+    .timeline-item { position: relative; margin-bottom: 24px; }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -20px;
+      top: 4px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--blue);
+    }
+    .timeline-item.added::before { background: var(--green); }
+    .timeline-item.updated::before { background: var(--yellow); }
+    .timeline-item.removed::before { background: var(--red); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-group">
+      <h1>dep-blame</h1>
+      <span class="badge badge-blue" id="repo-badge">repository</span>
+      <span class="badge" id="pm-badge">package manager</span>
+    </div>
+    <div>
+      <span class="badge" id="generated-badge">Live Index</span>
+    </div>
+  </header>
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Total Events</div>
+      <div class="stat-value" id="stat-total">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Added</div>
+      <div class="stat-value" style="color: var(--green)" id="stat-added">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Updated</div>
+      <div class="stat-value" style="color: var(--yellow)" id="stat-updated">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Removed</div>
+      <div class="stat-value" style="color: var(--red)" id="stat-removed">0</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" class="search-box" id="search-input" placeholder="Search package name..." />
+    <div class="filter-tabs">
+      <button class="tab-btn active" data-filter="all">All</button>
+      <button class="tab-btn" data-filter="added">+ Added</button>
+      <button class="tab-btn" data-filter="updated">↑ Updated</button>
+      <button class="tab-btn" data-filter="removed">- Removed</button>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Package</th>
+          <th>Change</th>
+          <th>Manifest</th>
+          <th>Author</th>
+          <th>Commit</th>
+        </tr>
+      </thead>
+      <tbody id="events-tbody">
+        <tr>
+          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 32px;">Loading dependency history...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Archaeology Drawer -->
+  <div class="drawer-overlay" id="drawer-overlay">
+    <div class="drawer">
+      <div class="drawer-header">
+        <div>
+          <h2 id="drawer-title" style="font-family: var(--font-mono); font-size: 18px;">package-name</h2>
+          <span class="badge" id="drawer-status">Active</span>
+        </div>
+        <button class="close-btn" id="drawer-close">&times;</button>
+      </div>
+      <div id="drawer-content" class="timeline"></div>
+    </div>
+  </div>
+
+  <script>
+    let allEvents = [];
+    let currentFilter = 'all';
+    let currentSearch = '';
+
+    async function loadData() {
+      try {
+        const res = await fetch('/api/events');
+        const data = await res.json();
+        allEvents = data.events || [];
+
+        document.getElementById('repo-badge').textContent = data.repository || 'repository';
+        document.getElementById('pm-badge').textContent = data.packageManager || 'npm';
+        document.getElementById('generated-badge').textContent = 'Indexed at ' + new Date(data.generatedAt).toLocaleTimeString();
+
+        updateStats();
+        renderTable();
+      } catch (err) {
+        document.getElementById('events-tbody').innerHTML = `
+          <tr><td colspan="7" style="text-align: center; color: var(--red); padding: 32px;">
+            Failed to load events from /api/events.
+          </td></tr>
+        `;
+      }
+    }
+
+    function updateStats() {
+      document.getElementById('stat-total').textContent = allEvents.length;
+      document.getElementById('stat-added').textContent = allEvents.filter(e => e.type === 'added').length;
+      document.getElementById('stat-updated').textContent = allEvents.filter(e => e.type === 'updated').length;
+      document.getElementById('stat-removed').textContent = allEvents.filter(e => e.type === 'removed').length;
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('events-tbody');
+      const filtered = allEvents.filter(ev => {
+        if (currentFilter !== 'all' && ev.type !== currentFilter) return false;
+        if (currentSearch && !ev.package.toLowerCase().includes(currentSearch.toLowerCase())) return false;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `
+          <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 32px;">
+            No events match your search or filter.
+          </td></tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(ev => {
+        const date = (ev.date || '').slice(0, 10);
+        let badgeClass = 'badge-yellow';
+        let typeLabel = '↑ updated';
+        let changeText = `${ev.from || '?'} &rarr; ${ev.to || '?'}`;
+
+        if (ev.type === 'added') {
+          badgeClass = 'badge-green';
+          typeLabel = '+ added';
+          changeText = ev.to || '';
+        } else if (ev.type === 'removed') {
+          badgeClass = 'badge-red';
+          typeLabel = '- removed';
+          changeText = `was ${ev.from || ''}`;
+        }
+
+        return `
+          <tr>
+            <td style="color: var(--text-muted); font-family: var(--font-mono);">${date}</td>
+            <td><span class="badge ${badgeClass}">${typeLabel}</span></td>
+            <td><span class="pkg-name" onclick="openArchaeology('${ev.package}')">${ev.package}</span></td>
+            <td><span class="version-tag">${changeText}</span></td>
+            <td style="color: var(--text-muted); font-size: 12px;">${ev.manifest}</td>
+            <td style="color: var(--text-muted);">${ev.author}</td>
+            <td><span class="commit-sha" title="${ev.message || ''}">${ev.commit}</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openArchaeology(pkgName) {
+      const pkgEvents = allEvents.filter(e => e.package === pkgName);
+      if (pkgEvents.length === 0) return;
+
+      document.getElementById('drawer-title').textContent = pkgName;
+      const latest = pkgEvents[pkgEvents.length - 1];
+
+      const statusBadge = document.getElementById('drawer-status');
+      if (latest.type === 'removed') {
+        statusBadge.className = 'badge badge-red';
+        statusBadge.textContent = 'Removed';
+      } else {
+        statusBadge.className = 'badge badge-green';
+        statusBadge.textContent = 'Active ' + (latest.to || '');
+      }
+
+      const timelineContainer = document.getElementById('drawer-content');
+      timelineContainer.innerHTML = pkgEvents.map(ev => {
+        const date = (ev.date || '').slice(0, 10);
+        return `
+          <div class="timeline-item ${ev.type}">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 2px;">
+              ${date} &bull; <span class="commit-sha">${ev.commit}</span> by ${ev.author}
+            </div>
+            <div style="font-weight: 600; margin-bottom: 4px;">
+              ${ev.type === 'added' ? 'Added version ' + ev.to : ev.type === 'updated' ? 'Updated ' + ev.from + ' &rarr; ' + ev.to : 'Removed (was ' + ev.from + ')'}
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted);">
+              ${ev.message || ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('drawer-overlay').classList.add('active');
+    }
+
+    document.getElementById('drawer-close').addEventListener('click', () => {
+      document.getElementById('drawer-overlay').classList.remove('active');
+    });
+
+    document.getElementById('drawer-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'drawer-overlay') {
+        document.getElementById('drawer-overlay').classList.remove('active');
+      }
+    });
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        renderTable();
+      });
+    });
+
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      currentSearch = e.target.value.trim();
+      renderTable();
+    });
+
+    loadData();
+  </script>
+</body>
+</html>

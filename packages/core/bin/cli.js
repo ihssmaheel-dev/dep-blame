@@ -190,6 +190,17 @@ async function main() {
     }
   }
 
+  if (subCommand === 'ui') {
+    console.log(`
+${c.bold('Launch the dep-blame visual dashboard:')}
+
+  ${c.green('$ npx @dep-blame/ui')}
+
+Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
+`);
+    process.exit(0);
+  }
+
   if (values.since) {
     const sinceDate = parseSinceOption(values.since);
     if (!sinceDate) {
