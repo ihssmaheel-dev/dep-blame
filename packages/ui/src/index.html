@@ -50,8 +50,15 @@
       --color-removed-bg: rgba(244, 63, 94, 0.12);
       --color-removed-border: rgba(244, 63, 94, 0.28);
 
-      --pattern-grid: rgba(255, 255, 255, 0.035);
-      --pattern-radial: radial-gradient(ellipse 90% 60% at 50% -10%, rgba(99, 102, 241, 0.14), transparent);
+      --pattern-bg: radial-gradient(
+        circle at 50%,
+        #0f131c,
+        #131722 50%,
+        transparent 51%,
+        rgba(255, 255, 255, 0.15) 10%,
+        #090b10 55% 72%,
+        #6366f1 50%
+      );
       --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.35);
       --shadow-drawer: -8px 0 32px rgba(0, 0, 0, 0.6);
       --header-bg: rgba(9, 11, 16, 0.88);
@@ -88,8 +95,15 @@
       --color-removed-bg: rgba(225, 29, 72, 0.08);
       --color-removed-border: rgba(225, 29, 72, 0.25);
 
-      --pattern-grid: rgba(15, 23, 42, 0.045);
-      --pattern-radial: radial-gradient(ellipse 90% 60% at 50% -10%, rgba(99, 102, 241, 0.06), transparent);
+      --pattern-bg: radial-gradient(
+        circle at 50%,
+        #f1f5f9,
+        #ffffff 50%,
+        transparent 51%,
+        rgba(15, 23, 42, 0.08) 10%,
+        #e2e8f0 55% 72%,
+        #6366f1 50%
+      );
       --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.05);
       --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.08);
       --header-bg: rgba(255, 255, 255, 0.9);
@@ -98,12 +112,9 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background-color: var(--color-bg);
-      background-image: 
-        var(--pattern-radial),
-        linear-gradient(to right, var(--pattern-grid) 1px, transparent 1px),
-        linear-gradient(to bottom, var(--pattern-grid) 1px, transparent 1px);
-      background-size: 100% 100%, 32px 32px, 32px 32px;
+      background: var(--color-bg);
+      background-image: var(--pattern-bg);
+      background-size: 10px 10px;
       background-attachment: fixed;
       color: var(--color-text);
       font-family: var(--font-sans);
