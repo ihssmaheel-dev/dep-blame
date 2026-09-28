@@ -1,8 +1,12 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { runDepBlame, getRepoRemoteInfo, detectPackageManager } from 'dep-blame';
+
+const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +40,86 @@ function getWorkspacePackageMap(repoDir) {
     }
   } catch {}
   return pkgs;
+}
+
+/**
+ * Maps author names to detailed author info including username, email, avatar URL, and profile URL.
+ *
+ * @param {string} repoDir
+ * @param {string|null} repoOwner
+ * @param {string} repoHost
+ * @returns {Promise<Record<string, { name: string; username: string; email: string; avatarUrl: string; profileUrl: string }>>}
+ */
+async function getAuthorMap(repoDir, repoOwner, repoHost = 'github.com') {
+  const map = {};
+  try {
+    const { stdout } = await execFileAsync('git', ['log', '--format=%an%x1f%ae', '--all'], {
+      cwd: repoDir,
+      windowsHide: true,
+      maxBuffer: 16 * 1024 * 1024
+    });
+
+    const lines = stdout.split('\n');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const [name, email] = line.split('\x1f').map(s => (s || '').trim());
+      if (!name || map[name]) continue;
+
+      let username = '';
+
+      // 1. GitHub noreply email (e.g. 12345+username@users.noreply.github.com)
+      const ghMatch = email.match(/(?:^|\+)([^@+]+)@users\.noreply\.github\.com$/i);
+      if (ghMatch) {
+        username = ghMatch[1];
+      }
+
+      // 2. Author name is already a single-word handle
+      if (!username && /^[a-zA-Z0-9_\-]+$/.test(name)) {
+        username = name;
+      }
+
+      // 3. Fallback from email local-part
+      if (!username && email) {
+        const localPart = email.split('@')[0];
+        if (localPart && localPart !== 'undefined') {
+          username = localPart;
+        }
+      }
+
+      map[name] = {
+        name,
+        email,
+        username: username || repoOwner || name.toLowerCase().replace(/[^a-z0-9_-]/g, ''),
+        avatarUrl: '',
+        profileUrl: ''
+      };
+    }
+
+    const authors = Object.keys(map);
+    // If only 1 author in repository and repoOwner is set, map to repoOwner
+    if (authors.length === 1 && repoOwner) {
+      map[authors[0]].username = repoOwner;
+    }
+
+    const cleanHost = repoHost || 'github.com';
+    for (const name of authors) {
+      const a = map[name];
+      if (cleanHost.includes('github') && a.username) {
+        a.avatarUrl = `https://${cleanHost}/${encodeURIComponent(a.username)}.png?size=64`;
+        a.profileUrl = `https://${cleanHost}/${encodeURIComponent(a.username)}`;
+      } else if (cleanHost.includes('gitlab') && a.username) {
+        a.avatarUrl = `https://${cleanHost}/${encodeURIComponent(a.username)}.png`;
+        a.profileUrl = `https://${cleanHost}/${encodeURIComponent(a.username)}`;
+      } else if (a.username) {
+        a.avatarUrl = `https://github.com/${encodeURIComponent(a.username)}.png?size=64`;
+        a.profileUrl = `https://${cleanHost}/${encodeURIComponent(a.username)}`;
+      } else {
+        a.profileUrl = repoOwner ? `https://${cleanHost}/${encodeURIComponent(repoOwner)}` : '#';
+      }
+    }
+  } catch {}
+
+  return map;
 }
 
 /**
@@ -91,7 +175,7 @@ export function startServer(options = {}) {
           'Cache-Control': 'no-cache',
           'Content-Length': htmlBytes,
           'X-Content-Type-Options': 'nosniff',
-          'Content-Security-Policy': "default-src 'self'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'unsafe-inline'"
+          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'unsafe-inline'"
         });
         res.end(htmlContent);
         return;
@@ -102,6 +186,7 @@ export function startServer(options = {}) {
           const result = await runDepBlame({ cwd, silent: true });
         const remoteInfo = await getRepoRemoteInfo(cwd).catch(() => ({ remoteUrl: null, owner: null, repo: null, host: 'github.com' }));
         const workspacePackages = getWorkspacePackageMap(cwd);
+        const authors = await getAuthorMap(cwd, remoteInfo.owner, remoteInfo.host);
         const json = JSON.stringify({
           schemaVersion: 1,
           repository: result.repository,
@@ -111,6 +196,7 @@ export function startServer(options = {}) {
           repoOwner: remoteInfo.owner,
           repoHost: remoteInfo.host || 'github.com',
           workspacePackages,
+          authors,
           generatedAt: new Date().toISOString(),
           events: result.events
         });

@@ -98,6 +98,10 @@
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html {
+      scrollbar-gutter: stable;
+      overflow-y: scroll;
+    }
 
     body {
       background-color: var(--color-bg);
@@ -512,25 +516,26 @@
 
     .view-btn {
       background: transparent;
-      border: none;
+      border: 1px solid transparent;
       color: var(--color-text-secondary);
       padding: 4px 11px;
       border-radius: var(--radius);
       font-size: 11px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      transition: all 0.1s ease;
+      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
       font-family: var(--font-sans);
+      user-select: none;
     }
     .view-btn:hover { color: var(--color-text); }
     .view-btn.active {
       background: var(--color-surface);
       color: var(--color-text);
       font-weight: 600;
-      border: 1px solid var(--color-border);
+      border-color: var(--color-border);
       box-shadow: var(--shadow-subtle);
     }
 
@@ -545,6 +550,7 @@
       -webkit-backdrop-filter: blur(8px);
       position: relative;
       z-index: 1;
+      min-height: 520px;
     }
 
     /* Technical Minimal Table */
@@ -685,35 +691,75 @@
       border: 1px solid var(--color-border);
     }
 
-    /* Author Link Redirect */
-    .author-link {
+    /* Author Profile & Username Display */
+    .author-cell-link {
       display: inline-flex;
       align-items: center;
-      gap: 7px;
+      gap: 9px;
       text-decoration: none;
       color: var(--color-text);
-      cursor: pointer;
+      padding: 3px 6px;
       border-radius: var(--radius-sm);
-      padding: 1px 4px;
-      transition: all 0.1s ease;
+      transition: background 0.12s ease;
+      max-width: 240px;
     }
-    .author-link:hover {
+    .author-cell-link:hover {
       background: var(--color-bg-secondary);
+    }
+    .author-cell-link:hover .author-name {
+      color: var(--color-accent);
       text-decoration: underline;
     }
 
-    .author-avatar {
-      width: 18px;
-      height: 18px;
-      border-radius: var(--radius-sm);
+    .author-avatar-wrapper {
+      position: relative;
+      width: 26px;
+      height: 26px;
+      flex-shrink: 0;
+    }
+    .author-avatar-img {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1px solid var(--color-border);
+      background: var(--color-bg-secondary);
+      display: block;
+    }
+    .author-avatar-fallback {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
       background: linear-gradient(135deg, #475569, #334155);
       color: #ffffff;
-      font-size: 9.5px;
+      font-size: 10.5px;
       font-weight: 600;
       display: flex;
       align-items: center;
       justify-content: center;
       text-transform: uppercase;
+    }
+    .author-meta {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      line-height: 1.25;
+    }
+    .author-name {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .author-user {
+      font-size: 10px;
+      color: var(--color-text-secondary);
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .commit-tag {
@@ -735,80 +781,230 @@
       background: var(--color-surface);
     }
 
-    /* Calendar Grid View */
+    /* Authentic Full Calendar View */
     .calendar-container {
       padding: 20px;
       display: none;
     }
     .calendar-container.active { display: block; }
 
-    .calendar-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 16px;
+    .calendar-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--color-border);
+      flex-wrap: wrap;
+      gap: 12px;
     }
 
-    .month-card {
+    .calendar-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .calendar-title {
+      font-size: 15.5px;
+      font-weight: 700;
+      color: var(--color-text);
+      letter-spacing: -0.01em;
+    }
+
+    .calendar-nav-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .calendar-nav-btn {
       background: var(--color-surface);
       border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 14px;
-    }
-
-    .month-header {
-      font-weight: 600;
-      font-size: 12.5px;
-      margin-bottom: 10px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid var(--color-border);
       color: var(--color-text);
-      display: flex;
-      justify-content: space-between;
+      border-radius: var(--radius-sm);
+      padding: 4px 9px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
       align-items: center;
+      gap: 4px;
+      transition: all 0.12s ease;
+      font-family: var(--font-sans);
+    }
+    .calendar-nav-btn:hover {
+      background: var(--color-surface-hover);
+      border-color: var(--color-border-hover);
     }
 
-    .weekdays-row {
+    .calendar-legend {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--color-text-secondary);
+      flex-wrap: wrap;
+    }
+
+    .calendar-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .calendar-legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .calendar-legend-dot.added { background: var(--color-added); }
+    .calendar-legend-dot.updated { background: var(--color-updated); }
+    .calendar-legend-dot.removed { background: var(--color-removed); }
+
+    .calendar-frame {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--color-surface);
+      box-shadow: var(--shadow-subtle);
+    }
+
+    .calendar-weekdays {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
+      background: var(--color-bg-secondary);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .calendar-weekday {
+      padding: 9px 8px;
       text-align: center;
-      font-size: 10px;
-      color: var(--color-text-secondary);
+      font-size: 11px;
       font-weight: 600;
+      color: var(--color-text-secondary);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .calendar-days-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      background: var(--color-border);
+      gap: 1px;
+    }
+
+    .calendar-day-box {
+      background: var(--color-surface);
+      min-height: 105px;
+      padding: 8px 7px;
+      display: flex;
+      flex-direction: column;
+      transition: background 0.1s ease;
+      position: relative;
+      cursor: pointer;
+    }
+    .calendar-day-box:hover {
+      background: var(--color-surface-hover);
+    }
+    .calendar-day-box.outside-month {
+      background: var(--color-bg);
+      opacity: 0.4;
+      cursor: default;
+    }
+    .calendar-day-box.today {
+      box-shadow: inset 0 0 0 1.5px var(--color-accent);
+    }
+
+    .day-box-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       margin-bottom: 6px;
     }
 
-    .days-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 3px;
-    }
-
-    .day-cell {
-      aspect-ratio: 1;
+    .day-number {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--color-text);
+      width: 22px;
+      height: 22px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 10.5px;
-      border-radius: var(--radius-sm);
-      color: var(--color-text-secondary);
-      position: relative;
-      cursor: default;
-      border: 1px solid transparent;
-      transition: all 0.1s ease;
+      border-radius: 50%;
     }
-    .day-cell.empty { opacity: 0; pointer-events: none; }
-    .day-cell.active-day {
-      cursor: pointer;
+    .calendar-day-box.today .day-number {
+      background: var(--color-accent);
+      color: var(--color-bg);
+      font-weight: 700;
+    }
+
+    .day-badge-count {
+      font-size: 10px;
       font-weight: 600;
+      color: var(--color-accent);
+      background: var(--color-accent-glow);
+      padding: 1px 5px;
+      border-radius: 10px;
+      border: 1px solid rgba(99, 102, 241, 0.2);
     }
-    .day-cell.heat-1 { background: rgba(99, 102, 241, 0.15); border-color: rgba(99, 102, 241, 0.25); color: var(--color-text); }
-    .day-cell.heat-2 { background: rgba(99, 102, 241, 0.35); border-color: rgba(99, 102, 241, 0.45); color: #fff; }
-    .day-cell.heat-3 { background: rgba(99, 102, 241, 0.65); border-color: rgba(99, 102, 241, 0.75); color: #fff; }
-    .day-cell.heat-4 { background: #6366f1; border-color: #818cf8; color: #fff; box-shadow: 0 0 8px rgba(99, 102, 241, 0.4); }
-    
-    .day-cell.active-day:hover {
-      outline: 1.5px solid var(--color-border-focus);
-      z-index: 10;
+
+    .day-events-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .day-event-pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: var(--font-mono);
+      font-weight: 500;
+      cursor: pointer;
+      transition: transform 0.08s ease, filter 0.08s ease;
+      border: 1px solid transparent;
+      line-height: 1.35;
+    }
+    .day-event-pill:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.15);
+    }
+
+    .day-event-pill.added {
+      background: var(--color-added-bg);
+      color: var(--color-added);
+      border-color: var(--color-added-border);
+    }
+
+    .day-event-pill.updated {
+      background: var(--color-updated-bg);
+      color: var(--color-updated);
+      border-color: var(--color-updated-border);
+    }
+
+    .day-event-pill.removed {
+      background: var(--color-removed-bg);
+      color: var(--color-removed);
+      border-color: var(--color-removed-border);
+    }
+
+    .day-event-more {
+      font-size: 9.5px;
+      color: var(--color-text-secondary);
+      font-weight: 600;
+      padding: 1px 4px;
+      align-self: flex-start;
+      margin-top: 2px;
     }
 
     /* Slide-out Archaeology Drawer */
@@ -1458,7 +1654,38 @@
 
       <!-- Calendar View -->
       <div class="calendar-container" id="calendar-view">
-        <div class="calendar-grid" id="calendar-grid"></div>
+        <div class="calendar-topbar">
+          <div class="calendar-title-wrap">
+            <h2 class="calendar-title" id="calendar-month-title">September 2026</h2>
+            <div class="calendar-nav-group">
+              <button class="calendar-nav-btn" id="cal-prev-btn" title="Previous Month">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <button class="calendar-nav-btn" id="cal-today-btn" title="Jump to Latest Activity">Today</button>
+              <button class="calendar-nav-btn" id="cal-next-btn" title="Next Month">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+          </div>
+          <div class="calendar-legend">
+            <div class="calendar-legend-item"><span class="calendar-legend-dot added"></span><span>Added</span></div>
+            <div class="calendar-legend-item"><span class="calendar-legend-dot updated"></span><span>Updated</span></div>
+            <div class="calendar-legend-item"><span class="calendar-legend-dot removed"></span><span>Removed</span></div>
+            <span style="font-size: 11px; color: var(--color-text-secondary); margin-left: 4px;" id="calendar-month-stats"></span>
+          </div>
+        </div>
+        <div class="calendar-frame">
+          <div class="calendar-weekdays">
+            <div class="calendar-weekday">Sun</div>
+            <div class="calendar-weekday">Mon</div>
+            <div class="calendar-weekday">Tue</div>
+            <div class="calendar-weekday">Wed</div>
+            <div class="calendar-weekday">Thu</div>
+            <div class="calendar-weekday">Fri</div>
+            <div class="calendar-weekday">Sat</div>
+          </div>
+          <div class="calendar-days-grid" id="calendar-days-grid"></div>
+        </div>
       </div>
 
     </div>
@@ -1597,6 +1824,7 @@
     let currentRepo = '';
     let currentPm = 'npm';
     let workspacePackages = {};
+    let authorsMap = {};
 
     // Theme Management (Dark Theme Default)
     function initTheme() {
@@ -1624,21 +1852,46 @@
       }
     }
 
-    // Author profile redirection link (direct to proper profile, never search page)
-    function getAuthorProfileUrl(author) {
-      if (!author || author === 'Unknown') return '#';
+    // Resolves author information (name, username, avatar picture, profile redirect URL)
+    function getAuthorDetails(author) {
+      if (!author || author === 'Unknown') {
+        return {
+          name: 'Unknown',
+          username: 'unknown',
+          avatarUrl: '',
+          profileUrl: '#'
+        };
+      }
+
+      if (authorsMap && authorsMap[author]) {
+        return authorsMap[author];
+      }
+
       const clean = author.trim().replace(/^@/, '');
-      // 1. Single username handle
+      let username = '';
       if (/^[a-zA-Z0-9_\-]+$/.test(clean)) {
-        return `https://${repoHost || 'github.com'}/${encodeURIComponent(clean)}`;
+        username = clean;
+      } else if (repoOwner) {
+        username = repoOwner;
+      } else {
+        username = clean.toLowerCase().replace(/[^a-z0-9_-]/g, '');
       }
-      // 2. Map author to repo owner (e.g. 'Mohamed Ismail S' -> 'https://github.com/ihssmaheel-dev')
-      if (repoOwner) {
-        return `https://${repoHost || 'github.com'}/${encodeURIComponent(repoOwner)}`;
-      }
-      // 3. Fallback direct profile slug
-      const slug = clean.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-      return `https://${repoHost || 'github.com'}/${encodeURIComponent(slug)}`;
+
+      const cleanHost = repoHost || 'github.com';
+      const avatarUrl = username ? `https://${cleanHost}/${encodeURIComponent(username)}.png?size=64` : '';
+      const profileUrl = username ? `https://${cleanHost}/${encodeURIComponent(username)}` : '#';
+
+      return {
+        name: author,
+        username: username || 'author',
+        avatarUrl,
+        profileUrl
+      };
+    }
+
+    // Backward-compatibility wrapper
+    function getAuthorProfileUrl(author) {
+      return getAuthorDetails(author).profileUrl;
     }
 
     async function loadData() {
@@ -1657,6 +1910,7 @@
         currentRepo = data.repository || '';
         currentPm = data.packageManager || 'npm';
         workspacePackages = data.workspacePackages || {};
+        authorsMap = data.authors || {};
 
         document.getElementById('repo-name').textContent = data.repository || 'repository';
         document.getElementById('branch-name').textContent = data.branch || 'main';
@@ -1829,12 +2083,11 @@
           `;
         }
 
-        const authorInitial = (ev.author || 'U')[0].toUpperCase();
+        const authorInfo = getAuthorDetails(ev.author);
+        const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
         const typeBadge = ev.is_direct 
           ? `<span class="dep-type-tag direct">direct</span>` 
           : `<span class="dep-type-tag">dep</span>`;
-
-        const authorProfile = getAuthorProfileUrl(ev.author);
 
         return `
           <tr>
@@ -1851,9 +2104,15 @@
             <td>${typeBadge}</td>
             <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
             <td>
-              <a href="${authorProfile}" target="_blank" rel="noopener noreferrer" class="author-link" title="View ${escapeHtml(ev.author || '')}'s GitHub profile">
-                <div class="author-avatar">${authorInitial}</div>
-                <span class="author-name">${escapeHtml(ev.author || '')}</span>
+              <a href="${authorInfo.profileUrl}" target="_blank" rel="noopener noreferrer" class="author-cell-link" title="View ${escapeHtml(authorInfo.name)} (@${escapeHtml(authorInfo.username)}) on ${repoHost}">
+                <div class="author-avatar-wrapper">
+                  ${authorInfo.avatarUrl ? `<img class="author-avatar-img" src="${authorInfo.avatarUrl}" alt="${escapeHtml(authorInfo.name)}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+                  <div class="author-avatar-fallback" style="${authorInfo.avatarUrl ? 'display: none;' : 'display: flex;'}">${authorInitial}</div>
+                </div>
+                <div class="author-meta">
+                  <span class="author-name">${escapeHtml(authorInfo.name)}</span>
+                  <span class="author-user">@${escapeHtml(authorInfo.username)}</span>
+                </div>
               </a>
             </td>
             <td>
@@ -1866,76 +2125,133 @@
       }).join('');
     }
 
+    let calendarYear = new Date().getFullYear();
+    let calendarMonth = new Date().getMonth();
+    let calendarInitialized = false;
+
     function renderCalendar() {
-      const grid = document.getElementById('calendar-grid');
+      const grid = document.getElementById('calendar-days-grid');
+      const titleElem = document.getElementById('calendar-month-title');
+      const statsElem = document.getElementById('calendar-month-stats');
+      if (!grid || !titleElem) return;
+
       const filtered = getFilteredEvents();
 
-      const monthMap = new Map();
-      for (const ev of filtered) {
-        if (!ev.date) continue;
-        const key = ev.date.slice(0, 7);
-        if (!monthMap.has(key)) monthMap.set(key, []);
-        monthMap.get(key).push(ev);
-      }
-
-      if (monthMap.size === 0) {
-        grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: var(--color-text-secondary)">No activity found in calendar view.</div>';
-        return;
-      }
-
-      const sortedMonths = Array.from(monthMap.keys()).sort();
-      grid.innerHTML = sortedMonths.map(ym => {
-        const [yearStr, monthStr] = ym.split('-');
-        const year = parseInt(yearStr, 10);
-        const month = parseInt(monthStr, 10) - 1;
-        const monthEvents = monthMap.get(ym) || [];
-
-        const dayEventMap = new Map();
-        for (const ev of monthEvents) {
-          const day = parseInt(ev.date.slice(8, 10), 10);
-          if (!dayEventMap.has(day)) dayEventMap.set(day, []);
-          dayEventMap.get(day).push(ev);
-        }
-
-        const firstDay = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-        let cellsHtml = '';
-        for (let i = 0; i < firstDay; i++) {
-          cellsHtml += '<div class="day-cell empty"></div>';
-        }
-
-        for (let d = 1; d <= daysInMonth; d++) {
-          const hasEvents = dayEventMap.has(d);
-          const evCount = hasEvents ? dayEventMap.get(d).length : 0;
-          if (hasEvents) {
-            let heatClass = 'heat-1';
-            if (evCount > 8) heatClass = 'heat-4';
-            else if (evCount > 4) heatClass = 'heat-3';
-            else if (evCount > 1) heatClass = 'heat-2';
-            
-            const dayStr = `${ym}-${String(d).padStart(2, '0')}`;
-            cellsHtml += `<div class="day-cell active-day ${heatClass}" onclick="filterByDay('${dayStr}')" title="${d}th: ${evCount} change(s)">${d}</div>`;
-          } else {
-            cellsHtml += `<div class="day-cell">${d}</div>`;
+      // If opening calendar for first time, center on latest event's month
+      if (!calendarInitialized && filtered.length > 0) {
+        for (const ev of filtered) {
+          if (ev.date) {
+            const d = new Date(ev.date);
+            if (!isNaN(d.getTime())) {
+              calendarYear = d.getFullYear();
+              calendarMonth = d.getMonth();
+              break;
+            }
           }
         }
+        calendarInitialized = true;
+      }
 
-        return `
-          <div class="month-card">
-            <div class="month-header">
-              <span>${MONTHS[month]} ${year}</span>
-              <span style="font-size: 10.5px; color: var(--color-text-secondary); font-weight: normal">${monthEvents.length} event(s)</span>
-            </div>
-            <div class="weekdays-row">
-              <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
-            </div>
-            <div class="days-grid">
-              ${cellsHtml}
+      titleElem.textContent = `${MONTHS[calendarMonth]} ${calendarYear}`;
+
+      const ymPrefix = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}`;
+      const monthEvents = filtered.filter(e => (e.date || '').startsWith(ymPrefix));
+
+      const dayEventMap = new Map();
+      let monthAdded = 0, monthUpdated = 0, monthRemoved = 0;
+      for (const ev of monthEvents) {
+        const day = parseInt(ev.date.slice(8, 10), 10);
+        if (!dayEventMap.has(day)) dayEventMap.set(day, []);
+        dayEventMap.get(day).push(ev);
+        if (ev.type === 'added') monthAdded++;
+        else if (ev.type === 'removed') monthRemoved++;
+        else monthUpdated++;
+      }
+
+      if (statsElem) {
+        statsElem.textContent = `${monthEvents.length} change${monthEvents.length === 1 ? '' : 's'} (${monthAdded} added, ${monthUpdated} updated, ${monthRemoved} removed)`;
+      }
+
+      const firstDayOfWeek = new Date(calendarYear, calendarMonth, 1).getDay(); // 0 = Sun
+      const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+      const daysInPrevMonth = new Date(calendarYear, calendarMonth, 0).getDate();
+
+      const now = new Date();
+      const isCurrentMonthYear = now.getFullYear() === calendarYear && now.getMonth() === calendarMonth;
+      const todayDate = now.getDate();
+
+      let cellsHtml = '';
+
+      // 1. Previous month trailing days
+      for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+        const d = daysInPrevMonth - i;
+        cellsHtml += `
+          <div class="calendar-day-box outside-month">
+            <div class="day-box-header">
+              <span class="day-number">${d}</span>
             </div>
           </div>
         `;
-      }).join('');
+      }
+
+      // 2. Current month days
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dayEvents = dayEventMap.get(d) || [];
+        const isToday = isCurrentMonthYear && todayDate === d;
+        const dayStr = `${ymPrefix}-${String(d).padStart(2, '0')}`;
+
+        let eventsHtml = '';
+        if (dayEvents.length > 0) {
+          const displayCount = Math.min(dayEvents.length, 3);
+          for (let i = 0; i < displayCount; i++) {
+            const ev = dayEvents[i];
+            let symbol = '+';
+            if (ev.type === 'removed') symbol = '–';
+            else if (ev.type === 'updated') symbol = '↑';
+
+            const ver = ev.type === 'removed' ? (ev.from || '') : (ev.to || '');
+            eventsHtml += `
+              <div class="day-event-pill ${ev.type}" onclick="event.stopPropagation(); openArchaeology('${escapeHtml(ev.package)}')" title="${symbol} ${escapeHtml(ev.package)} ${ver ? '(' + escapeHtml(ver) + ')' : ''} by ${escapeHtml(ev.author || '')}">
+                <span>${symbol}</span>
+                <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(ev.package)}</span>
+              </div>
+            `;
+          }
+
+          if (dayEvents.length > 3) {
+            eventsHtml += `<div class="day-event-more">+${dayEvents.length - 3} more</div>`;
+          }
+        }
+
+        const countBadge = dayEvents.length > 0 ? `<span class="day-badge-count">${dayEvents.length}</span>` : '';
+
+        cellsHtml += `
+          <div class="calendar-day-box ${isToday ? 'today' : ''} ${dayEvents.length > 0 ? 'has-events' : ''}" onclick="filterByDay('${dayStr}')" title="${d} ${MONTHS[calendarMonth]}: ${dayEvents.length} change(s). Click to view day timeline.">
+            <div class="day-box-header">
+              <span class="day-number">${d}</span>
+              ${countBadge}
+            </div>
+            <div class="day-events-stack">
+              ${eventsHtml}
+            </div>
+          </div>
+        `;
+      }
+
+      // 3. Next month leading days to complete grid row
+      const totalCellsSoFar = firstDayOfWeek + daysInMonth;
+      const nextMonthDays = (7 - (totalCellsSoFar % 7)) % 7;
+      for (let d = 1; d <= nextMonthDays; d++) {
+        cellsHtml += `
+          <div class="calendar-day-box outside-month">
+            <div class="day-box-header">
+              <span class="day-number">${d}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      grid.innerHTML = cellsHtml;
     }
 
     function filterByDay(dayStr) {
@@ -2106,7 +2422,8 @@
         else if (ev.type === 'removed') actionText = `Removed dependency (was ${escapeHtml(ev.from || '')})`;
         else actionText = `Upgraded ${escapeHtml(ev.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ev.to || '')}</span>`;
 
-        const authorProfile = getAuthorProfileUrl(ev.author);
+        const authorInfo = getAuthorDetails(ev.author);
+        const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
 
         return `
           <div class="timeline-node ${ev.type}">
@@ -2118,8 +2435,12 @@
               </div>
               <div class="node-version">${actionText}</div>
               <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
-              <div style="font-size: 10.5px; color: var(--color-text-secondary); margin-top: 5px;">
-                by <a href="${authorProfile}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;" title="View ${escapeHtml(ev.author || '')}'s GitHub profile">${escapeHtml(ev.author || 'Unknown')}</a> in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span>
+              <div style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 7px;">
+                <div class="author-avatar-wrapper" style="width: 18px; height: 18px;">
+                  ${authorInfo.avatarUrl ? `<img class="author-avatar-img" src="${authorInfo.avatarUrl}" alt="${escapeHtml(authorInfo.name)}" style="width: 18px; height: 18px;" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+                  <div class="author-avatar-fallback" style="font-size: 9px; ${authorInfo.avatarUrl ? 'display: none;' : 'display: flex;'}">${authorInitial}</div>
+                </div>
+                <span>by <a href="${authorInfo.profileUrl}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; font-weight: 500;" title="View ${escapeHtml(authorInfo.name)} (@${escapeHtml(authorInfo.username)}) on GitHub">${escapeHtml(authorInfo.name)}</a> <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-secondary);">@${escapeHtml(authorInfo.username)}</span> in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span></span>
               </div>
             </div>
           </div>
@@ -2157,25 +2478,77 @@
     }
 
     function switchToTimeline() {
+      if (currentView === 'timeline') return;
+      currentView = 'timeline';
       document.getElementById('view-timeline-btn').classList.add('active');
       document.getElementById('view-calendar-btn').classList.remove('active');
       document.getElementById('timeline-view').style.display = 'block';
       document.getElementById('calendar-view').classList.remove('active');
-      currentView = 'timeline';
       renderTable();
     }
 
-    // View toggles
-    document.getElementById('view-timeline-btn').addEventListener('click', switchToTimeline);
-
-    document.getElementById('view-calendar-btn').addEventListener('click', () => {
+    function switchToCalendar() {
+      if (currentView === 'calendar') return;
+      currentView = 'calendar';
       document.getElementById('view-calendar-btn').classList.add('active');
       document.getElementById('view-timeline-btn').classList.remove('active');
       document.getElementById('timeline-view').style.display = 'none';
       document.getElementById('calendar-view').classList.add('active');
-      currentView = 'calendar';
       renderCalendar();
-    });
+    }
+
+    // View toggles
+    document.getElementById('view-timeline-btn').addEventListener('click', switchToTimeline);
+    document.getElementById('view-calendar-btn').addEventListener('click', switchToCalendar);
+
+    // Calendar navigation
+    const calPrev = document.getElementById('cal-prev-btn');
+    if (calPrev) {
+      calPrev.addEventListener('click', () => {
+        calendarMonth--;
+        if (calendarMonth < 0) {
+          calendarMonth = 11;
+          calendarYear--;
+        }
+        renderCalendar();
+      });
+    }
+
+    const calNext = document.getElementById('cal-next-btn');
+    if (calNext) {
+      calNext.addEventListener('click', () => {
+        calendarMonth++;
+        if (calendarMonth > 11) {
+          calendarMonth = 0;
+          calendarYear++;
+        }
+        renderCalendar();
+      });
+    }
+
+    const calToday = document.getElementById('cal-today-btn');
+    if (calToday) {
+      calToday.addEventListener('click', () => {
+        const filtered = getFilteredEvents();
+        if (filtered.length > 0) {
+          for (const ev of filtered) {
+            if (ev.date) {
+              const d = new Date(ev.date);
+              if (!isNaN(d.getTime())) {
+                calendarYear = d.getFullYear();
+                calendarMonth = d.getMonth();
+                renderCalendar();
+                return;
+              }
+            }
+          }
+        }
+        const now = new Date();
+        calendarYear = now.getFullYear();
+        calendarMonth = now.getMonth();
+        renderCalendar();
+      });
+    }
 
     // Filter pills
     document.querySelectorAll('.filter-btn').forEach(btn => {

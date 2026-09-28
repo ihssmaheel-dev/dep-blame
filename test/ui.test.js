@@ -43,6 +43,9 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     assert.ok(data.workspacePackages && typeof data.workspacePackages === 'object');
     assert.equal(data.workspacePackages['dep-blame'], 'packages/core');
     assert.equal(data.workspacePackages['@dep-blame/ui'], 'packages/ui');
+    assert.ok(data.authors && typeof data.authors === 'object');
+    assert.ok(data.authors['Mohamed Ismail S']);
+    assert.equal(data.authors['Mohamed Ismail S'].username, 'ihssmaheel-dev');
   } finally {
     await close();
   }
