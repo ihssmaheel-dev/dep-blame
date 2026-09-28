@@ -11,10 +11,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runDepBlame } from '../src/engine.js';
+import { getRepoRoot, resolveBaseRef } from '../src/git/repo.js';
 import { renderEventTable } from '../src/render/table.js';
 import { renderArchaeologyView } from '../src/render/archaeology.js';
 import { renderCalendarView } from '../src/render/calendar.js';
 import { renderStatsView } from '../src/render/stats.js';
+import { renderCiSummary } from '../src/render/ci.js';
 import { renderJson } from '../src/render/json.js';
 import { c } from '../src/render/ansi.js';
 
@@ -67,13 +69,15 @@ ${c.bold('COMMANDS:')}
   ${c.cyan('pkg <package>')}            Full history of one package ("archaeology" view)
   ${c.cyan('calendar')}                 Month-grid visualization in the terminal
   ${c.cyan('stats')}                    Aggregate counts, churn rate, top modified packages
+  ${c.cyan('ci')}                       CI summary view, diffing against base branch
   ${c.cyan('added')}                    Filter: only added events
   ${c.cyan('updated')}                  Filter: only updated events
   ${c.cyan('removed')}                  Filter: only removed events
   ${c.cyan('changes')}                  Filter changes within a time-window (use with --since)
 
 ${c.bold('OPTIONS:')}
-  ${c.yellow('--since <window>')}         Time window (e.g. 7d, 30d, 2w, 6m, 1y, or ISO date)
+  ${c.yellow('--since <ref|window>')}     Time window (7d, 30d...) or git ref for CI (e.g. origin/main)
+  ${c.yellow('--fail-on-removal')}        (CI only) Exit non-zero if any dependency was removed
   ${c.yellow('--verbose')}                Expand collapsed bulk updates across manifests
   ${c.yellow('--json')}                   Output raw JSON matching v1 schema contract
   ${c.yellow('--no-cache')}               Force full rescan, ignore cache
@@ -86,7 +90,7 @@ ${c.bold('EXAMPLES:')}
   $ npx dep-blame pkg react
   $ npx dep-blame calendar
   $ npx dep-blame stats
-  $ npx dep-blame list --since 30d
+  $ npx dep-blame ci --since origin/main --fail-on-removal
   $ npx dep-blame --json
 `);
 }
@@ -98,6 +102,7 @@ async function main() {
     json: { type: 'boolean' },
     verbose: { type: 'boolean' },
     since: { type: 'string' },
+    'fail-on-removal': { type: 'boolean' },
     'no-cache': { type: 'boolean' },
     'cache-dir': { type: 'string' }
   };
@@ -130,6 +135,60 @@ async function main() {
 
   const subCommand = positionals[0] || 'list';
   const filter = {};
+
+  if (subCommand === 'ci') {
+    let repoRoot;
+    try {
+      repoRoot = await getRepoRoot();
+    } catch {
+      console.error(c.red('Error: Not a git repository.'));
+      process.exit(1);
+    }
+
+    const { baseRef, baseSha } = await resolveBaseRef(values.since, repoRoot);
+
+    try {
+      const result = await runDepBlame({
+        noCache: true, // CI always runs fresh against target ref
+        cacheDir: values['cache-dir']
+      });
+
+      // Filter events occurring after baseSha
+      let ciEvents = result.events;
+      if (baseSha) {
+        // If git commit was resolved, take all events in current PR / branch
+        const baseIndex = result.events.findIndex((e) => e.commit === baseSha.slice(0, 7));
+        if (baseIndex !== -1) {
+          ciEvents = result.events.slice(baseIndex + 1);
+        }
+      }
+
+      if (values.json) {
+        console.log(
+          renderJson({
+            repository: result.repository,
+            packageManager: result.packageManager,
+            command: 'ci',
+            events: ciEvents
+          })
+        );
+      } else {
+        console.log(renderCiSummary(ciEvents, baseRef));
+      }
+
+      const removals = ciEvents.filter((e) => e.type === 'removed');
+      if (values['fail-on-removal'] && removals.length > 0) {
+        console.error(
+          c.red(`\nCI Check Failed: ${removals.length} dependency removal(s) detected with --fail-on-removal enabled.`)
+        );
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (err) {
+      console.error(c.red(err.message || 'An error occurred during CI analysis.'));
+      process.exit(1);
+    }
+  }
 
   if (values.since) {
     const sinceDate = parseSinceOption(values.since);

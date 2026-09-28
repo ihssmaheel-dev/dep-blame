@@ -83,3 +83,47 @@ export async function isAncestor(candidateSha, targetSha = 'HEAD', cwd = process
     return false;
   }
 }
+
+/**
+ * Resolves base ref and merge-base commit for CI comparisons.
+ *
+ * @param {string} [candidateRef] Specific ref (e.g. origin/main, HEAD~1)
+ * @param {string} [cwd=process.cwd()]
+ * @returns {Promise<{ baseRef: string, baseSha: string | null }>}
+ */
+export async function resolveBaseRef(candidateRef, cwd = process.cwd()) {
+  let baseRef = candidateRef;
+
+  if (!baseRef) {
+    // Try symbolic-ref for default remote branch
+    try {
+      const { stdout } = await execGit(['symbolic-ref', 'refs/remotes/origin/HEAD'], cwd);
+      baseRef = stdout.trim().replace('refs/remotes/', '');
+    } catch {
+      // Try origin/main or origin/master
+      try {
+        await execGit(['rev-parse', '--verify', 'origin/main'], cwd);
+        baseRef = 'origin/main';
+      } catch {
+        try {
+          await execGit(['rev-parse', '--verify', 'origin/master'], cwd);
+          baseRef = 'origin/master';
+        } catch {
+          baseRef = 'HEAD~1';
+        }
+      }
+    }
+  }
+
+  try {
+    const { stdout } = await execGit(['merge-base', baseRef, 'HEAD'], cwd);
+    return { baseRef, baseSha: stdout.trim() };
+  } catch {
+    try {
+      const { stdout } = await execGit(['rev-parse', baseRef], cwd);
+      return { baseRef, baseSha: stdout.trim() };
+    } catch {
+      return { baseRef, baseSha: null };
+    }
+  }
+}
