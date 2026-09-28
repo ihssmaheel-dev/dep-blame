@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import {
   checkGit,
   getRepoRoot,
@@ -18,11 +19,37 @@ import { diffSnapshots, createLockfileLowFiEvent } from './diff/snapshot-diff.js
 import { openCache } from './cache/index.js';
 import type {
   BlobRequest,
+  CommitInfo,
   DependencyEntry,
   DependencyEvent,
   EngineOptions,
   EngineResult
 } from './types.js';
+
+const MANIFEST_PATHS_CACHE_KEY = 'manifest_paths';
+// Streaming windows bound peak memory: ~1500 blobs ≈ 5-15MB, not 500MB.
+const WINDOW_TARGET_BLOBS = 1500;
+const WINDOW_MAX_COMMITS = 300;
+// Historic discovery is a full-history `git log`; only pay it on cold scans.
+const PROGRESS_THRESHOLD = 2000;
+
+function hashContent(content: string): string {
+  // sha1 is native-fast and collision risk is irrelevant for change detection.
+  return createHash('sha1').update(content, 'utf8').digest('hex');
+}
+
+function readCachedManifestPaths(cache: { getMeta(k: string): string | null }): string[] | null {
+  try {
+    const raw = cache.getMeta(MANIFEST_PATHS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const cleaned = parsed.filter((p) => typeof p === 'string' && p.length > 0 && p.length <= 256);
+    return cleaned.length > 0 ? cleaned : null;
+  } catch {
+    return null;
+  }
+}
 
 async function parseAnyManifest(
   filePath: string,
@@ -91,20 +118,12 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     };
   }
 
-  // Step 3: Manifest detection (HEAD + historic union so deleted
-  // workspaces don't vanish from history).
+  // Step 3: Cheap HEAD detection first (sync fs, no git history walk).
   const detected = detectPackageManager(repoRoot);
-  let manifestPaths = detected.manifestPaths;
-  try {
-    const historic = await discoverHistoricManifests(repoRoot);
-    if (historic.length > 0) {
-      manifestPaths = mergeManifestPaths(manifestPaths, historic);
-    }
-  } catch {
-    // Best-effort; HEAD paths alone still produce correct (if partial) results.
-  }
 
-  // Step 4: Cache management
+  // Step 4: Cache management — opened BEFORE expensive historic discovery
+  // so warm hits (`cached_head === HEAD`) return without ever running
+  // `git log --all --full-history`.
   const cache = await openCache({ repoRoot, cacheDir });
 
   if (clearCache) {
@@ -116,7 +135,7 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
 
   if (cachedHead) {
     if (cachedHead === currentHead) {
-      // Warm cache hit
+      // Warm cache hit — no git history walk at all.
       const events = cache.queryEvents(filter);
       cache.close();
       return {
@@ -140,7 +159,35 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     }
   }
 
-  // Step 5: Get manifest commits
+  // Step 4b: Resolve full manifest list.
+  // - Incremental (sinceCommit + cached list): merge cached + HEAD, skip
+  //   the full-history walk entirely. Deleted workspaces stay covered
+  //   because the cached list already contains them.
+  // - Cold / rewrite / first run: pay for historic discovery once, then
+  //   cache the result for all future incrementals.
+  let manifestPaths = detected.manifestPaths;
+  if (sinceCommit) {
+    const cachedPaths = noCache ? null : readCachedManifestPaths(cache);
+    if (cachedPaths) {
+      manifestPaths = mergeManifestPaths(cachedPaths, manifestPaths);
+    } else {
+      try {
+        const historic = await discoverHistoricManifests(repoRoot);
+        if (historic.length > 0) manifestPaths = mergeManifestPaths(manifestPaths, historic);
+      } catch {
+        // Best-effort.
+      }
+    }
+  } else {
+    try {
+      const historic = await discoverHistoricManifests(repoRoot);
+      if (historic.length > 0) manifestPaths = mergeManifestPaths(manifestPaths, historic);
+    } catch {
+      // Best-effort; HEAD paths alone still produce correct (if partial) results.
+    }
+  }
+
+  // Step 5: Get manifest commits (git filters; Node only sees hits).
   const commits = await getManifestCommits(repoRoot, {
     sinceCommit,
     manifestPaths,
@@ -149,6 +196,11 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
 
   if (commits.length === 0) {
     cache.setMeta('cached_head', currentHead);
+    try {
+      cache.setMeta(MANIFEST_PATHS_CACHE_KEY, JSON.stringify(manifestPaths));
+    } catch {
+      // Ignore meta failures.
+    }
     const events = cache.queryEvents(filter);
     cache.close();
     return {
@@ -161,105 +213,129 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     };
   }
 
-  // Step 6: Prepare batch requests
-  const blobRequests: BlobRequest[] = [];
+  const showProgress = !options.silent && commits.length >= PROGRESS_THRESHOLD;
 
-  if (sinceCommit) {
-    for (const p of manifestPaths) {
-      blobRequests.push({ commit: sinceCommit, path: p });
-    }
-  }
-
-  for (const c of commits) {
-    for (const f of c.files) {
-      blobRequests.push({ commit: c.commit, path: f });
-    }
-  }
-
-  const blobs = await batchReadBlobs(repoRoot, blobRequests);
-
-  // Step 7: Diff snapshots chronologically
+  // Step 6+7: Stream commits in windows instead of one giant blob Map.
+  // Peak memory stays ~1 window (≤1500 blobs), not total history.
   const snapshots = new Map<string, Map<string, DependencyEntry>>();
+  const rawHashes = new Map<string, string>();
 
+  // Seed baseline from sinceCommit (small: one blob per manifest path).
   if (sinceCommit) {
-    for (const p of manifestPaths) {
-      const content = blobs.get(`${sinceCommit}:${p}`);
-      if (content) {
-        const parsed = await parseAnyManifest(p, content);
-        // null = unparsable (missing yaml parser): don't seed snapshot so
-        // future commits still emit low-fi signals instead of fake diffs.
-        if (parsed !== null) snapshots.set(p, parsed);
+    const seedRequests: BlobRequest[] = manifestPaths.map((p) => ({ commit: sinceCommit as string, path: p }));
+    // Chunk seed fetch so 300-path monorepos don't breach batch limits.
+    for (let i = 0; i < seedRequests.length; i += 1000) {
+      const slice = seedRequests.slice(i, i + 1000);
+      const seedBlobs = await batchReadBlobs(repoRoot, slice);
+      for (const req of slice) {
+        const content = seedBlobs.get(`${req.commit}:${req.path}`);
+        if (content) {
+          const parsed = await parseAnyManifest(req.path, content);
+          if (parsed !== null) {
+            snapshots.set(req.path, parsed);
+            rawHashes.set(req.path, hashContent(content));
+          }
+        }
       }
     }
   }
 
-  const newEvents: DependencyEvent[] = [];
+  let processed = 0;
 
-  for (const c of commits) {
-    // Packages already explained by a package.json diff in this commit.
-    // Name-based (not `manifest:name`) so root + workspace lockfiles dedup
-    // correctly: direct manifest wins over resolved lockfile.
-    const directPackagesInCommit = new Set<string>();
+  const processWindow = async (window: CommitInfo[]): Promise<void> => {
+    if (window.length === 0) return;
+    const blobRequests: BlobRequest[] = [];
+    for (const c of window) {
+      for (const f of c.files) blobRequests.push({ commit: c.commit, path: f });
+    }
+    const blobs = await batchReadBlobs(repoRoot, blobRequests);
+    const windowEvents: DependencyEvent[] = [];
 
-    // First process all package.json files (root and workspace manifests)
-    for (const f of c.files) {
-      if (f.endsWith('package.json')) {
+    for (const c of window) {
+      const directPackagesInCommit = new Set<string>();
+
+      for (const f of c.files) {
+        if (!f.endsWith('package.json')) continue;
         const content = blobs.get(`${c.commit}:${f}`);
+        const h = content ? hashContent(content) : '';
+        const prevH = rawHashes.get(f);
+        if (h === prevH && snapshots.has(f)) continue; // unchanged (merge/mode-only)
         const currMap = content ? parsePackageJson(content) : new Map<string, DependencyEntry>();
         const prevMap = snapshots.get(f) || new Map<string, DependencyEntry>();
-
         const events = diffSnapshots(prevMap, currMap, c, f);
         for (const ev of events) {
           directPackagesInCommit.add(ev.package);
-          newEvents.push(ev);
+          windowEvents.push(ev);
         }
         snapshots.set(f, currMap);
+        rawHashes.set(f, h);
       }
-    }
 
-    // Process lockfiles (npm, pnpm, yarn, bun)
-    for (const f of c.files) {
-      if (!f.endsWith('package.json')) {
+      for (const f of c.files) {
+        if (f.endsWith('package.json')) continue;
         const content = blobs.get(`${c.commit}:${f}`);
         if (!content) {
-          // Deleted lockfile: diff against empty so removals surface.
+          const prevH = rawHashes.get(f) || '';
+          if (prevH === '' && snapshots.has(f)) continue;
           const prevMap = snapshots.get(f) || new Map<string, DependencyEntry>();
           if (prevMap.size > 0) {
             const lockEvents = diffSnapshots(prevMap, new Map(), c, f);
             for (const ev of lockEvents) {
-              if (!directPackagesInCommit.has(ev.package)) newEvents.push(ev);
+              if (!directPackagesInCommit.has(ev.package)) windowEvents.push(ev);
             }
           }
           snapshots.set(f, new Map());
+          rawHashes.set(f, '');
           continue;
         }
+        // Hash-skip BEFORE the expensive YAML/JSON parse.
+        const h = hashContent(content);
+        if (h === rawHashes.get(f) && snapshots.has(f)) continue;
         const currMap = await parseAnyManifest(f, content);
         if (currMap === null) {
-          // Parser unavailable (missing optional `yaml`): emit one honest
-          // low-fidelity event instead of silence — but only when the commit
-          // didn't already produce direct package.json events (those win).
-          // Don't update snapshot so a future install of `yaml` re-indexes.
           if (directPackagesInCommit.size === 0) {
-            newEvents.push(createLockfileLowFiEvent(c, f));
+            windowEvents.push(createLockfileLowFiEvent(c, f));
           }
           continue;
         }
         const prevMap = snapshots.get(f) || new Map<string, DependencyEntry>();
-
         const lockEvents = diffSnapshots(prevMap, currMap, c, f);
         for (const ev of lockEvents) {
-          if (!directPackagesInCommit.has(ev.package)) {
-            newEvents.push(ev);
-          }
+          if (!directPackagesInCommit.has(ev.package)) windowEvents.push(ev);
         }
         snapshots.set(f, currMap);
+        rawHashes.set(f, h);
       }
     }
-  }
 
-  // Step 8: Cache events
-  cache.insertEvents(newEvents);
+    if (windowEvents.length > 0) cache.insertEvents(windowEvents);
+    processed += window.length;
+    if (showProgress) {
+      console.warn(`  dep-blame: indexed ${processed}/${commits.length} commits...`);
+    }
+  };
+
+  // Slice commits so no window exceeds blob or count budgets.
+  let window: CommitInfo[] = [];
+  let windowBlobs = 0;
+  for (const c of commits) {
+    window.push(c);
+    windowBlobs += c.files.length;
+    if (window.length >= WINDOW_MAX_COMMITS || windowBlobs >= WINDOW_TARGET_BLOBS) {
+      await processWindow(window);
+      window = [];
+      windowBlobs = 0;
+    }
+  }
+  await processWindow(window);
+
+  // Step 8: Cache bookkeeping (events already inserted per window).
   cache.setMeta('cached_head', currentHead);
+  try {
+    cache.setMeta(MANIFEST_PATHS_CACHE_KEY, JSON.stringify(manifestPaths));
+  } catch {
+    // Ignore meta failures.
+  }
 
   // Step 9: Return filtered events
   const allEvents = cache.queryEvents(filter);
