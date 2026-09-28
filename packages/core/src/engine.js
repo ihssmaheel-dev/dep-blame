@@ -11,8 +11,36 @@ import { batchReadBlobs } from './git/batch.js';
 import { detectPackageManager } from './manifest/detect.js';
 import { parsePackageJson } from './manifest/package-json.js';
 import { parseNpmLockfile } from './manifest/lockfiles/npm.js';
-import { diffSnapshots, createLockfileLowFiEvent } from './diff/snapshot-diff.js';
+import { parsePnpmLockfile } from './manifest/lockfiles/pnpm.js';
+import { parseYarnLockfile } from './manifest/lockfiles/yarn.js';
+import { parseBunLockfile } from './manifest/lockfiles/bun.js';
+import { diffSnapshots } from './diff/snapshot-diff.js';
 import { openCache } from './cache/index.js';
+
+/**
+ * Parses any supported manifest or lockfile into a normalized dependency map.
+ */
+async function parseAnyManifest(filePath, content) {
+  if (!content) return new Map();
+
+  if (filePath.endsWith('package.json')) {
+    return parsePackageJson(content);
+  }
+  if (filePath.endsWith('package-lock.json')) {
+    return parseNpmLockfile(content, { directOnly: true });
+  }
+  if (filePath.endsWith('pnpm-lock.yaml')) {
+    return await parsePnpmLockfile(content);
+  }
+  if (filePath.endsWith('yarn.lock')) {
+    return await parseYarnLockfile(content);
+  }
+  if (filePath.endsWith('bun.lock') || filePath.endsWith('bun.lockb')) {
+    return parseBunLockfile(content);
+  }
+
+  return new Map();
+}
 
 /**
  * Runs the full dep-blame analysis pipeline.
@@ -21,7 +49,7 @@ import { openCache } from './cache/index.js';
  * @param {string} [options.cwd=process.cwd()] Working directory
  * @param {boolean} [options.noCache=false] Force full rescan without cache
  * @param {string} [options.cacheDir] Override cache directory
- * @param {Object} [options.filter] Filter options (package, type, since)
+ * @param {Object} [options.filter] Filter options (package, type, since, manifest)
  * @returns {Promise<{
  *   repository: string,
  *   packageManager: string,
@@ -97,7 +125,6 @@ export async function runDepBlame(options = {}) {
       if (!options.silent) {
         console.warn('⚠ History rewrite detected. Re-indexing full dependency history...');
       }
-      // Re-initialize cache on history rewrite
       cache.setMeta('cached_head', '');
     }
   }
@@ -147,11 +174,8 @@ export async function runDepBlame(options = {}) {
     for (const p of manifestPaths) {
       const content = blobs.get(`${sinceCommit}:${p}`);
       if (content) {
-        if (p.endsWith('package.json')) {
-          snapshots.set(p, parsePackageJson(content));
-        } else if (p.endsWith('package-lock.json')) {
-          snapshots.set(p, parseNpmLockfile(content, { directOnly: true }));
-        }
+        const parsed = await parseAnyManifest(p, content);
+        snapshots.set(p, parsed);
       }
     }
   }
@@ -159,10 +183,9 @@ export async function runDepBlame(options = {}) {
   const newEvents = [];
 
   for (const c of commits) {
-    const pkgJsonChanged = c.files.some((f) => f.endsWith('package.json'));
     const packagesModifiedInCommit = new Set();
 
-    // First process package.json changes
+    // First process all package.json files (root and workspace manifests)
     for (const f of c.files) {
       if (f.endsWith('package.json')) {
         const content = blobs.get(`${c.commit}:${f}`);
@@ -171,35 +194,29 @@ export async function runDepBlame(options = {}) {
 
         const events = diffSnapshots(prevMap, currMap, c, f);
         for (const ev of events) {
-          packagesModifiedInCommit.add(ev.package);
+          packagesModifiedInCommit.add(`${f}:${ev.package}`);
           newEvents.push(ev);
         }
         snapshots.set(f, currMap);
       }
     }
 
-    // Process package-lock.json changes
+    // Process lockfiles (npm, pnpm, yarn, bun)
     for (const f of c.files) {
-      if (f.endsWith('package-lock.json')) {
+      if (!f.endsWith('package.json')) {
         const content = blobs.get(`${c.commit}:${f}`);
-        const currMap = content ? parseNpmLockfile(content, { directOnly: true }) : new Map();
+        const currMap = content ? await parseAnyManifest(f, content) : new Map();
         const prevMap = snapshots.get(f) || new Map();
 
         const lockEvents = diffSnapshots(prevMap, currMap, c, f);
         for (const ev of lockEvents) {
           // Avoid duplicate events if already handled by package.json in same commit
-          if (!packagesModifiedInCommit.has(ev.package)) {
+          const directKey = `package.json:${ev.package}`;
+          if (!packagesModifiedInCommit.has(directKey)) {
             newEvents.push(ev);
           }
         }
         snapshots.set(f, currMap);
-      }
-    }
-
-    // Low-fidelity event for pnpm / yarn in v0.1
-    for (const f of c.files) {
-      if ((f.endsWith('pnpm-lock.yaml') || f.endsWith('yarn.lock')) && !pkgJsonChanged) {
-        newEvents.push(createLockfileLowFiEvent(c, f));
       }
     }
   }

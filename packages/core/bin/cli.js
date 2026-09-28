@@ -68,6 +68,7 @@ ${c.bold('COMMANDS:')}
 
 ${c.bold('OPTIONS:')}
   ${c.yellow('--since <window>')}         Time window (e.g. 7d, 30d, 2w, 6m, 1y, or ISO date)
+  ${c.yellow('--verbose')}                Expand collapsed bulk updates across manifests
   ${c.yellow('--json')}                   Output raw JSON matching v1 schema contract
   ${c.yellow('--no-cache')}               Force full rescan, ignore cache
   ${c.yellow('--cache-dir <path>')}       Override cache storage location
@@ -78,6 +79,7 @@ ${c.bold('EXAMPLES:')}
   $ npx dep-blame
   $ npx dep-blame list --since 30d
   $ npx dep-blame pkg react
+  $ npx dep-blame --verbose
   $ npx dep-blame --json
 `);
 }
@@ -87,6 +89,7 @@ async function main() {
     help: { type: 'boolean', short: 'h' },
     version: { type: 'boolean', short: 'v' },
     json: { type: 'boolean' },
+    verbose: { type: 'boolean' },
     since: { type: 'string' },
     'no-cache': { type: 'boolean' },
     'cache-dir': { type: 'string' }
@@ -163,7 +166,7 @@ async function main() {
         })
       );
     } else {
-      console.log(renderEventTable(result.events));
+      console.log(renderEventTable(result.events, { verbose: values.verbose }));
     }
   } catch (err) {
     console.error(c.red(err.message || 'An error occurred during dep-blame analysis.'));

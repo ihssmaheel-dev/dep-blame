@@ -42,11 +42,17 @@ function formatType(type) {
 
 /**
  * Renders dependency events into a clean, aligned ANSI table string.
+ * Supports collapsed multi-manifest commit rendering unless options.verbose is true.
  *
  * @param {import('../diff/snapshot-diff.js').DependencyEvent[]} events
+ * @param {Object} [options]
+ * @param {boolean} [options.verbose=false]
+ * @param {number} [options.collapseThreshold=5]
  * @returns {string}
  */
-export function renderEventTable(events) {
+export function renderEventTable(events, options = {}) {
+  const { verbose = false, collapseThreshold = 5 } = options;
+
   if (!events || events.length === 0) {
     return c.dim('No dependency change events found.');
   }
@@ -56,24 +62,16 @@ export function renderEventTable(events) {
   let maxChange = 'CHANGE'.length;
   let maxAuthor = 'AUTHOR'.length;
 
-  const rows = events.map((ev) => {
-    const date = formatDate(ev.date);
-    const type = formatType(ev.type);
-    const rawType = ev.type;
-    const pkg = ev.package;
+  for (const ev of events) {
+    const pkg = ev.package || '';
     const change = formatChange(ev);
     const author = ev.author || '';
-    const commit = ev.commit || '';
-    const message = ev.message || '';
 
     if (pkg.length > maxPkg) maxPkg = pkg.length;
     if (change.length > maxChange) maxChange = change.length;
     if (author.length > maxAuthor) maxAuthor = author.length;
+  }
 
-    return { date, type, rawType, pkg, change, author, commit, message };
-  });
-
-  // Keep max columns within readable bounds
   maxPkg = Math.min(maxPkg, 36);
   maxChange = Math.min(maxChange, 28);
   maxAuthor = Math.min(maxAuthor, 18);
@@ -89,25 +87,76 @@ export function renderEventTable(events) {
   ].join('  ');
 
   const divider = c.dim('─'.repeat(header.length + 10));
-
   const lines = [c.bold(header), divider];
 
-  for (const row of rows) {
-    const pkgTruncated = row.pkg.length > maxPkg ? row.pkg.slice(0, maxPkg - 1) + '…' : row.pkg;
-    const changeTruncated = row.change.length > maxChange ? row.change.slice(0, maxChange - 1) + '…' : row.change;
-    const authorTruncated = row.author.length > maxAuthor ? row.author.slice(0, maxAuthor - 1) + '…' : row.author;
+  // Group by commit to handle collapse
+  const commitGroups = [];
+  let currentGroup = [];
+  let currentCommit = null;
 
-    const line = [
-      c.dim(row.date.padEnd(10)),
-      row.type,
+  for (const ev of events) {
+    if (ev.commit !== currentCommit) {
+      if (currentGroup.length > 0) {
+        commitGroups.push(currentGroup);
+      }
+      currentGroup = [ev];
+      currentCommit = ev.commit;
+    } else {
+      currentGroup.push(ev);
+    }
+  }
+  if (currentGroup.length > 0) {
+    commitGroups.push(currentGroup);
+  }
+
+  const renderSingleRow = (ev) => {
+    const date = formatDate(ev.date);
+    const type = formatType(ev.type);
+    const pkg = ev.package;
+    const change = formatChange(ev);
+    const author = ev.author || '';
+    const commit = ev.commit || '';
+    const message = ev.message || '';
+
+    const pkgTruncated = pkg.length > maxPkg ? pkg.slice(0, maxPkg - 1) + '…' : pkg;
+    const changeTruncated = change.length > maxChange ? change.slice(0, maxChange - 1) + '…' : change;
+    const authorTruncated = author.length > maxAuthor ? author.slice(0, maxAuthor - 1) + '…' : author;
+
+    return [
+      c.dim(date.padEnd(10)),
+      type,
       c.bold(pkgTruncated.padEnd(maxPkg)),
       changeTruncated.padEnd(maxChange),
       c.dim(authorTruncated.padEnd(maxAuthor)),
-      c.cyan(row.commit.padEnd(7)),
-      c.dim(row.message)
+      c.cyan(commit.padEnd(7)),
+      c.dim(message)
     ].join('  ');
+  };
 
-    lines.push(line);
+  for (const group of commitGroups) {
+    if (!verbose && group.length >= collapseThreshold) {
+      const first = group[0];
+      const date = formatDate(first.date);
+      const commit = first.commit;
+      const count = group.length;
+      const distinctManifests = new Set(group.map((e) => e.manifest)).size;
+      const summaryMsg = `${count} packages updated across ${distinctManifests} manifest(s) [use --verbose to expand]`;
+
+      const collapsedLine = [
+        c.dim(date.padEnd(10)),
+        c.yellow('⚡ collapsed'),
+        c.bold(summaryMsg.padEnd(maxPkg + maxChange + 2)),
+        c.dim((first.author || '').slice(0, maxAuthor).padEnd(maxAuthor)),
+        c.cyan(commit.padEnd(7)),
+        c.dim(first.message || '')
+      ].join('  ');
+
+      lines.push(collapsedLine);
+    } else {
+      for (const ev of group) {
+        lines.push(renderSingleRow(ev));
+      }
+    }
   }
 
   lines.push('');
