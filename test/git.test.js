@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkGit, getRepoRoot, getCurrentHead } from '../packages/core/src/git/repo.js';
-import { getManifestCommits } from '../packages/core/src/git/log.js';
-import { batchReadBlobs } from '../packages/core/src/git/batch.js';
+import { checkGit, getRepoRoot, getCurrentHead } from '../packages/core/dist/git/repo.js';
+import { getManifestCommits } from '../packages/core/dist/git/log.js';
+import { batchReadBlobs } from '../packages/core/dist/git/batch.js';
 
 test('git repo utilities', async () => {
   const hasGit = await checkGit();

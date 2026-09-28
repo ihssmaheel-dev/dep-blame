@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePnpmLockfile } from '../packages/core/src/manifest/lockfiles/pnpm.js';
-import { parseYarnLockfile } from '../packages/core/src/manifest/lockfiles/yarn.js';
-import { parseBunLockfile } from '../packages/core/src/manifest/lockfiles/bun.js';
+import { parsePnpmLockfile } from '../packages/core/dist/manifest/lockfiles/pnpm.js';
+import { parseYarnLockfile } from '../packages/core/dist/manifest/lockfiles/yarn.js';
+import { parseBunLockfile } from '../packages/core/dist/manifest/lockfiles/bun.js';
 import { createTestRepo } from './helpers/git-fixture.js';
-import { runDepBlame } from '../packages/core/src/engine.js';
-import { renderEventTable } from '../packages/core/src/render/table.js';
+import { runDepBlame } from '../packages/core/dist/engine.js';
+import { renderEventTable } from '../packages/core/dist/render/table.js';
 
 test('manifest: parsePnpmLockfile parses v6 and v9 importers correctly', async () => {
   const pnpmV6Content = `

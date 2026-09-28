@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestRepo } from './helpers/git-fixture.js';
-import { runDepBlame } from '../packages/core/src/engine.js';
+import { runDepBlame } from '../packages/core/dist/engine.js';
 
 test('engine: adds, updates, and removes dependencies in real git history', async () => {
   const repo = await createTestRepo();

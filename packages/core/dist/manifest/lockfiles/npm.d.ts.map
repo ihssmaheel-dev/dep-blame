@@ -1,0 +1,1 @@
+{"version":3,"file":"npm.d.ts","sourceRoot":"","sources":["../../../src/manifest/lockfiles/npm.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAW,MAAM,gBAAgB,CAAC;AAE/D,MAAM,WAAW,kBAAkB;IACjC,UAAU,CAAC,EAAE,OAAO,CAAC;CACtB;AAED;;;;;GAKG;AACH,wBAAgB,gBAAgB,CAC9B,OAAO,CAAC,EAAE,MAAM,GAAG,IAAI,EACvB,OAAO,GAAE,kBAAuB,GAC/B,GAAG,CAAC,MAAM,EAAE,eAAe,CAAC,CAuF9B"}

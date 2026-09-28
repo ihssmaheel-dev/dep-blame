@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { SqliteStore } from '../packages/core/src/cache/sqlite-store.js';
-import { JsonStore } from '../packages/core/src/cache/json-store.js';
-import { openCache } from '../packages/core/src/cache/index.js';
-import { getRepoRoot } from '../packages/core/src/git/repo.js';
+import { SqliteStore } from '../packages/core/dist/cache/sqlite-store.js';
+import { JsonStore } from '../packages/core/dist/cache/json-store.js';
+import { openCache } from '../packages/core/dist/cache/index.js';
+import { getRepoRoot } from '../packages/core/dist/git/repo.js';
 
 test('SqliteStore stores and queries events with metadata', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dep-blame-sqlite-'));

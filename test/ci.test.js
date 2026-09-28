@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderCiSummary } from '../packages/core/src/render/ci.js';
+import { renderCiSummary } from '../packages/core/dist/render/ci.js';
 import { createTestRepo } from './helpers/git-fixture.js';
-import { resolveBaseRef } from '../packages/core/src/git/repo.js';
+import { resolveBaseRef } from '../packages/core/dist/git/repo.js';
 
 test('ci: renderCiSummary generates compact diff summary', () => {
   const events = [

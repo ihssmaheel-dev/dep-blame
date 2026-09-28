@@ -2,8 +2,15 @@
   "name": "dep-blame",
   "version": "0.1.0",
   "description": "See exactly how your project's dependencies changed over time.",
-  "main": "./src/index.js",
-  "exports": "./src/index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "dep-blame": "./bin/cli.js"
   },
@@ -11,13 +18,17 @@
     "node": ">=20"
   },
   "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  },
   "dependencies": {},
   "optionalDependencies": {
     "yaml": "^2.x"
   },
   "files": [
     "bin",
-    "src",
+    "dist",
     "README.md"
   ]
 }

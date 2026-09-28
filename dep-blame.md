@@ -81,13 +81,13 @@ low tens-of-thousands of relevant commits, not millions).
                             │
                             ▼
                   ┌───────────────────┐
-                  │   bin/cli.js       │  ← thin entrypoint, arg parsing
+                  │   bin/cli.js      │  ← thin entrypoint, arg parsing
                   └─────────┬─────────┘
                             │
                             ▼
                   ┌───────────────────┐
-                  │  core engine       │  (pure Node, zero deps)
-                  │                    │
+                  │  core engine      │  (pure Node, zero deps)
+                  │                   │
                   │  git/  → shells to system `git`, streams output
                   │  manifest/ → parses package.json + lockfiles
                   │  diff/  → snapshot A vs snapshot B → events
@@ -98,9 +98,7 @@ low tens-of-thousands of relevant commits, not millions).
               ▼             ▼             ▼
          CLI renderer   JSON emitter   UI server
         (ANSI tables,   (--json flag,  (separate
-         calendar art)   CI mode)       package,
-                                        vanilla HTML/
-                                        JS + node:http)
+         calendar art)   CI mode)       package, vanilla HTML/JS + node:http)
 ```
 
 **Package split, under the `dep-blame` npm org (§6.1):**

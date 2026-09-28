@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderArchaeologyView } from '../packages/core/src/render/archaeology.js';
-import { renderCalendarView } from '../packages/core/src/render/calendar.js';
-import { renderStatsView } from '../packages/core/src/render/stats.js';
+import { renderArchaeologyView } from '../packages/core/dist/render/archaeology.js';
+import { renderCalendarView } from '../packages/core/dist/render/calendar.js';
+import { renderStatsView } from '../packages/core/dist/render/stats.js';
 
 test('views: renderArchaeologyView formats package lifecycle properly', () => {
   const events = [

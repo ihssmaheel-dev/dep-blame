@@ -10,15 +10,18 @@ import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runDepBlame } from '../src/engine.js';
-import { getRepoRoot, resolveBaseRef } from '../src/git/repo.js';
-import { renderEventTable } from '../src/render/table.js';
-import { renderArchaeologyView } from '../src/render/archaeology.js';
-import { renderCalendarView } from '../src/render/calendar.js';
-import { renderStatsView } from '../src/render/stats.js';
-import { renderCiSummary } from '../src/render/ci.js';
-import { renderJson } from '../src/render/json.js';
-import { c } from '../src/render/ansi.js';
+import {
+  runDepBlame,
+  getRepoRoot,
+  resolveBaseRef,
+  renderEventTable,
+  renderArchaeologyView,
+  renderCalendarView,
+  renderStatsView,
+  renderCiSummary,
+  renderJson,
+  c
+} from '../dist/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +29,7 @@ const __dirname = path.dirname(__filename);
 function getVersion() {
   try {
     const pkgJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
-    return pkgJson.version;
+    return pkgJson.version || '0.1.0';
   } catch {
     return '0.1.0';
   }
@@ -70,17 +73,21 @@ ${c.bold('COMMANDS:')}
   ${c.cyan('calendar')}                 Month-grid visualization in the terminal
   ${c.cyan('stats')}                    Aggregate counts, churn rate, top modified packages
   ${c.cyan('ci')}                       CI summary view, diffing against base branch
+  ${c.cyan('ui')}                       Launch instructions for the visual web dashboard
   ${c.cyan('added')}                    Filter: only added events
   ${c.cyan('updated')}                  Filter: only updated events
   ${c.cyan('removed')}                  Filter: only removed events
   ${c.cyan('changes')}                  Filter changes within a time-window (use with --since)
 
 ${c.bold('OPTIONS:')}
-  ${c.yellow('--since <ref|window>')}     Time window (7d, 30d...) or git ref for CI (e.g. origin/main)
+  ${c.yellow('--since <ref|window>')}     Time window (7d, 30d, 2w...) or git ref for CI (e.g. origin/main)
+  ${c.yellow('--workspace <name>')}       Filter events to a specific workspace/manifest path
+  ${c.yellow('--direct-only')}            Restrict events to direct dependencies (ignore transitives)
   ${c.yellow('--fail-on-removal')}        (CI only) Exit non-zero if any dependency was removed
   ${c.yellow('--verbose')}                Expand collapsed bulk updates across manifests
   ${c.yellow('--json')}                   Output raw JSON matching v1 schema contract
-  ${c.yellow('--no-cache')}               Force full rescan, ignore cache
+  ${c.yellow('--clear-cache')}            Wipe cached index and perform fresh scan
+  ${c.yellow('--no-cache')}               Force full rescan without cache
   ${c.yellow('--cache-dir <path>')}       Override cache storage location
   ${c.yellow('-v, --version')}            Show version number
   ${c.yellow('-h, --help')}               Show this help message
@@ -91,6 +98,7 @@ ${c.bold('EXAMPLES:')}
   $ npx dep-blame calendar
   $ npx dep-blame stats
   $ npx dep-blame ci --since origin/main --fail-on-removal
+  $ npx dep-blame list --since 30d --workspace web
   $ npx dep-blame --json
 `);
 }
@@ -102,7 +110,10 @@ async function main() {
     json: { type: 'boolean' },
     verbose: { type: 'boolean' },
     since: { type: 'string' },
+    workspace: { type: 'string' },
+    'direct-only': { type: 'boolean' },
     'fail-on-removal': { type: 'boolean' },
+    'clear-cache': { type: 'boolean' },
     'no-cache': { type: 'boolean' },
     'cache-dir': { type: 'string' }
   };
@@ -136,6 +147,25 @@ async function main() {
   const subCommand = positionals[0] || 'list';
   const filter = {};
 
+  if (values['direct-only']) {
+    filter.directOnly = true;
+  }
+
+  if (values.workspace) {
+    filter.workspace = values.workspace;
+  }
+
+  if (subCommand === 'ui') {
+    console.log(`
+${c.bold('Launch the dep-blame visual dashboard:')}
+
+  ${c.green('$ npx @dep-blame/ui')}
+
+Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
+`);
+    process.exit(0);
+  }
+
   if (subCommand === 'ci') {
     let repoRoot;
     try {
@@ -149,14 +179,13 @@ async function main() {
 
     try {
       const result = await runDepBlame({
-        noCache: true, // CI always runs fresh against target ref
-        cacheDir: values['cache-dir']
+        noCache: true,
+        cacheDir: values['cache-dir'],
+        filter
       });
 
-      // Filter events occurring after baseSha
       let ciEvents = result.events;
       if (baseSha) {
-        // If git commit was resolved, take all events in current PR / branch
         const baseIndex = result.events.findIndex((e) => e.commit === baseSha.slice(0, 7));
         if (baseIndex !== -1) {
           ciEvents = result.events.slice(baseIndex + 1);
@@ -188,17 +217,6 @@ async function main() {
       console.error(c.red(err.message || 'An error occurred during CI analysis.'));
       process.exit(1);
     }
-  }
-
-  if (subCommand === 'ui') {
-    console.log(`
-${c.bold('Launch the dep-blame visual dashboard:')}
-
-  ${c.green('$ npx @dep-blame/ui')}
-
-Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
-`);
-    process.exit(0);
   }
 
   if (values.since) {
@@ -233,6 +251,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
   try {
     const result = await runDepBlame({
       noCache: values['no-cache'],
+      clearCache: values['clear-cache'],
       cacheDir: values['cache-dir'],
       filter
     });
