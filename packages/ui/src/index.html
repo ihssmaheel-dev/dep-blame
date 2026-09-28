@@ -299,6 +299,8 @@
       gap: 12px;
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
+      position: relative;
+      z-index: 40;
     }
 
     .left-controls {
@@ -417,6 +419,10 @@
     /* Custom Dropdown (No native select!) */
     .custom-dropdown {
       position: relative;
+      z-index: 50;
+    }
+    .custom-dropdown.open {
+      z-index: 60;
     }
 
     .custom-dropdown-btn {
@@ -454,8 +460,8 @@
       background: var(--color-surface);
       border: 1px solid var(--color-border);
       border-radius: var(--radius);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-      z-index: 50;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+      z-index: 100;
       min-width: 200px;
       max-height: 240px;
       overflow-y: auto;
@@ -534,6 +540,8 @@
       box-shadow: var(--shadow-subtle);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
+      position: relative;
+      z-index: 1;
     }
 
     /* Technical Minimal Table */
