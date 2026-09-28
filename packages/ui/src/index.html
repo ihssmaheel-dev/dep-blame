@@ -980,6 +980,12 @@
       border: 1px solid var(--color-border);
       color: var(--color-text-secondary);
     }
+    .drawer-deptype-badge.workspace {
+      background: var(--color-accent-glow);
+      color: var(--color-accent);
+      border-color: rgba(99, 102, 241, 0.3);
+      font-weight: 600;
+    }
 
     .drawer-top-actions {
       display: flex;
@@ -1095,6 +1101,11 @@
     }
     .drawer-action-btn.accent:hover {
       border-color: var(--color-accent);
+    }
+    .drawer-action-btn.disabled {
+      cursor: default;
+      opacity: 0.85;
+      pointer-events: none;
     }
     .drawer-action-btn svg {
       flex-shrink: 0;
@@ -1460,7 +1471,7 @@
       <div class="drawer-header">
         <div class="drawer-header-top">
           <div class="drawer-title-group">
-            <div class="drawer-pkg-avatar">
+            <div class="drawer-pkg-avatar" id="drawer-pkg-avatar-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
                 <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
@@ -1479,6 +1490,7 @@
                   <span class="status-pulse-dot"></span>
                   <span id="drawer-status-text">Active</span>
                 </span>
+                <span class="drawer-deptype-badge workspace" id="drawer-workspace-badge" style="display: none;">repo package</span>
                 <span class="drawer-deptype-badge" id="drawer-deptype">dependencies</span>
                 <span class="drawer-manifest-badge" id="drawer-manifest-summary">manifest</span>
               </div>
@@ -1511,9 +1523,11 @@
         </div>
 
         <div class="drawer-action-toolbar">
-          <a class="drawer-action-btn accent" id="drawer-npm-link" target="_blank" rel="noopener noreferrer" title="View on npm registry">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-            <span>npm package</span>
+          <a class="drawer-action-btn accent" id="drawer-package-link" target="_blank" rel="noopener noreferrer" title="View package">
+            <span id="drawer-package-link-icon">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </span>
+            <span id="drawer-package-link-text">npm package</span>
           </a>
           <button class="drawer-action-btn" id="drawer-copy-md" title="Copy markdown summary of this package lifecycle">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -1579,6 +1593,10 @@
     let repoOwner = null;
     let repoHost = 'github.com';
     let remoteUrl = null;
+    let currentBranch = 'main';
+    let currentRepo = '';
+    let currentPm = 'npm';
+    let workspacePackages = {};
 
     // Theme Management (Dark Theme Default)
     function initTheme() {
@@ -1635,6 +1653,10 @@
         repoOwner = data.repoOwner || null;
         repoHost = data.repoHost || 'github.com';
         remoteUrl = data.remoteUrl || null;
+        currentBranch = data.branch || 'main';
+        currentRepo = data.repository || '';
+        currentPm = data.packageManager || 'npm';
+        workspacePackages = data.workspacePackages || {};
 
         document.getElementById('repo-name').textContent = data.repository || 'repository';
         document.getElementById('branch-name').textContent = data.branch || 'main';
@@ -1943,7 +1965,92 @@
       if (pkgEvents.length === 0) return;
 
       document.getElementById('drawer-title').textContent = pkgName;
-      document.getElementById('drawer-npm-link').href = `https://www.npmjs.com/package/${encodeURIComponent(pkgName)}`;
+
+      // Detect if package is internal workspace / repo package
+      const isWorkspacePkg = Boolean(
+        (workspacePackages && Object.prototype.hasOwnProperty.call(workspacePackages, pkgName)) ||
+        (currentRepo && pkgName === currentRepo) ||
+        pkgEvents.some(e => {
+          const v = String(e.to || e.from || '');
+          return v.startsWith('workspace:') || v.startsWith('file:') || v.startsWith('link:') || v.startsWith('portal:');
+        })
+      );
+
+      // Workspace badge
+      const workspaceBadge = document.getElementById('drawer-workspace-badge');
+      if (workspaceBadge) {
+        workspaceBadge.style.display = isWorkspacePkg ? 'inline-block' : 'none';
+      }
+
+      // Package Avatar Icon: Book/Repo icon for workspace packages, 3D cube for external registry packages
+      const avatarContainer = document.getElementById('drawer-pkg-avatar-icon');
+      if (avatarContainer) {
+        if (isWorkspacePkg) {
+          avatarContainer.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+          `;
+          avatarContainer.title = 'Internal workspace / repository package';
+        } else {
+          avatarContainer.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          `;
+          avatarContainer.title = 'External registry package';
+        }
+      }
+
+      // Package Action Link: link to GitHub repo directory or registry
+      const pkgLink = document.getElementById('drawer-package-link');
+      const pkgLinkText = document.getElementById('drawer-package-link-text');
+      const pkgLinkIcon = document.getElementById('drawer-package-link-icon');
+
+      if (pkgLink && pkgLinkText) {
+        if (isWorkspacePkg) {
+          const pkgRelDir = (workspacePackages && workspacePackages[pkgName]) || '';
+          if (remoteUrl) {
+            const cleanRemote = remoteUrl.replace(/\/+$/, '');
+            const branchRef = encodeURIComponent(currentBranch || 'main');
+            const targetUrl = pkgRelDir ? `${cleanRemote}/tree/${branchRef}/${pkgRelDir}` : cleanRemote;
+            pkgLink.href = targetUrl;
+            pkgLink.title = `View package directory (${pkgRelDir || 'root'}) on GitHub`;
+            pkgLinkText.textContent = 'View in Repo';
+            pkgLink.classList.remove('disabled');
+            pkgLink.setAttribute('target', '_blank');
+            if (pkgLinkIcon) {
+              pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`;
+            }
+          } else {
+            pkgLink.removeAttribute('href');
+            pkgLink.title = 'Internal repository package (no remote repository configured)';
+            pkgLinkText.textContent = 'Local Package';
+            pkgLink.classList.add('disabled');
+            if (pkgLinkIcon) {
+              pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+            }
+          }
+        } else {
+          pkgLink.classList.remove('disabled');
+          pkgLink.setAttribute('target', '_blank');
+          if (currentPm === 'cargo') {
+            pkgLink.href = `https://crates.io/crates/${encodeURIComponent(pkgName)}`;
+            pkgLink.title = 'View on crates.io registry';
+            pkgLinkText.textContent = 'crates.io package';
+          } else {
+            pkgLink.href = `https://www.npmjs.com/package/${encodeURIComponent(pkgName)}`;
+            pkgLink.title = 'View on npm registry';
+            pkgLinkText.textContent = 'npm package';
+          }
+          if (pkgLinkIcon) {
+            pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`;
+          }
+        }
+      }
 
       const latest = pkgEvents[pkgEvents.length - 1];
       const statusBadge = document.getElementById('drawer-status');

@@ -2,12 +2,41 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runDepBlame, getRepoRemoteInfo } from 'dep-blame';
+import { runDepBlame, getRepoRemoteInfo, detectPackageManager } from 'dep-blame';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const HTML_PATH = path.join(__dirname, 'index.html');
+
+/**
+ * Discovers internal workspace/repo packages from all workspace manifests.
+ * Returns an object mapping package name -> relative directory (e.g. { "dep-blame": "packages/core" }).
+ *
+ * @param {string} repoDir
+ * @returns {Record<string, string>}
+ */
+function getWorkspacePackageMap(repoDir) {
+  const pkgs = {};
+  try {
+    const pmInfo = detectPackageManager(repoDir);
+    for (const mPath of pmInfo.manifestPaths || []) {
+      if (mPath.endsWith('package.json')) {
+        const full = path.join(repoDir, mPath);
+        if (fs.existsSync(full)) {
+          try {
+            const content = JSON.parse(fs.readFileSync(full, 'utf8'));
+            if (content.name) {
+              const dir = path.dirname(mPath).replace(/\\/g, '/');
+              pkgs[content.name] = dir === '.' ? '' : dir;
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+  return pkgs;
+}
 
 /**
  * Creates and starts the local HTTP UI server.
@@ -72,6 +101,7 @@ export function startServer(options = {}) {
         try {
           const result = await runDepBlame({ cwd, silent: true });
         const remoteInfo = await getRepoRemoteInfo(cwd).catch(() => ({ remoteUrl: null, owner: null, repo: null, host: 'github.com' }));
+        const workspacePackages = getWorkspacePackageMap(cwd);
         const json = JSON.stringify({
           schemaVersion: 1,
           repository: result.repository,
@@ -80,6 +110,7 @@ export function startServer(options = {}) {
           remoteUrl: remoteInfo.remoteUrl,
           repoOwner: remoteInfo.owner,
           repoHost: remoteInfo.host || 'github.com',
+          workspacePackages,
           generatedAt: new Date().toISOString(),
           events: result.events
         });

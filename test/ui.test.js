@@ -40,6 +40,9 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     const data = await apiRes.json();
     assert.equal(data.schemaVersion, 1);
     assert.ok(Array.isArray(data.events));
+    assert.ok(data.workspacePackages && typeof data.workspacePackages === 'object');
+    assert.equal(data.workspacePackages['dep-blame'], 'packages/core');
+    assert.equal(data.workspacePackages['@dep-blame/ui'], 'packages/ui');
   } finally {
     await close();
   }
