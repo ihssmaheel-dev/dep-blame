@@ -122,6 +122,37 @@ async function getAuthorMap(repoDir, repoOwner, repoHost = 'github.com') {
   return map;
 }
 
+async function loadFullData(cwd, onProgress) {
+  const remotePromise = getRepoRemoteInfo(cwd).catch(() => ({
+    remoteUrl: null,
+    owner: null,
+    repo: null,
+    host: 'github.com'
+  }));
+  const workspacePackages = getWorkspacePackageMap(cwd);
+
+  const [remoteInfo, result] = await Promise.all([
+    remotePromise,
+    runDepBlame({ cwd, silent: true, onProgress })
+  ]);
+
+  const authors = await getAuthorMap(cwd, remoteInfo.owner, remoteInfo.host);
+
+  return {
+    schemaVersion: 1,
+    repository: result.repository,
+    branch: result.branch || 'main',
+    packageManager: result.packageManager,
+    remoteUrl: remoteInfo.remoteUrl,
+    repoOwner: remoteInfo.owner,
+    repoHost: remoteInfo.host || 'github.com',
+    workspacePackages,
+    authors,
+    generatedAt: new Date().toISOString(),
+    events: result.events
+  };
+}
+
 /**
  * Creates and starts the local HTTP UI server.
  *
@@ -175,43 +206,51 @@ export function startServer(options = {}) {
           'Cache-Control': 'no-cache',
           'Content-Length': htmlBytes,
           'X-Content-Type-Options': 'nosniff',
-          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'unsafe-inline'"
+          'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data: https:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'unsafe-inline'"
         });
         res.end(htmlContent);
         return;
       }
 
-      if (req.method === 'GET' && url.pathname === '/api/events') {
-        try {
-          const result = await runDepBlame({ cwd, silent: true });
-        const remoteInfo = await getRepoRemoteInfo(cwd).catch(() => ({ remoteUrl: null, owner: null, repo: null, host: 'github.com' }));
-        const workspacePackages = getWorkspacePackageMap(cwd);
-        const authors = await getAuthorMap(cwd, remoteInfo.owner, remoteInfo.host);
-        const json = JSON.stringify({
-          schemaVersion: 1,
-          repository: result.repository,
-          branch: result.branch || 'main',
-          packageManager: result.packageManager,
-          remoteUrl: remoteInfo.remoteUrl,
-          repoOwner: remoteInfo.owner,
-          repoHost: remoteInfo.host || 'github.com',
-          workspacePackages,
-          authors,
-          generatedAt: new Date().toISOString(),
-          events: result.events
-        });
-
+      if (req.method === 'GET' && url.pathname === '/api/events/stream') {
         res.writeHead(200, {
-          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
           'X-Content-Type-Options': 'nosniff'
         });
-        res.end(json);
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
-        res.end(JSON.stringify({ error: err && err.message ? err.message : 'Analysis failed' }));
+
+        res.write(': connected\n\n');
+
+        try {
+          const data = await loadFullData(cwd, (p) => {
+            res.write(`event: progress\ndata: ${JSON.stringify(p)}\n\n`);
+          });
+
+          res.write(`event: complete\ndata: ${JSON.stringify(data)}\n\n`);
+          res.end();
+        } catch (err) {
+          res.write(`event: error\ndata: ${JSON.stringify({ error: err && err.message ? err.message : 'Analysis failed' })}\n\n`);
+          res.end();
+        }
+        return;
       }
-      return;
-    }
+
+      if (req.method === 'GET' && url.pathname === '/api/events') {
+        try {
+          const data = await loadFullData(cwd);
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'X-Content-Type-Options': 'nosniff'
+          });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
+          res.end(JSON.stringify({ error: err && err.message ? err.message : 'Analysis failed' }));
+        }
+        return;
+      }
 
     res.writeHead(404, { 'Content-Type': 'text/plain', 'X-Content-Type-Options': 'nosniff' });
     res.end('Not Found');

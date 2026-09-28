@@ -14,6 +14,8 @@ export { JsonStore, JSON_CACHE_SCHEMA_VERSION } from './cache/json-store.js';
 export {
   checkGit,
   getRepoRoot,
+  getRepoState,
+  type RepoState,
   getCurrentHead,
   getCurrentBranch,
   getRepoRemoteInfo,

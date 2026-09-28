@@ -71,6 +71,61 @@ function parseSinceOption(since) {
   return undefined;
 }
 
+function createCliProgress(options = {}) {
+  const isInteractive = Boolean(process.stderr.isTTY && !options.json && !options.silent);
+  if (!isInteractive) {
+    return {
+      onProgress: undefined,
+      done: () => {}
+    };
+  }
+
+  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let frameIdx = 0;
+  let active = true;
+
+  const onProgress = (p) => {
+    if (!active) return;
+    frameIdx = (frameIdx + 1) % spinnerFrames.length;
+    const spin = c.cyan(spinnerFrames[frameIdx]);
+    let bar = '';
+
+    if (p.phase === 'analyzing' && p.total > 0) {
+      const pct = Math.min(100, Math.max(0, Math.round((p.current / p.total) * 100)));
+      const barWidth = 14;
+      const filled = Math.round((barWidth * pct) / 100);
+      const empty = barWidth - filled;
+      const filledStr = '█'.repeat(filled);
+      const emptyStr = '░'.repeat(empty);
+      bar = ` ${c.cyan(`[${filledStr}${emptyStr}]`)} ${c.bold(`${pct}%`)} (${p.current}/${p.total} commits)`;
+    } else if (p.current > 0 && p.total > 0 && p.phase !== 'complete') {
+      const pct = Math.min(100, Math.max(0, Math.round((p.current / p.total) * 100)));
+      bar = ` ${c.bold(`${pct}%`)}`;
+    }
+
+    const msg = p.message ? ` ${c.dim(p.message)}` : '';
+    const detail = p.detail ? ` ${c.dim(`• ${p.detail}`)}` : '';
+    const text = `${spin} ${c.bold('dep-blame')}:${bar}${msg}${detail}`;
+
+    const cols = process.stderr.columns || 80;
+    const stripped = text.replace(/\x1b\[[0-9;]*m/g, '');
+    let output = text;
+    if (stripped.length > cols - 1) {
+      output = `${spin} ${c.bold('dep-blame')}:${bar}${msg}`;
+    }
+
+    process.stderr.write(`\r${output}\x1b[K`);
+  };
+
+  const done = () => {
+    if (!active) return;
+    active = false;
+    process.stderr.write('\r\x1b[K');
+  };
+
+  return { onProgress, done };
+}
+
 function showHelp() {
   console.log(`
 ${c.bold('dep-blame')} — git blame, but for your dependencies
@@ -194,6 +249,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
 
     const { baseRef, baseSha } = await resolveBaseRef(values.since, repoRoot);
 
+    const progress = createCliProgress({ json: values.json });
     try {
       // Use the incremental cache like every other command — CI runners
       // with a warm .git cache stay fast; cold runners do one full scan.
@@ -201,8 +257,10 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
         noCache: values['no-cache'] || false,
         clearCache: values['clear-cache'] || false,
         cacheDir: values['cache-dir'],
-        filter
+        filter,
+        onProgress: progress.onProgress
       });
+      progress.done();
 
       let ciEvents = result.events;
       if (baseSha) {
@@ -261,6 +319,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
       }
       process.exit(0);
     } catch (err) {
+      progress.done();
       console.error(c.red(err.message || 'An error occurred during CI analysis.'));
       process.exit(1);
     }
@@ -295,13 +354,16 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
     process.exit(1);
   }
 
+  const progress = createCliProgress({ json: values.json });
   try {
     const result = await runDepBlame({
       noCache: values['no-cache'],
       clearCache: values['clear-cache'],
       cacheDir: values['cache-dir'],
-      filter
+      filter,
+      onProgress: progress.onProgress
     });
+    progress.done();
 
     if (values.json) {
       console.log(
@@ -325,6 +387,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
       console.log(renderEventTable(result.events, { verbose: values.verbose }));
     }
   } catch (err) {
+    progress.done();
     console.error(c.red(err.message || 'An error occurred during dep-blame analysis.'));
     process.exit(1);
   }

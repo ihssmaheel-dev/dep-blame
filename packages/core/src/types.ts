@@ -48,6 +48,22 @@ export interface FilterOptions {
   directOnly?: boolean;
 }
 
+export type ProgressPhase =
+  | 'initializing'
+  | 'discovering'
+  | 'reading_commits'
+  | 'analyzing'
+  | 'saving'
+  | 'complete';
+
+export interface ProgressUpdate {
+  phase: ProgressPhase;
+  current: number;
+  total: number;
+  message?: string;
+  detail?: string;
+}
+
 export interface EngineOptions {
   cwd?: string;
   noCache?: boolean;
@@ -55,6 +71,7 @@ export interface EngineOptions {
   cacheDir?: string;
   filter?: FilterOptions;
   silent?: boolean;
+  onProgress?: (progress: ProgressUpdate) => void;
 }
 
 export interface EngineResult {

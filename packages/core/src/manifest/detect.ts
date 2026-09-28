@@ -213,18 +213,11 @@ export async function discoverHistoricManifests(
         '--name-only',
         '--diff-filter=AMR',
         '--',
-        'package.json',
-        '**/package.json',
-        'package-lock.json',
-        '**/package-lock.json',
-        'pnpm-lock.yaml',
-        '**/pnpm-lock.yaml',
-        'yarn.lock',
-        '**/yarn.lock',
-        'bun.lock',
-        '**/bun.lock',
-        'bun.lockb',
-        '**/bun.lockb'
+        '*package.json',
+        '*package-lock.json',
+        '*pnpm-lock.yaml',
+        '*yarn.lock',
+        '*bun.lock*'
       ],
       { cwd: repoRoot, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }
     );

@@ -50,3 +50,19 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     await close();
   }
 });
+
+test('ui: server streams progress and events over /api/events/stream', async () => {
+  const { url, close } = await startServer({ port: 0, host: '127.0.0.1', cwd: path.resolve(__dirname, '..') });
+
+  try {
+    const streamRes = await fetch(`${url}/api/events/stream`);
+    assert.equal(streamRes.status, 200);
+    assert.equal(streamRes.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+    const text = await streamRes.text();
+    assert.ok(text.includes(': connected'));
+    assert.ok(text.includes('event: complete'));
+    assert.ok(text.includes('"schemaVersion":1'));
+  } finally {
+    await close();
+  }
+});

@@ -29,6 +29,9 @@ function loadDatabaseSync(): any {
 export class SqliteStore implements StoreInterface {
   filePath: string;
   db: any;
+  private stmtGetMeta: any = null;
+  private stmtSetMeta: any = null;
+  private stmtInsertEvent: any = null;
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -94,18 +97,22 @@ export class SqliteStore implements StoreInterface {
   }
 
   getMeta(key: string): string | null {
-    const stmt = this.db.prepare('SELECT value FROM meta WHERE key = ?');
-    const row = stmt.get(key) as { value: string } | undefined;
+    if (!this.stmtGetMeta) {
+      this.stmtGetMeta = this.db.prepare('SELECT value FROM meta WHERE key = ?');
+    }
+    const row = this.stmtGetMeta.get(key) as { value: string } | undefined;
     return row ? row.value : null;
   }
 
   setMeta(key: string, value: string): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `);
-    stmt.run(key, String(value));
+    if (!this.stmtSetMeta) {
+      this.stmtSetMeta = this.db.prepare(`
+        INSERT INTO meta (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `);
+    }
+    this.stmtSetMeta.run(key, String(value));
   }
 
   insertEvents(events: DependencyEvent[]): void {
@@ -117,12 +124,15 @@ export class SqliteStore implements StoreInterface {
     try {
       this.db.exec('BEGIN IMMEDIATE');
       inTx = true;
-      const stmt = this.db.prepare(`
-        INSERT INTO events (
-          package, type, from_version, to_version,
-          date, commit_sha, author, message, manifest, dep_type, is_direct
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      if (!this.stmtInsertEvent) {
+        this.stmtInsertEvent = this.db.prepare(`
+          INSERT INTO events (
+            package, type, from_version, to_version,
+            date, commit_sha, author, message, manifest, dep_type, is_direct
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+      }
+      const stmt = this.stmtInsertEvent;
 
       for (const ev of events) {
         stmt.run(

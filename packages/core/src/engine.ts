@@ -1,11 +1,7 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
-  checkGit,
-  getRepoRoot,
-  getCurrentHead,
-  getCurrentBranch,
-  isShallowRepo,
+  getRepoState,
   isAncestor
 } from './git/repo.js';
 import { getManifestCommits } from './git/log.js';
@@ -82,35 +78,44 @@ async function parseAnyManifest(
  */
 export async function runDepBlame(options: EngineOptions = {}): Promise<EngineResult> {
   const startTime = Date.now();
-  const { cwd = process.cwd(), noCache = false, clearCache = false, cacheDir, filter = {} } = options;
+  const { cwd = process.cwd(), noCache = false, clearCache = false, cacheDir, filter = {}, onProgress } = options;
 
-  // Step 0: Check git
-  await checkGit();
+  onProgress?.({
+    phase: 'initializing',
+    current: 0,
+    total: 100,
+    message: 'Inspecting repository status...'
+  });
 
-  // Step 1: Repo root
-  let repoRoot: string;
+  // Step 1: High-performance single-pass git status resolution
+  let repoState;
   try {
-    repoRoot = await getRepoRoot(cwd);
-  } catch {
+    repoState = await getRepoState(cwd);
+  } catch (err: any) {
+    if (err && err.isMissingGit) {
+      throw err;
+    }
     throw new Error('Not a git repository (or any of the parent directories).');
   }
 
+  const { repoRoot, isShallow, currentHead, branch } = repoState;
   const repoName = path.basename(repoRoot);
 
-  // Step 2: Shallow check
-  const isShallow = await isShallowRepo(repoRoot);
   if (isShallow && !options.silent) {
     console.warn('⚠ Shallow clone detected — history may be incomplete.');
     console.warn('  In GitHub Actions: actions/checkout with fetch-depth: 0');
   }
 
-  // Current HEAD
-  let currentHead: string;
-  try {
-    currentHead = await getCurrentHead(repoRoot);
-  } catch {
+  if (!currentHead) {
+    onProgress?.({
+      phase: 'complete',
+      current: 100,
+      total: 100,
+      message: 'No commits in repository'
+    });
     return {
       repository: repoName,
+      branch: 'main',
       packageManager: 'npm',
       events: [],
       isShallow,
@@ -119,13 +124,10 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     };
   }
 
-  // Step 3: Cheap HEAD detection first (sync fs, no git history walk).
+  // Step 2: Cheap HEAD detection (sync fs, no git history walk)
   const detected = detectPackageManager(repoRoot);
-  const branch = await getCurrentBranch(repoRoot);
 
-  // Step 4: Cache management — opened BEFORE expensive historic discovery
-  // so warm hits (`cached_head === HEAD`) return without ever running
-  // `git log --all --full-history`.
+  // Step 3: Cache management — opened BEFORE expensive historic discovery
   const cache = await openCache({ repoRoot, cacheDir });
 
   if (clearCache) {
@@ -137,7 +139,12 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
 
   if (cachedHead) {
     if (cachedHead === currentHead) {
-      // Warm cache hit — no git history walk at all.
+      onProgress?.({
+        phase: 'complete',
+        current: 100,
+        total: 100,
+        message: 'Cache hit — dependency history up to date'
+      });
       const events = cache.queryEvents(filter);
       cache.close();
       return {
@@ -162,12 +169,14 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     }
   }
 
-  // Step 4b: Resolve full manifest list.
-  // - Incremental (sinceCommit + cached list): merge cached + HEAD, skip
-  //   the full-history walk entirely. Deleted workspaces stay covered
-  //   because the cached list already contains them.
-  // - Cold / rewrite / first run: pay for historic discovery once, then
-  //   cache the result for all future incrementals.
+  // Step 4: Resolve full manifest list
+  onProgress?.({
+    phase: 'discovering',
+    current: 15,
+    total: 100,
+    message: 'Resolving dependency manifests...'
+  });
+
   let manifestPaths = detected.manifestPaths;
   if (sinceCommit) {
     const cachedPaths = noCache ? null : readCachedManifestPaths(cache);
@@ -190,7 +199,14 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     }
   }
 
-  // Step 5: Get manifest commits (git filters; Node only sees hits).
+  // Step 5: Get manifest commits
+  onProgress?.({
+    phase: 'reading_commits',
+    current: 30,
+    total: 100,
+    message: 'Reading commit history...'
+  });
+
   const commits = await getManifestCommits(repoRoot, {
     sinceCommit,
     manifestPaths,
@@ -206,8 +222,15 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
     }
     const events = cache.queryEvents(filter);
     cache.close();
+    onProgress?.({
+      phase: 'complete',
+      current: 100,
+      total: 100,
+      message: 'No new dependency commits'
+    });
     return {
       repository: repoName,
+      branch,
       packageManager: detected.packageManager,
       events,
       isShallow,
@@ -309,10 +332,19 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
         snapshots.set(f, currMap);
         rawHashes.set(f, h);
       }
+      processed++;
+      if (onProgress) {
+        onProgress({
+          phase: 'analyzing',
+          current: processed,
+          total: commits.length,
+          message: `Analyzing commit ${processed} of ${commits.length}...`,
+          detail: `${c.commit.slice(0, 7)}: ${c.message.slice(0, 60)}`
+        });
+      }
     }
 
     if (windowEvents.length > 0) cache.insertEvents(windowEvents);
-    processed += window.length;
     if (showProgress) {
       console.warn(`  dep-blame: indexed ${processed}/${commits.length} commits...`);
     }
@@ -333,6 +365,13 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
   await processWindow(window);
 
   // Step 8: Cache bookkeeping (events already inserted per window).
+  onProgress?.({
+    phase: 'saving',
+    current: commits.length,
+    total: commits.length,
+    message: 'Saving dependency cache...'
+  });
+
   cache.setMeta('cached_head', currentHead);
   try {
     cache.setMeta(MANIFEST_PATHS_CACHE_KEY, JSON.stringify(manifestPaths));
@@ -343,6 +382,13 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
   // Step 9: Return filtered events
   const allEvents = cache.queryEvents(filter);
   cache.close();
+
+  onProgress?.({
+    phase: 'complete',
+    current: commits.length,
+    total: commits.length,
+    message: 'Dependency analysis complete'
+  });
 
   return {
     repository: repoName,

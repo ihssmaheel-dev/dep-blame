@@ -11,2741 +11,2999 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <style>
-    :root {
-      --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
-      
-      --radius: 0px;
-      --radius-sm: 2px;
-      --radius-md: 4px;
-
-      /* Dark Theme (Default) */
-      --color-bg: #090b10;
-      --color-bg-secondary: #0f131c;
-      --color-surface: #131722;
-      --color-surface-hover: #1a2030;
-      --color-surface-card: rgba(18, 23, 34, 0.85);
-      
-      --color-border: rgba(255, 255, 255, 0.08);
-      --color-border-hover: rgba(255, 255, 255, 0.18);
-      --color-border-focus: #6366f1;
-      
-      --color-text: #f8fafc;
-      --color-text-secondary: #94a3b8;
-      --color-text-muted: #64748b;
-      
-      --color-primary: #888888;
-      --color-accent: #6366f1;
-      --color-accent-glow: rgba(99, 102, 241, 0.15);
-      
-      --color-added: #10b981;
-      --color-added-bg: rgba(16, 185, 129, 0.12);
-      --color-added-border: rgba(16, 185, 129, 0.28);
-      
-      --color-updated: #f59e0b;
-      --color-updated-bg: rgba(245, 158, 11, 0.12);
-      --color-updated-border: rgba(245, 158, 11, 0.28);
-      
-      --color-removed: #f43f5e;
-      --color-removed-bg: rgba(244, 63, 94, 0.12);
-      --color-removed-border: rgba(244, 63, 94, 0.28);
-
-      --pattern-line: rgba(255, 255, 255, 0.035);
-      --pattern-dot: rgba(255, 255, 255, 0.09);
-      --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(99, 102, 241, 0.13), transparent 75%);
-      --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.35);
-      --shadow-drawer: -8px 0 32px rgba(0, 0, 0, 0.6);
-      --header-bg: rgba(9, 11, 16, 0.88);
-    }
-
-    [data-theme="light"] {
-      --color-bg: #f8fafc;
-      --color-bg-secondary: #f1f5f9;
-      --color-surface: #ffffff;
-      --color-surface-hover: #f8fafc;
-      --color-surface-card: rgba(255, 255, 255, 0.95);
-      
-      --color-border: #e2e8f0;
-      --color-border-hover: #cbd5e1;
-      --color-border-focus: #0f172a;
-      
-      --color-text: #0f172a;
-      --color-text-secondary: #64748b;
-      --color-text-muted: #94a3b8;
-      
-      --color-primary: #888888;
-      --color-accent: #0f172a;
-      --color-accent-glow: rgba(15, 23, 42, 0.06);
-      
-      --color-added: #059669;
-      --color-added-bg: rgba(5, 150, 105, 0.08);
-      --color-added-border: rgba(5, 150, 105, 0.25);
-      
-      --color-updated: #d97706;
-      --color-updated-bg: rgba(217, 119, 6, 0.08);
-      --color-updated-border: rgba(217, 119, 6, 0.25);
-      
-      --color-removed: #e11d48;
-      --color-removed-bg: rgba(225, 29, 72, 0.08);
-      --color-removed-border: rgba(225, 29, 72, 0.25);
-
-      --pattern-line: rgba(15, 23, 42, 0.04);
-      --pattern-dot: rgba(15, 23, 42, 0.07);
-      --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(99, 102, 241, 0.04), transparent 75%);
-      --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.05);
-      --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.08);
-      --header-bg: rgba(255, 255, 255, 0.9);
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html {
-      scrollbar-gutter: stable;
-      overflow-y: scroll;
-    }
-
-    body {
-      background-color: var(--color-bg);
-      background-image: 
-        var(--pattern-radial),
-        radial-gradient(var(--pattern-dot) 1px, transparent 1px),
-        linear-gradient(to right, var(--pattern-line) 1px, transparent 1px),
-        linear-gradient(to bottom, var(--pattern-line) 1px, transparent 1px);
-      background-size: 100% 100%, 32px 32px, 32px 32px, 32px 32px;
-      background-attachment: fixed;
-      color: var(--color-text);
-      font-family: var(--font-sans);
-      font-size: 12.5px;
-      line-height: 1.5;
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-
-    /* Scrollbars */
-    ::-webkit-scrollbar { width: 7px; height: 7px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(120, 120, 120, 0.25); border-radius: var(--radius); }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(120, 120, 120, 0.45); }
-
-    /* Top Sticky Header */
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      width: 100%;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 11px 24px;
-      background: var(--header-bg);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-bottom: 1px solid var(--color-border);
-      box-shadow: var(--shadow-subtle);
-    }
-
-    .brand-section {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .brand-logo {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      color: #ffffff;
-      border-radius: var(--radius-sm);
-      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
-    }
-
-    .brand-title {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: var(--color-text);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .btn-action {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-text);
-      padding: 6px 12px;
-      border-radius: var(--radius);
-      font-size: 11.5px;
-      font-weight: 500;
-      cursor: pointer;
-      font-family: var(--font-sans);
-      transition: all 0.12s ease;
-    }
-    .btn-action:hover {
-      background: var(--color-surface-hover);
-      border-color: var(--color-border-hover);
-    }
-
-    .theme-toggle-btn {
-      padding: 6px 9px;
-    }
-
-    /* Full Width Container */
-    .app-container {
-      width: 100%;
-      max-width: 100%;
-      padding: 16px 24px 54px; /* padding-bottom accounts for bottom status bar */
-    }
-
-    /* Compact Stat Cards Ribbon */
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    @media (max-width: 1024px) {
-      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    @media (max-width: 640px) {
-      .kpi-grid { grid-template-columns: 1fr; }
-    }
-
-    .kpi-card {
-      background: var(--color-surface-card);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 9px 14px;
-      transition: all 0.12s ease;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-    }
-    .kpi-card:hover {
-      border-color: var(--color-border-hover);
-      transform: translateY(-1px);
-    }
-
-    .kpi-content {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .kpi-title {
-      font-size: 10.5px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--color-text-secondary);
-      margin-bottom: 2px;
-    }
-
-    .kpi-value-row {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-
-    .kpi-value {
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      font-variant-numeric: tabular-nums;
-      color: var(--color-text);
-      line-height: 1.1;
-    }
-
-    .kpi-subtitle {
-      font-size: 10.5px;
-      color: var(--color-text-muted);
-    }
-
-    .kpi-badge-icon {
-      width: 26px;
-      height: 26px;
-      border-radius: var(--radius-sm);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 1px solid var(--color-border);
-      background: var(--color-bg-secondary);
-      color: var(--color-text-secondary);
-    }
-
-    .kpi-card.added .kpi-value { color: var(--color-added); }
-    .kpi-card.updated .kpi-value { color: var(--color-updated); }
-    .kpi-card.removed .kpi-value { color: var(--color-removed); }
-
-    /* Controls Panel */
-    .controls-panel {
-      background: var(--color-surface-card);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 10px 14px;
-      margin-bottom: 16px;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      position: relative;
-      z-index: 40;
-    }
-
-    .left-controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      flex: 1;
-    }
-
-    .search-wrapper {
-      position: relative;
-      min-width: 240px;
-      flex: 1;
-      max-width: 360px;
-    }
-
-    .search-icon {
-      position: absolute;
-      left: 10px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--color-text-muted);
-      pointer-events: none;
-    }
-
-    .search-input {
-      width: 100%;
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 6px 30px 6px 30px;
-      color: var(--color-text);
-      font-size: 12px;
-      outline: none;
-      transition: border-color 0.15s ease;
-      font-family: var(--font-sans);
-    }
-    .search-input:focus {
-      border-color: var(--color-border-focus);
-    }
-    .search-input::placeholder { color: var(--color-text-muted); }
-
-    .search-clear {
-      position: absolute;
-      right: 8px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: none;
-      border: none;
-      color: var(--color-text-secondary);
-      cursor: pointer;
-      display: none;
-      font-size: 11px;
-    }
-    .search-clear:hover { color: var(--color-text); }
-
-    .shortcut-badge {
-      position: absolute;
-      right: 8px;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 10px;
-      font-family: var(--font-mono);
-      background: var(--color-bg-secondary);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm);
-      padding: 0 4px;
-      color: var(--color-text-muted);
-      pointer-events: none;
-    }
-
-    .filter-pills {
-      display: flex;
-      align-items: center;
-      background: var(--color-bg-secondary);
-      padding: 2px;
-      border-radius: var(--radius);
-      border: 1px solid var(--color-border);
-      gap: 2px;
-      flex-shrink: 0;
-    }
-
-    .filter-btn {
-      background: transparent;
-      border: 1px solid transparent;
-      color: var(--color-text-secondary);
-      padding: 4px 10px;
-      border-radius: var(--radius);
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-      font-family: var(--font-sans);
-      user-select: none;
-      white-space: nowrap;
-    }
-    .filter-btn:hover { color: var(--color-text); }
-    .filter-btn.active {
-      background: var(--color-surface);
-      color: var(--color-text);
-      font-weight: 600;
-      border-color: var(--color-border);
-      box-shadow: var(--shadow-subtle);
-    }
-
-    .filter-count {
-      display: inline-block;
-      padding: 0 4px;
-      border-radius: var(--radius-sm);
-      font-size: 10px;
-      background: var(--color-bg);
-      border: 1px solid var(--color-border);
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* Custom Dropdown (No native select!) */
-    .custom-dropdown {
-      position: relative;
-      z-index: 50;
-    }
-    .custom-dropdown.open {
-      z-index: 60;
-    }
-
-    .custom-dropdown-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-text);
-      padding: 5px 10px;
-      border-radius: var(--radius);
-      font-size: 11.5px;
-      cursor: pointer;
-      font-family: var(--font-sans);
-      user-select: none;
-      min-width: 140px;
-      justify-content: space-between;
-    }
-    .custom-dropdown-btn:hover {
-      border-color: var(--color-border-hover);
-    }
-
-    .dropdown-chevron {
-      color: var(--color-text-secondary);
-      transition: transform 0.15s ease;
-    }
-    .custom-dropdown.open .dropdown-chevron {
-      transform: rotate(180deg);
-    }
-
-    .custom-dropdown-menu {
-      position: absolute;
-      top: calc(100% + 4px);
-      left: 0;
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
-      z-index: 100;
-      min-width: 200px;
-      max-height: 240px;
-      overflow-y: auto;
-      display: none;
-      padding: 4px;
-    }
-    .custom-dropdown.open .custom-dropdown-menu {
-      display: block;
-    }
-
-    .dropdown-item {
-      padding: 6px 10px;
-      font-size: 11.5px;
-      color: var(--color-text-secondary);
-      border-radius: var(--radius);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      transition: background 0.1s ease;
-    }
-    .dropdown-item:hover {
-      background: var(--color-bg-secondary);
-      color: var(--color-text);
-    }
-    .dropdown-item.selected {
-      background: var(--color-bg-secondary);
-      color: var(--color-text);
-      font-weight: 600;
-    }
-
-    .right-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .view-toggle {
-      display: flex;
-      background: var(--color-bg-secondary);
-      padding: 2px;
-      border-radius: var(--radius);
-      border: 1px solid var(--color-border);
-    }
-
-    .view-btn {
-      background: transparent;
-      border: 1px solid transparent;
-      color: var(--color-text-secondary);
-      padding: 4px 11px;
-      border-radius: var(--radius);
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-      font-family: var(--font-sans);
-      user-select: none;
-    }
-    .view-btn:hover { color: var(--color-text); }
-    .view-btn.active {
-      background: var(--color-surface);
-      color: var(--color-text);
-      font-weight: 600;
-      border-color: var(--color-border);
-      box-shadow: var(--shadow-subtle);
-    }
-
-    /* Content Card Container */
-    .content-card {
-      background: var(--color-surface-card);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      box-shadow: var(--shadow-subtle);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      position: relative;
-      z-index: 1;
-      min-height: 520px;
-    }
-
-    /* Rock-Solid Technical Table */
-    .table-responsive {
-      overflow-x: auto;
-      width: 100%;
-      min-height: 480px;
-    }
-
-    table.events-table {
-      width: 100%;
-      min-width: 980px;
-      table-layout: fixed;
-      border-collapse: separate;
-      border-spacing: 0;
-      text-align: left;
-    }
-
-    table.events-table thead th {
-      background: var(--color-bg-secondary);
-      border-bottom: 1px solid var(--color-border);
-      padding: 10px 14px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--color-text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      white-space: nowrap;
-      user-select: none;
-      position: sticky;
-      top: 0;
-      z-index: 5;
-    }
-
-    table.events-table thead th.sortable { cursor: pointer; }
-    table.events-table thead th.sortable:hover { color: var(--color-text); }
-
-    table.events-table tbody tr {
-      border-bottom: 1px solid var(--color-border);
-      transition: background 0.1s ease;
-      height: 52px;
-    }
-    table.events-table tbody tr:hover { background: var(--color-surface-hover); }
-
-    table.events-table td {
-      padding: 8px 14px;
-      font-size: 12px;
-      vertical-align: middle;
-      white-space: nowrap;
-      color: var(--color-text);
-      border-bottom: 1px solid var(--color-border);
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    table.events-table tbody tr:last-child td {
-      border-bottom: none;
-    }
-
-    .badge-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 7px;
-      border-radius: var(--radius-sm);
-      font-size: 11px;
-      font-weight: 600;
-      border: 1px solid transparent;
-      line-height: 1.3;
-    }
-    .badge-status.added {
-      background: var(--color-added-bg);
-      color: var(--color-added);
-      border-color: var(--color-added-border);
-    }
-    .badge-status.updated {
-      background: var(--color-updated-bg);
-      color: var(--color-updated);
-      border-color: var(--color-updated-border);
-    }
-    .badge-status.removed {
-      background: var(--color-removed-bg);
-      color: var(--color-removed);
-      border-color: var(--color-removed-border);
-    }
-
-    .package-cell {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      min-width: 0;
-      overflow: hidden;
-    }
-
-    .package-cell-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 20px;
-      height: 20px;
-      border-radius: 4px;
-      background: var(--color-bg-secondary);
-      border: 1px solid var(--color-border);
-      color: var(--color-text-secondary);
-      flex-shrink: 0;
-    }
-    .package-cell-icon.ws {
-      background: var(--color-accent-glow);
-      color: var(--color-accent);
-      border-color: rgba(99, 102, 241, 0.3);
-    }
-
-    .package-name {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      font-size: 12px;
-      color: var(--color-text);
-      cursor: pointer;
-      display: inline-block;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      transition: color 0.1s ease;
-    }
-    .package-name:hover {
-      text-decoration: underline;
-      color: var(--color-accent);
-    }
-
-    .diff-pill {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      background: var(--color-bg-secondary);
-      padding: 2px 7px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--color-border);
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .diff-from { color: var(--color-removed); }
-    .diff-to { color: var(--color-added); font-weight: 600; }
-    .diff-arrow { color: var(--color-text-muted); }
-
-    .dep-type-tag {
-      font-size: 9.5px;
-      font-weight: 600;
-      text-transform: uppercase;
-      padding: 1px 5px;
-      border-radius: var(--radius-sm);
-      background: var(--color-bg-secondary);
-      color: var(--color-text-secondary);
-      border: 1px solid var(--color-border);
-      letter-spacing: 0.03em;
-    }
-    .dep-type-tag.direct {
-      background: var(--color-accent-glow);
-      color: var(--color-accent);
-      border-color: rgba(99, 102, 241, 0.3);
-    }
-
-    .manifest-badge {
-      display: inline-block;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 11px;
-      color: var(--color-text-secondary);
-      font-family: var(--font-mono);
-      background: var(--color-bg-secondary);
-      padding: 2px 6px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--color-border);
-    }
-
-    .empty-state {
-      padding: 80px 20px !important;
-      text-align: center;
-      color: var(--color-text-secondary);
-      height: 380px;
-      vertical-align: middle;
-    }
-    .empty-icon {
-      margin-bottom: 12px;
-      color: var(--color-text-secondary);
-      opacity: 0.5;
-    }
-    .empty-title {
-      font-size: 13.5px;
-      font-weight: 600;
-      color: var(--color-text);
-      margin-bottom: 4px;
-    }
-    .empty-subtitle {
-      font-size: 11.5px;
-      color: var(--color-text-secondary);
-      margin-bottom: 14px;
-    }
-
-    /* Author Profile & Username Display */
-    .author-cell-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 9px;
-      text-decoration: none;
-      color: var(--color-text);
-      padding: 3px 6px;
-      border-radius: var(--radius-sm);
-      transition: background 0.12s ease;
-      max-width: 240px;
-    }
-    .author-cell-link:hover {
-      background: var(--color-bg-secondary);
-    }
-    .author-cell-link:hover .author-name {
-      color: var(--color-accent);
-      text-decoration: underline;
-    }
-
-    .author-avatar-wrapper {
-      position: relative;
-      width: 26px;
-      height: 26px;
-      flex-shrink: 0;
-    }
-    .author-avatar-img {
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 1px solid var(--color-border);
-      background: var(--color-bg-secondary);
-      display: block;
-    }
-    .author-avatar-fallback {
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #475569, #334155);
-      color: #ffffff;
-      font-size: 10.5px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-transform: uppercase;
-    }
-    .author-meta {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      line-height: 1.25;
-    }
-    .author-name {
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--color-text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .author-user {
-      font-size: 10px;
-      color: var(--color-text-secondary);
-      font-family: var(--font-mono);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .commit-tag {
-      font-family: var(--font-mono);
-      font-size: 10.5px;
-      color: var(--color-text);
-      background: var(--color-bg-secondary);
-      border: 1px solid var(--color-border);
-      padding: 2px 5px;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      transition: all 0.1s ease;
-    }
-    .commit-tag:hover {
-      border-color: var(--color-border-hover);
-      background: var(--color-surface);
-    }
-
-    /* Authentic Full Calendar View */
-    .calendar-container {
-      padding: 20px;
-      display: none;
-    }
-    .calendar-container.active { display: block; }
-
-    .calendar-topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--color-border);
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-
-    .calendar-title-wrap {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .calendar-title {
-      font-size: 15.5px;
-      font-weight: 700;
-      color: var(--color-text);
-      letter-spacing: -0.01em;
-    }
-
-    .calendar-nav-group {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .calendar-nav-btn {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-text);
-      border-radius: var(--radius-sm);
-      padding: 4px 9px;
-      font-size: 11px;
-      font-weight: 500;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      transition: all 0.12s ease;
-      font-family: var(--font-sans);
-    }
-    .calendar-nav-btn:hover {
-      background: var(--color-surface-hover);
-      border-color: var(--color-border-hover);
-    }
-
-    .calendar-legend {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 11px;
-      color: var(--color-text-secondary);
-      flex-wrap: wrap;
-    }
-
-    .calendar-legend-item {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .calendar-legend-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-    }
-    .calendar-legend-dot.added { background: var(--color-added); }
-    .calendar-legend-dot.updated { background: var(--color-updated); }
-    .calendar-legend-dot.removed { background: var(--color-removed); }
-
-    .calendar-frame {
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      background: var(--color-surface);
-      box-shadow: var(--shadow-subtle);
-    }
-
-    .calendar-weekdays {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      background: var(--color-bg-secondary);
-      border-bottom: 1px solid var(--color-border);
-    }
-
-    .calendar-weekday {
-      padding: 9px 8px;
-      text-align: center;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--color-text-secondary);
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .calendar-days-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      background: var(--color-border);
-      gap: 1px;
-    }
-
-    .calendar-day-box {
-      background: var(--color-surface);
-      min-height: 105px;
-      padding: 8px 7px;
-      display: flex;
-      flex-direction: column;
-      transition: background 0.1s ease;
-      position: relative;
-      cursor: pointer;
-    }
-    .calendar-day-box:hover {
-      background: var(--color-surface-hover);
-    }
-    .calendar-day-box.outside-month {
-      background: var(--color-bg);
-      opacity: 0.4;
-      cursor: default;
-    }
-    .calendar-day-box.today {
-      box-shadow: inset 0 0 0 1.5px var(--color-accent);
-    }
-
-    .day-box-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 6px;
-    }
-
-    .day-number {
-      font-size: 11.5px;
-      font-weight: 600;
-      color: var(--color-text);
-      width: 22px;
-      height: 22px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-    }
-    .calendar-day-box.today .day-number {
-      background: var(--color-accent);
-      color: var(--color-bg);
-      font-weight: 700;
-    }
-
-    .day-badge-count {
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--color-accent);
-      background: var(--color-accent-glow);
-      padding: 1px 5px;
-      border-radius: 10px;
-      border: 1px solid rgba(99, 102, 241, 0.2);
-    }
-
-    .day-events-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      overflow: hidden;
-      flex: 1;
-    }
-
-    .day-event-pill {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 3px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-family: var(--font-mono);
-      font-weight: 500;
-      cursor: pointer;
-      transition: transform 0.08s ease, filter 0.08s ease;
-      border: 1px solid transparent;
-      line-height: 1.35;
-    }
-    .day-event-pill:hover {
-      transform: translateY(-1px);
-      filter: brightness(1.15);
-    }
-
-    .day-event-pill.added {
-      background: var(--color-added-bg);
-      color: var(--color-added);
-      border-color: var(--color-added-border);
-    }
-
-    .day-event-pill.updated {
-      background: var(--color-updated-bg);
-      color: var(--color-updated);
-      border-color: var(--color-updated-border);
-    }
-
-    .day-event-pill.removed {
-      background: var(--color-removed-bg);
-      color: var(--color-removed);
-      border-color: var(--color-removed-border);
-    }
-
-    .day-event-more {
-      font-size: 9.5px;
-      color: var(--color-text-secondary);
-      font-weight: 600;
-      padding: 1px 4px;
-      align-self: flex-start;
-      margin-top: 2px;
-    }
-
-    /* Slide-out Archaeology Drawer */
-    .drawer-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      display: none;
-      justify-content: flex-end;
-      z-index: 1000;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-    }
-    .drawer-overlay.active {
-      display: flex;
-      opacity: 1;
-    }
-
-    .drawer {
-      background: var(--color-surface);
-      border-left: 1px solid var(--color-border);
-      width: 580px;
-      max-width: 92vw;
-      height: 100%;
-      padding: 24px 20px;
-      overflow-y: auto;
-      box-shadow: var(--shadow-drawer);
-      transform: translateX(100%);
-      transition: transform 0.2s ease;
-      display: flex;
-      flex-direction: column;
-    }
-    .drawer-overlay.active .drawer {
-      transform: translateX(0);
-    }
-
-    /* Refined Premium Drawer Header Card */
-    .drawer-header {
-      background: var(--color-bg-secondary);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm);
-      padding: 16px;
-      margin-bottom: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      box-shadow: var(--shadow-subtle);
-      position: relative;
-    }
-
-    .drawer-header-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-    }
-
-    .drawer-title-group {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      flex: 1;
-      min-width: 0;
-    }
-
-    .drawer-pkg-avatar {
-      width: 40px;
-      height: 40px;
-      min-width: 40px;
-      border-radius: var(--radius-sm);
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-accent);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
-
-    .drawer-title-wrapper {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .drawer-title-name-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 6px;
-    }
-
-    .drawer-pkg-title {
-      font-size: 18px;
-      font-weight: 700;
-      font-family: var(--font-mono);
-      color: var(--color-text);
-      word-break: break-all;
-      line-height: 1.25;
-      letter-spacing: -0.02em;
-      margin: 0;
-    }
-
-    .drawer-copy-icon-btn {
-      background: transparent;
-      border: 1px solid transparent;
-      color: var(--color-text-secondary);
-      cursor: pointer;
-      padding: 3px 5px;
-      border-radius: var(--radius-sm);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.12s ease;
-    }
-    .drawer-copy-icon-btn:hover {
-      color: var(--color-text);
-      background: var(--color-surface);
-      border-color: var(--color-border);
-    }
-
-    .drawer-meta-badges {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .drawer-status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 2px 8px;
-      border-radius: 9999px;
-      font-size: 11px;
-      font-weight: 600;
-      border: 1px solid transparent;
-      font-family: var(--font-mono);
-    }
-    .drawer-status-pill.added {
-      background: var(--color-added-bg);
-      color: var(--color-added);
-      border-color: var(--color-added-border);
-    }
-    .drawer-status-pill.removed {
-      background: var(--color-removed-bg);
-      color: var(--color-removed);
-      border-color: var(--color-removed-border);
-    }
-
-    .status-pulse-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-      box-shadow: 0 0 6px currentColor;
-    }
-
-    .drawer-deptype-badge, .drawer-manifest-badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 2px 7px;
-      border-radius: var(--radius-sm);
-      font-size: 10.5px;
-      font-family: var(--font-mono);
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-text-secondary);
-    }
-    .drawer-deptype-badge.workspace {
-      background: var(--color-accent-glow);
-      color: var(--color-accent);
-      border-color: rgba(99, 102, 241, 0.3);
-      font-weight: 600;
-    }
-
-    .drawer-top-actions {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .drawer-close-btn {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-text-secondary);
-      height: 28px;
-      padding: 0 8px;
-      border-radius: var(--radius-sm);
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      font-size: 11px;
-      font-family: var(--font-mono);
-      transition: all 0.12s ease;
-    }
-    .drawer-close-btn:hover {
-      border-color: var(--color-border-hover);
-      color: var(--color-text);
-      background: var(--color-surface-hover);
-    }
-    .drawer-close-btn .kbd-hint {
-      font-size: 9.5px;
-      color: var(--color-text-muted);
-      border: 1px solid var(--color-border);
-      border-radius: 2px;
-      padding: 1px 4px;
-      background: var(--color-bg);
-    }
-
-    /* Micro Stats Strip */
-    .drawer-stats-strip {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr auto 1fr;
-      align-items: center;
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm);
-      padding: 8px 14px;
-      gap: 8px;
-    }
-
-    .drawer-stat-item {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .drawer-stat-item .stat-label {
-      font-size: 9.5px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--color-text-muted);
-      font-weight: 600;
-    }
-
-    .drawer-stat-item .stat-val {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--color-text);
-      font-family: var(--font-mono);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .drawer-stat-divider {
-      width: 1px;
-      height: 22px;
-      background: var(--color-border);
-    }
-
-    /* Action Toolbar */
-    .drawer-action-toolbar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .drawer-action-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 12px;
-      border-radius: var(--radius-sm);
-      font-size: 11.5px;
-      font-weight: 600;
-      font-family: var(--font-sans);
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-text);
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.12s ease;
-      user-select: none;
-    }
-    .drawer-action-btn:hover {
-      background: var(--color-surface-hover);
-      border-color: var(--color-border-hover);
-      color: var(--color-text);
-    }
-    .drawer-action-btn.accent {
-      background: var(--color-accent-glow);
-      color: var(--color-accent);
-      border-color: rgba(99, 102, 241, 0.35);
-    }
-    .drawer-action-btn.accent:hover {
-      border-color: var(--color-accent);
-    }
-    .drawer-action-btn.disabled {
-      cursor: default;
-      opacity: 0.85;
-      pointer-events: none;
-    }
-    .drawer-action-btn svg {
-      flex-shrink: 0;
-    }
-
-    /* Vertical Timeline Tree in Drawer */
-    .tree-timeline {
-      position: relative;
-      padding-left: 24px;
-      margin-top: 14px;
-      flex: 1;
-    }
-    .tree-timeline::before {
-      content: '';
-      position: absolute;
-      left: 7px;
-      top: 12px;
-      bottom: 20px;
-      width: 1px;
-      background: var(--color-border);
-    }
-
-    .timeline-node {
-      position: relative;
-      margin-bottom: 18px;
-    }
-
-    .node-icon {
-      position: absolute;
-      left: -24px;
-      top: 3px;
-      width: 15px;
-      height: 15px;
-      border-radius: 50%;
-      background: var(--color-surface);
-      border: 1.5px solid var(--color-border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 9px;
-    }
-    .timeline-node.added .node-icon { background: var(--color-added); border-color: var(--color-added); color: #ffffff; }
-    .timeline-node.updated .node-icon { background: var(--color-updated); border-color: var(--color-updated); color: #ffffff; }
-    .timeline-node.removed .node-icon { background: var(--color-removed); border-color: var(--color-removed); color: #ffffff; }
-
-    .node-card {
-      background: var(--color-bg-secondary);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 10px 12px;
-    }
-
-    .node-meta {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 5px;
-      font-size: 11px;
-      color: var(--color-text-secondary);
-    }
-
-    .node-version {
-      font-size: 12px;
-      font-weight: 600;
-      font-family: var(--font-mono);
-      margin-bottom: 4px;
-      color: var(--color-text);
-    }
-
-    .node-msg {
-      font-size: 11.5px;
-      color: var(--color-text-secondary);
-      line-height: 1.4;
-    }
-
-    /* Fixed Small Bottom Status Bar */
-    .bottom-status-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 28px;
-      background: var(--header-bg);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-top: 1px solid var(--color-border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      font-size: 11px;
-      font-family: var(--font-mono);
-      color: var(--color-text-secondary);
-      z-index: 90;
-      user-select: none;
-    }
-
-    .status-left, .status-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .status-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      color: var(--color-text-secondary);
-    }
-    .status-item.bold-text {
-      color: var(--color-text);
-      font-weight: 600;
-    }
-
-    .status-divider {
-      color: var(--color-border);
-    }
-
-    .status-live {
-      color: var(--color-text);
-      font-weight: 500;
-    }
-
-    .pulse-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 6px #10b981;
-      display: inline-block;
-    }
-
-    .status-hint {
-      color: var(--color-text-muted);
-      font-family: var(--font-sans);
-      font-size: 10.5px;
-    }
-    .status-hint kbd {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm);
-      padding: 1px 4px;
-      font-family: var(--font-mono);
-      font-size: 9.5px;
-      color: var(--color-text);
-    }
-
-    @media (max-width: 768px) {
-      .status-hint { display: none; }
-    }
-
-    /* Toast Notification */
-    .toast {
-      position: fixed;
-      bottom: 38px;
-      right: 20px;
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      color: var(--color-text);
-      padding: 8px 14px;
-      border-radius: var(--radius-sm);
-      font-size: 11.5px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-      transform: translateY(60px);
-      opacity: 0;
-      transition: all 0.2s ease;
-      z-index: 2000;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-    }
-    .toast.show {
-      transform: translateY(0);
-      opacity: 1;
-    }
-
-    /* Empty state */
-    .empty-state {
-      padding: 40px 20px;
-      text-align: center;
-      color: var(--color-text-secondary);
-    }
-    .empty-icon {
-      margin-bottom: 8px;
-      color: var(--color-text-muted);
-    }
+  :root {
+    --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    
+    --radius: 0px;
+    --radius-sm: 2px;
+    --radius-md: 4px;
+
+    /* Dark Theme (Default) */
+    --color-bg: #090b10;
+    --color-bg-secondary: #0f131c;
+    --color-surface: #131722;
+    --color-surface-hover: #1a2030;
+    --color-surface-card: rgba(18, 23, 34, 0.85);
+    
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-hover: rgba(255, 255, 255, 0.18);
+    --color-border-focus: #6366f1;
+    
+    --color-text: #f8fafc;
+    --color-text-secondary: #94a3b8;
+    --color-text-muted: #64748b;
+    
+    --color-primary: #888888;
+    --color-accent: #6366f1;
+    --color-accent-glow: rgba(99, 102, 241, 0.15);
+    
+    --color-added: #10b981;
+    --color-added-bg: rgba(16, 185, 129, 0.12);
+    --color-added-border: rgba(16, 185, 129, 0.28);
+    
+    --color-updated: #f59e0b;
+    --color-updated-bg: rgba(245, 158, 11, 0.12);
+    --color-updated-border: rgba(245, 158, 11, 0.28);
+    
+    --color-removed: #f43f5e;
+    --color-removed-bg: rgba(244, 63, 94, 0.12);
+    --color-removed-border: rgba(244, 63, 94, 0.28);
+
+    --pattern-line: rgba(255, 255, 255, 0.035);
+    --pattern-dot: rgba(255, 255, 255, 0.09);
+    --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(99, 102, 241, 0.13), transparent 75%);
+    --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --shadow-drawer: -8px 0 32px rgba(0, 0, 0, 0.6);
+    --header-bg: rgba(9, 11, 16, 0.88);
+  }
+
+  [data-theme="light"] {
+    --color-bg: #f8fafc;
+    --color-bg-secondary: #f1f5f9;
+    --color-surface: #ffffff;
+    --color-surface-hover: #f8fafc;
+    --color-surface-card: rgba(255, 255, 255, 0.95);
+    
+    --color-border: #e2e8f0;
+    --color-border-hover: #cbd5e1;
+    --color-border-focus: #0f172a;
+    
+    --color-text: #0f172a;
+    --color-text-secondary: #64748b;
+    --color-text-muted: #94a3b8;
+    
+    --color-primary: #888888;
+    --color-accent: #0f172a;
+    --color-accent-glow: rgba(15, 23, 42, 0.06);
+    
+    --color-added: #059669;
+    --color-added-bg: rgba(5, 150, 105, 0.08);
+    --color-added-border: rgba(5, 150, 105, 0.25);
+    
+    --color-updated: #d97706;
+    --color-updated-bg: rgba(217, 119, 6, 0.08);
+    --color-updated-border: rgba(217, 119, 6, 0.25);
+    
+    --color-removed: #e11d48;
+    --color-removed-bg: rgba(225, 29, 72, 0.08);
+    --color-removed-border: rgba(225, 29, 72, 0.25);
+
+    --pattern-line: rgba(15, 23, 42, 0.04);
+    --pattern-dot: rgba(15, 23, 42, 0.07);
+    --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(99, 102, 241, 0.04), transparent 75%);
+    --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.05);
+    --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.08);
+    --header-bg: rgba(255, 255, 255, 0.9);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html {
+    scrollbar-gutter: stable;
+    overflow-y: scroll;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    background-image: 
+    var(--pattern-radial),
+    radial-gradient(var(--pattern-dot) 1px, transparent 1px),
+    linear-gradient(to right, var(--pattern-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--pattern-line) 1px, transparent 1px);
+    background-size: 100% 100%, 32px 32px, 32px 32px, 32px 32px;
+    background-attachment: fixed;
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 12.5px;
+    line-height: 1.5;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 7px; height: 7px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(120, 120, 120, 0.25); border-radius: var(--radius); }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(120, 120, 120, 0.45); }
+
+  /* Top Sticky Header */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 11px 24px;
+    background: var(--header-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: var(--shadow-subtle);
+  }
+
+  .brand-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .brand-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #ffffff;
+    border-radius: var(--radius-sm);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+  }
+
+  .brand-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: all 0.12s ease;
+  }
+  .btn-action:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border-hover);
+  }
+
+  .theme-toggle-btn {
+    padding: 6px 9px;
+  }
+
+  /* Full Width Container */
+  .app-container {
+    width: 100%;
+    max-width: 100%;
+    padding: 16px 24px 54px; /* padding-bottom accounts for bottom status bar */
+  }
+
+  /* Compact Stat Cards Ribbon */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 1024px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .kpi-grid { grid-template-columns: 1fr; }
+  }
+
+  .kpi-card {
+    background: var(--color-surface-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 9px 14px;
+    transition: all 0.12s ease;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .kpi-card:hover {
+    border-color: var(--color-border-hover);
+    transform: translateY(-1px);
+  }
+
+  .kpi-content {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .kpi-title {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+    margin-bottom: 2px;
+  }
+
+  .kpi-value-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .kpi-value {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+    line-height: 1.1;
+  }
+
+  .kpi-subtitle {
+    font-size: 10.5px;
+    color: var(--color-text-muted);
+  }
+
+  .kpi-badge-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+  }
+
+  .kpi-card.added .kpi-value { color: var(--color-added); }
+  .kpi-card.updated .kpi-value { color: var(--color-updated); }
+  .kpi-card.removed .kpi-value { color: var(--color-removed); }
+
+  /* Controls Panel */
+  .controls-panel {
+    background: var(--color-surface-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    position: relative;
+    z-index: 40;
+  }
+
+  .left-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    flex: 1;
+  }
+
+  .search-wrapper {
+    position: relative;
+    min-width: 240px;
+    flex: 1;
+    max-width: 360px;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-text-muted);
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 6px 30px 6px 30px;
+    color: var(--color-text);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s ease;
+    font-family: var(--font-sans);
+  }
+  .search-input:focus {
+    border-color: var(--color-border-focus);
+  }
+  .search-input::placeholder { color: var(--color-text-muted); }
+
+  .search-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    display: none;
+    font-size: 11px;
+  }
+  .search-clear:hover { color: var(--color-text); }
+
+  .shortcut-badge {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0 4px;
+    color: var(--color-text-muted);
+    pointer-events: none;
+  }
+
+  .filter-pills {
+    display: flex;
+    align-items: center;
+    background: var(--color-bg-secondary);
+    padding: 2px;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border);
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .filter-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--color-text-secondary);
+    padding: 4px 10px;
+    border-radius: var(--radius);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    font-family: var(--font-sans);
+    user-select: none;
+    white-space: nowrap;
+  }
+  .filter-btn:hover { color: var(--color-text); }
+  .filter-btn.active {
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-weight: 600;
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-subtle);
+  }
+
+  .filter-count {
+    display: inline-block;
+    padding: 0 4px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Custom Dropdown (No native select!) */
+  .custom-dropdown {
+    position: relative;
+    z-index: 50;
+  }
+  .custom-dropdown.open {
+    z-index: 60;
+  }
+
+  .custom-dropdown-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    padding: 5px 10px;
+    border-radius: var(--radius);
+    font-size: 11.5px;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    user-select: none;
+    min-width: 140px;
+    justify-content: space-between;
+  }
+  .custom-dropdown-btn:hover {
+    border-color: var(--color-border-hover);
+  }
+
+  .dropdown-chevron {
+    color: var(--color-text-secondary);
+    transition: transform 0.15s ease;
+  }
+  .custom-dropdown.open .dropdown-chevron {
+    transform: rotate(180deg);
+  }
+
+  .custom-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+    z-index: 100;
+    min-width: 200px;
+    max-height: 240px;
+    overflow-y: auto;
+    display: none;
+    padding: 4px;
+  }
+  .custom-dropdown.open .custom-dropdown-menu {
+    display: block;
+  }
+
+  .dropdown-item {
+    padding: 6px 10px;
+    font-size: 11.5px;
+    color: var(--color-text-secondary);
+    border-radius: var(--radius);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background 0.1s ease;
+  }
+  .dropdown-item:hover {
+    background: var(--color-bg-secondary);
+    color: var(--color-text);
+  }
+  .dropdown-item.selected {
+    background: var(--color-bg-secondary);
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .right-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .view-toggle {
+    display: flex;
+    background: var(--color-bg-secondary);
+    padding: 2px;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border);
+  }
+
+  .view-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--color-text-secondary);
+    padding: 4px 11px;
+    border-radius: var(--radius);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    font-family: var(--font-sans);
+    user-select: none;
+  }
+  .view-btn:hover { color: var(--color-text); }
+  .view-btn.active {
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-weight: 600;
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-subtle);
+  }
+
+  /* Content Card Container */
+  .content-card {
+    background: var(--color-surface-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-subtle);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    position: relative;
+    z-index: 1;
+    min-height: 520px;
+  }
+
+  /* Rock-Solid Technical Table */
+  .table-responsive {
+    overflow-x: auto;
+    width: 100%;
+    min-height: 480px;
+  }
+
+  table.events-table {
+    width: 100%;
+    min-width: 980px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+    text-align: left;
+  }
+
+  table.events-table thead th {
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    user-select: none;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  table.events-table thead th.sortable { cursor: pointer; }
+  table.events-table thead th.sortable:hover { color: var(--color-text); }
+
+  table.events-table tbody tr {
+    border-bottom: 1px solid var(--color-border);
+    transition: background 0.1s ease;
+    height: 52px;
+  }
+  table.events-table tbody tr:hover { background: var(--color-surface-hover); }
+
+  table.events-table td {
+    padding: 8px 14px;
+    font-size: 12px;
+    vertical-align: middle;
+    white-space: nowrap;
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.events-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .badge-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 7px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    line-height: 1.3;
+  }
+  .badge-status.added {
+    background: var(--color-added-bg);
+    color: var(--color-added);
+    border-color: var(--color-added-border);
+  }
+  .badge-status.updated {
+    background: var(--color-updated-bg);
+    color: var(--color-updated);
+    border-color: var(--color-updated-border);
+  }
+  .badge-status.removed {
+    background: var(--color-removed-bg);
+    color: var(--color-removed);
+    border-color: var(--color-removed-border);
+  }
+
+  .package-cell {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .package-cell-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
+  .package-cell-icon.ws {
+    background: var(--color-accent-glow);
+    color: var(--color-accent);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  .package-name {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--color-text);
+    cursor: pointer;
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.1s ease;
+  }
+  .package-name:hover {
+    text-decoration: underline;
+    color: var(--color-accent);
+  }
+
+  .diff-pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--color-bg-secondary);
+    padding: 2px 7px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .diff-from { color: var(--color-removed); }
+  .diff-to { color: var(--color-added); font-weight: 600; }
+  .diff-arrow { color: var(--color-text-muted); }
+
+  .dep-type-tag {
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    letter-spacing: 0.03em;
+  }
+  .dep-type-tag.direct {
+    background: var(--color-accent-glow);
+    color: var(--color-accent);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  .manifest-badge {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    background: var(--color-bg-secondary);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+  }
+
+  .empty-state {
+    padding: 80px 20px !important;
+    text-align: center;
+    color: var(--color-text-secondary);
+    height: 380px;
+    vertical-align: middle;
+  }
+  .empty-icon {
+    margin-bottom: 12px;
+    color: var(--color-text-secondary);
+    opacity: 0.5;
+  }
+  .empty-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 4px;
+  }
+  .empty-subtitle {
+    font-size: 11.5px;
+    color: var(--color-text-secondary);
+    margin-bottom: 14px;
+  }
+
+  /* Scanning / Progress Card */
+  .scan-progress-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 64px 24px;
+    min-height: 340px;
+    text-align: center;
+    user-select: none;
+  }
+  .scan-spinner-wrap {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scan-spinner-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 3px solid rgba(99, 102, 241, 0.16);
+    border-top-color: #6366f1;
+    border-right-color: #8b5cf6;
+    animation: scanSpin 0.9s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite;
+  }
+  .scan-spinner-glow {
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.35) 0%, transparent 70%);
+    filter: blur(6px);
+    animation: scanPulse 2s ease-in-out infinite;
+  }
+  .scan-spinner-icon {
+    color: #818cf8;
+    z-index: 2;
+  }
+  @keyframes scanSpin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes scanPulse {
+    0%, 100% { opacity: 0.35; transform: scale(0.92); }
+    50% { opacity: 0.85; transform: scale(1.12); }
+  }
+  .scan-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    padding: 3px 9px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 10px;
+  }
+  .scan-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #6366f1;
+    box-shadow: 0 0 6px #6366f1;
+    animation: scanBlink 1.4s ease-in-out infinite;
+  }
+  @keyframes scanBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .scan-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--color-text);
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+  }
+  .scan-bar-track {
+    width: 100%;
+    max-width: 360px;
+    height: 6px;
+    background: var(--color-surface-hover);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 10px;
+    position: relative;
+    border: 1px solid var(--color-border);
+  }
+  .scan-bar-fill {
+    height: 100%;
+    width: 12%;
+    background: linear-gradient(90deg, #6366f1, #a855f7);
+    border-radius: 999px;
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.45);
+  }
+  .scan-stats-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 360px;
+    font-size: 11.5px;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+  }
+  .scan-detail-ticker {
+    max-width: 420px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 16px;
+  }
+
+  /* Author Profile & Username Display */
+  .author-cell-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    text-decoration: none;
+    color: var(--color-text);
+    padding: 3px 6px;
+    border-radius: var(--radius-sm);
+    transition: background 0.12s ease;
+    max-width: 240px;
+  }
+  .author-cell-link:hover {
+    background: var(--color-bg-secondary);
+  }
+  .author-cell-link:hover .author-name {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+
+  .author-avatar-wrapper {
+    position: relative;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+  }
+  .author-avatar-img {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    display: block;
+  }
+  .author-avatar-fallback {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #475569, #334155);
+    color: #ffffff;
+    font-size: 10.5px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-transform: uppercase;
+  }
+  .author-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+  }
+  .author-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .author-user {
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .commit-tag {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--color-text);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    padding: 2px 5px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: all 0.1s ease;
+  }
+  .commit-tag:hover {
+    border-color: var(--color-border-hover);
+    background: var(--color-surface);
+  }
+
+  /* Authentic Full Calendar View */
+  .calendar-container {
+    padding: 20px;
+    display: none;
+  }
+  .calendar-container.active { display: block; }
+
+  .calendar-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-border);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .calendar-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .calendar-title {
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--color-text);
+    letter-spacing: -0.01em;
+  }
+
+  .calendar-nav-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .calendar-nav-btn {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    border-radius: var(--radius-sm);
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.12s ease;
+    font-family: var(--font-sans);
+  }
+  .calendar-nav-btn:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border-hover);
+  }
+
+  .calendar-legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    flex-wrap: wrap;
+  }
+
+  .calendar-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .calendar-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .calendar-legend-dot.added { background: var(--color-added); }
+  .calendar-legend-dot.updated { background: var(--color-updated); }
+  .calendar-legend-dot.removed { background: var(--color-removed); }
+
+  .calendar-frame {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-subtle);
+  }
+
+  .calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .calendar-weekday {
+    padding: 9px 8px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .calendar-days-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    background: var(--color-border);
+    gap: 1px;
+  }
+
+  .calendar-day-box {
+    background: var(--color-surface);
+    min-height: 105px;
+    padding: 8px 7px;
+    display: flex;
+    flex-direction: column;
+    transition: background 0.1s ease;
+    position: relative;
+    cursor: pointer;
+  }
+  .calendar-day-box:hover {
+    background: var(--color-surface-hover);
+  }
+  .calendar-day-box.outside-month {
+    background: var(--color-bg);
+    opacity: 0.4;
+    cursor: default;
+  }
+  .calendar-day-box.today {
+    box-shadow: inset 0 0 0 1.5px var(--color-accent);
+  }
+
+  .day-box-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .day-number {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-text);
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  .calendar-day-box.today .day-number {
+    background: var(--color-accent);
+    color: var(--color-bg);
+    font-weight: 700;
+  }
+
+  .day-badge-count {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-accent);
+    background: var(--color-accent-glow);
+    padding: 1px 5px;
+    border-radius: 10px;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+  }
+
+  .day-events-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow: hidden;
+    flex: 1;
+  }
+
+  .day-event-pill {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    cursor: pointer;
+    transition: transform 0.08s ease, filter 0.08s ease;
+    border: 1px solid transparent;
+    line-height: 1.35;
+  }
+  .day-event-pill:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.15);
+  }
+
+  .day-event-pill.added {
+    background: var(--color-added-bg);
+    color: var(--color-added);
+    border-color: var(--color-added-border);
+  }
+
+  .day-event-pill.updated {
+    background: var(--color-updated-bg);
+    color: var(--color-updated);
+    border-color: var(--color-updated-border);
+  }
+
+  .day-event-pill.removed {
+    background: var(--color-removed-bg);
+    color: var(--color-removed);
+    border-color: var(--color-removed-border);
+  }
+
+  .day-event-more {
+    font-size: 9.5px;
+    color: var(--color-text-secondary);
+    font-weight: 600;
+    padding: 1px 4px;
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+
+  /* Slide-out Archaeology Drawer */
+  .drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: none;
+    justify-content: flex-end;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .drawer-overlay.active {
+    display: flex;
+    opacity: 1;
+  }
+
+  .drawer {
+    background: var(--color-surface);
+    border-left: 1px solid var(--color-border);
+    width: 580px;
+    max-width: 92vw;
+    height: 100%;
+    padding: 24px 20px;
+    overflow-y: auto;
+    box-shadow: var(--shadow-drawer);
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  .drawer-overlay.active .drawer {
+    transform: translateX(0);
+  }
+
+  /* Refined Premium Drawer Header Card */
+  .drawer-header {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: var(--shadow-subtle);
+    position: relative;
+  }
+
+  .drawer-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .drawer-title-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .drawer-pkg-avatar {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .drawer-title-wrapper {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .drawer-title-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+
+  .drawer-pkg-title {
+    font-size: 18px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    word-break: break-all;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+
+  .drawer-copy-icon-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.12s ease;
+  }
+  .drawer-copy-icon-btn:hover {
+    color: var(--color-text);
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+
+  .drawer-meta-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .drawer-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    font-family: var(--font-mono);
+  }
+  .drawer-status-pill.added {
+    background: var(--color-added-bg);
+    color: var(--color-added);
+    border-color: var(--color-added-border);
+  }
+  .drawer-status-pill.removed {
+    background: var(--color-removed-bg);
+    color: var(--color-removed);
+    border-color: var(--color-removed-border);
+  }
+
+  .status-pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 6px currentColor;
+  }
+
+  .drawer-deptype-badge, .drawer-manifest-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: var(--radius-sm);
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+  }
+  .drawer-deptype-badge.workspace {
+    background: var(--color-accent-glow);
+    color: var(--color-accent);
+    border-color: rgba(99, 102, 241, 0.3);
+    font-weight: 600;
+  }
+
+  .drawer-top-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .drawer-close-btn {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    height: 28px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    transition: all 0.12s ease;
+  }
+  .drawer-close-btn:hover {
+    border-color: var(--color-border-hover);
+    color: var(--color-text);
+    background: var(--color-surface-hover);
+  }
+  .drawer-close-btn .kbd-hint {
+    font-size: 9.5px;
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    padding: 1px 4px;
+    background: var(--color-bg);
+  }
+
+  /* Micro Stats Strip */
+  .drawer-stats-strip {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: center;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 8px 14px;
+    gap: 8px;
+  }
+
+  .drawer-stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .drawer-stat-item .stat-label {
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+
+  .drawer-stat-item .stat-val {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .drawer-stat-divider {
+    width: 1px;
+    height: 22px;
+    background: var(--color-border);
+  }
+
+  /* Action Toolbar */
+  .drawer-action-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .drawer-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 11.5px;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.12s ease;
+    user-select: none;
+  }
+  .drawer-action-btn:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border-hover);
+    color: var(--color-text);
+  }
+  .drawer-action-btn.accent {
+    background: var(--color-accent-glow);
+    color: var(--color-accent);
+    border-color: rgba(99, 102, 241, 0.35);
+  }
+  .drawer-action-btn.accent:hover {
+    border-color: var(--color-accent);
+  }
+  .drawer-action-btn.disabled {
+    cursor: default;
+    opacity: 0.85;
+    pointer-events: none;
+  }
+  .drawer-action-btn svg {
+    flex-shrink: 0;
+  }
+
+  /* Vertical Timeline Tree in Drawer */
+  .tree-timeline {
+    position: relative;
+    padding-left: 24px;
+    margin-top: 14px;
+    flex: 1;
+  }
+  .tree-timeline::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 12px;
+    bottom: 20px;
+    width: 1px;
+    background: var(--color-border);
+  }
+
+  .timeline-node {
+    position: relative;
+    margin-bottom: 18px;
+  }
+
+  .node-icon {
+    position: absolute;
+    left: -24px;
+    top: 3px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--color-surface);
+    border: 1.5px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+  }
+  .timeline-node.added .node-icon { background: var(--color-added); border-color: var(--color-added); color: #ffffff; }
+  .timeline-node.updated .node-icon { background: var(--color-updated); border-color: var(--color-updated); color: #ffffff; }
+  .timeline-node.removed .node-icon { background: var(--color-removed); border-color: var(--color-removed); color: #ffffff; }
+
+  .node-card {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+
+  .node-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+    font-size: 11px;
+    color: var(--color-text-secondary);
+  }
+
+  .node-version {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    margin-bottom: 4px;
+    color: var(--color-text);
+  }
+
+  .node-msg {
+    font-size: 11.5px;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+  }
+
+  /* Fixed Small Bottom Status Bar */
+  .bottom-status-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    background: var(--header-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
+    z-index: 90;
+    user-select: none;
+  }
+
+  .status-left, .status-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--color-text-secondary);
+  }
+  .status-item.bold-text {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .status-divider {
+    color: var(--color-border);
+  }
+
+  .status-live {
+    color: var(--color-text);
+    font-weight: 500;
+  }
+
+  .pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 6px #10b981;
+    display: inline-block;
+  }
+
+  .status-hint {
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+  }
+  .status-hint kbd {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 1px 4px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--color-text);
+  }
+
+  @media (max-width: 768px) {
+    .status-hint { display: none; }
+  }
+
+  /* Toast Notification */
+  .toast {
+    position: fixed;
+    bottom: 38px;
+    right: 20px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 11.5px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    transform: translateY(60px);
+    opacity: 0;
+    transition: all 0.2s ease;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .toast.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
   </style>
 </head>
 <body>
 
   <!-- Top Sticky Header -->
   <header>
-    <div class="brand-section">
-      <div class="brand-logo">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="16 18 22 12 16 6"></polyline>
-          <polyline points="8 6 2 12 8 18"></polyline>
-        </svg>
-      </div>
-      <div class="brand-title">dep-blame</div>
+  <div class="brand-section">
+    <div class="brand-logo">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="16 18 22 12 16 6"></polyline>
+      <polyline points="8 6 2 12 8 18"></polyline>
+    </svg>
     </div>
+    <div class="brand-title">dep-blame</div>
+  </div>
 
-    <div class="header-actions">
-      <!-- Dark / Light Theme Toggle -->
-      <button class="btn-action theme-toggle-btn" id="theme-toggle" title="Toggle Theme (Dark / Light)">
-        <svg id="theme-icon-dark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-        <svg id="theme-icon-light" style="display: none;" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-      </button>
+  <div class="header-actions">
+    <!-- Dark / Light Theme Toggle -->
+    <button class="btn-action theme-toggle-btn" id="theme-toggle" title="Toggle Theme (Dark / Light)">
+    <svg id="theme-icon-dark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+    <svg id="theme-icon-light" style="display: none;" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+    </button>
 
-      <button class="btn-action" id="export-json-btn" title="Export events JSON">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        Export
-      </button>
-      <button class="btn-action" id="refresh-btn" title="Rescan git repository">
-        <svg id="sync-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-        Sync
-      </button>
-    </div>
+    <button class="btn-action" id="export-json-btn" title="Export events JSON">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+    Export
+    </button>
+    <button class="btn-action" id="refresh-btn" title="Rescan git repository">
+    <svg id="sync-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+    Sync
+    </button>
+  </div>
   </header>
 
   <!-- Full Width Main Workspace -->
   <div class="app-container">
 
-    <!-- Compact Stat Cards Ribbon -->
-    <div class="kpi-grid">
-      <div class="kpi-card" onclick="setFilter('all')">
-        <div class="kpi-content">
-          <span class="kpi-title">Total Modifications</span>
-          <div class="kpi-value-row">
-            <span class="kpi-value" id="kpi-total">0</span>
-            <span class="kpi-subtitle" id="kpi-distinct">Across 0 distinct packages</span>
-          </div>
-        </div>
-        <div class="kpi-badge-icon">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-        </div>
-      </div>
-
-      <div class="kpi-card added" onclick="setFilter('added')">
-        <div class="kpi-content">
-          <span class="kpi-title">Packages Added</span>
-          <div class="kpi-value-row">
-            <span class="kpi-value" id="kpi-added">0</span>
-            <span class="kpi-subtitle">New introduced</span>
-          </div>
-        </div>
-        <div class="kpi-badge-icon">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        </div>
-      </div>
-
-      <div class="kpi-card updated" onclick="setFilter('updated')">
-        <div class="kpi-content">
-          <span class="kpi-title">Version Upgrades</span>
-          <div class="kpi-value-row">
-            <span class="kpi-value" id="kpi-updated">0</span>
-            <span class="kpi-subtitle">Bumps tracked</span>
-          </div>
-        </div>
-        <div class="kpi-badge-icon">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
-        </div>
-      </div>
-
-      <div class="kpi-card removed" onclick="setFilter('removed')">
-        <div class="kpi-content">
-          <span class="kpi-title">Packages Removed</span>
-          <div class="kpi-value-row">
-            <span class="kpi-value" id="kpi-removed">0</span>
-            <span class="kpi-subtitle">Deprecations</span>
-          </div>
-        </div>
-        <div class="kpi-badge-icon">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-        </div>
+  <!-- Compact Stat Cards Ribbon -->
+  <div class="kpi-grid">
+    <div class="kpi-card" onclick="setFilter('all')">
+    <div class="kpi-content">
+      <span class="kpi-title">Total Modifications</span>
+      <div class="kpi-value-row">
+      <span class="kpi-value" id="kpi-total">0</span>
+      <span class="kpi-subtitle" id="kpi-distinct">Across 0 distinct packages</span>
       </div>
     </div>
-
-    <!-- Controls Panel (Search, Filter Tabs, Custom Dropdown, View Switcher) -->
-    <div class="controls-panel">
-      <div class="left-controls">
-        <div class="search-wrapper">
-          <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          <input type="text" class="search-input" id="search-input" placeholder="Search dependency, author, SHA, commit..." />
-          <button class="search-clear" id="search-clear" title="Clear search">✕</button>
-          <span class="shortcut-badge">/</span>
-        </div>
-
-        <div class="filter-pills">
-          <button class="filter-btn active" data-filter="all">All <span class="filter-count" id="count-all">0</span></button>
-          <button class="filter-btn" data-filter="added">+ Added <span class="filter-count" id="count-added">0</span></button>
-          <button class="filter-btn" data-filter="updated">↑ Updated <span class="filter-count" id="count-updated">0</span></button>
-          <button class="filter-btn" data-filter="removed">- Removed <span class="filter-count" id="count-removed">0</span></button>
-        </div>
-
-        <!-- Custom Styled Dropdown (No native select!) -->
-        <div class="custom-dropdown" id="manifest-dropdown">
-          <button type="button" class="custom-dropdown-btn" id="manifest-dropdown-btn">
-            <span id="manifest-selected-label">All Manifests</span>
-            <svg class="dropdown-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          </button>
-          <div class="custom-dropdown-menu" id="manifest-dropdown-menu">
-            <div class="dropdown-item selected" data-value="all">All Manifests</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="right-controls">
-        <div class="view-toggle">
-          <button class="view-btn active" id="view-timeline-btn">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-            Timeline
-          </button>
-          <button class="view-btn" id="view-calendar-btn">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-            Calendar
-          </button>
-        </div>
-      </div>
+    <div class="kpi-badge-icon">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+    </div>
     </div>
 
-    <!-- Main Content Card -->
-    <div class="content-card">
-      
-      <!-- Table View -->
-      <div class="table-responsive" id="timeline-view">
-        <table class="events-table">
-          <colgroup>
-            <col style="width: 105px;">
-            <col style="width: 115px;">
-            <col style="width: 22%;">
-            <col style="width: 18%;">
-            <col style="width: 80px;">
-            <col style="width: 16%;">
-            <col style="width: 20%;">
-            <col style="width: 95px;">
-          </colgroup>
-          <thead>
-            <tr>
-              <th class="sortable" onclick="toggleSort('date')">Date <span id="sort-date-icon">↓</span></th>
-              <th>Action</th>
-              <th class="sortable" onclick="toggleSort('package')">Dependency <span id="sort-pkg-icon"></span></th>
-              <th>Version Diff</th>
-              <th>Type</th>
-              <th>Manifest</th>
-              <th>Author</th>
-              <th>Commit</th>
-            </tr>
-          </thead>
-          <tbody id="events-tbody">
-            <tr>
-              <td colspan="8" class="empty-state">
-                <svg class="empty-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                <div class="empty-title">Scanning repository history...</div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <div class="kpi-card added" onclick="setFilter('added')">
+    <div class="kpi-content">
+      <span class="kpi-title">Packages Added</span>
+      <div class="kpi-value-row">
+      <span class="kpi-value" id="kpi-added">0</span>
+      <span class="kpi-subtitle">New introduced</span>
       </div>
-
-      <!-- Calendar View -->
-      <div class="calendar-container" id="calendar-view">
-        <div class="calendar-topbar">
-          <div class="calendar-title-wrap">
-            <h2 class="calendar-title" id="calendar-month-title">September 2026</h2>
-            <div class="calendar-nav-group">
-              <button class="calendar-nav-btn" id="cal-prev-btn" title="Previous Month">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
-              </button>
-              <button class="calendar-nav-btn" id="cal-today-btn" title="Jump to Latest Activity">Today</button>
-              <button class="calendar-nav-btn" id="cal-next-btn" title="Next Month">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              </button>
-            </div>
-          </div>
-          <div class="calendar-legend">
-            <div class="calendar-legend-item"><span class="calendar-legend-dot added"></span><span>Added</span></div>
-            <div class="calendar-legend-item"><span class="calendar-legend-dot updated"></span><span>Updated</span></div>
-            <div class="calendar-legend-item"><span class="calendar-legend-dot removed"></span><span>Removed</span></div>
-            <span style="font-size: 11px; color: var(--color-text-secondary); margin-left: 4px;" id="calendar-month-stats"></span>
-          </div>
-        </div>
-        <div class="calendar-frame">
-          <div class="calendar-weekdays">
-            <div class="calendar-weekday">Sun</div>
-            <div class="calendar-weekday">Mon</div>
-            <div class="calendar-weekday">Tue</div>
-            <div class="calendar-weekday">Wed</div>
-            <div class="calendar-weekday">Thu</div>
-            <div class="calendar-weekday">Fri</div>
-            <div class="calendar-weekday">Sat</div>
-          </div>
-          <div class="calendar-days-grid" id="calendar-days-grid"></div>
-        </div>
-      </div>
-
     </div>
+    <div class="kpi-badge-icon">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </div>
+    </div>
+
+    <div class="kpi-card updated" onclick="setFilter('updated')">
+    <div class="kpi-content">
+      <span class="kpi-title">Version Upgrades</span>
+      <div class="kpi-value-row">
+      <span class="kpi-value" id="kpi-updated">0</span>
+      <span class="kpi-subtitle">Bumps tracked</span>
+      </div>
+    </div>
+    <div class="kpi-badge-icon">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+    </div>
+    </div>
+
+    <div class="kpi-card removed" onclick="setFilter('removed')">
+    <div class="kpi-content">
+      <span class="kpi-title">Packages Removed</span>
+      <div class="kpi-value-row">
+      <span class="kpi-value" id="kpi-removed">0</span>
+      <span class="kpi-subtitle">Deprecations</span>
+      </div>
+    </div>
+    <div class="kpi-badge-icon">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+    </div>
+    </div>
+  </div>
+
+  <!-- Controls Panel (Search, Filter Tabs, Custom Dropdown, View Switcher) -->
+  <div class="controls-panel">
+    <div class="left-controls">
+    <div class="search-wrapper">
+      <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="text" class="search-input" id="search-input" placeholder="Search dependency, author, SHA, commit..." />
+      <button class="search-clear" id="search-clear" title="Clear search">✕</button>
+      <span class="shortcut-badge">/</span>
+    </div>
+
+    <div class="filter-pills">
+      <button class="filter-btn active" data-filter="all">All <span class="filter-count" id="count-all">0</span></button>
+      <button class="filter-btn" data-filter="added">+ Added <span class="filter-count" id="count-added">0</span></button>
+      <button class="filter-btn" data-filter="updated">↑ Updated <span class="filter-count" id="count-updated">0</span></button>
+      <button class="filter-btn" data-filter="removed">- Removed <span class="filter-count" id="count-removed">0</span></button>
+    </div>
+
+    <!-- Custom Styled Dropdown (No native select!) -->
+    <div class="custom-dropdown" id="manifest-dropdown">
+      <button type="button" class="custom-dropdown-btn" id="manifest-dropdown-btn">
+      <span id="manifest-selected-label">All Manifests</span>
+      <svg class="dropdown-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+      <div class="custom-dropdown-menu" id="manifest-dropdown-menu">
+      <div class="dropdown-item selected" data-value="all">All Manifests</div>
+      </div>
+    </div>
+    </div>
+
+    <div class="right-controls">
+    <div class="view-toggle">
+      <button class="view-btn active" id="view-timeline-btn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      Timeline
+      </button>
+      <button class="view-btn" id="view-calendar-btn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+      Calendar
+      </button>
+    </div>
+    </div>
+  </div>
+
+  <!-- Main Content Card -->
+  <div class="content-card">
+    
+    <!-- Table View -->
+    <div class="table-responsive" id="timeline-view">
+    <table class="events-table">
+      <colgroup>
+      <col style="width: 105px;">
+      <col style="width: 115px;">
+      <col style="width: 22%;">
+      <col style="width: 18%;">
+      <col style="width: 80px;">
+      <col style="width: 16%;">
+      <col style="width: 20%;">
+      <col style="width: 95px;">
+      </colgroup>
+      <thead>
+      <tr>
+        <th class="sortable" onclick="toggleSort('date')">Date <span id="sort-date-icon">↓</span></th>
+        <th>Action</th>
+        <th class="sortable" onclick="toggleSort('package')">Dependency <span id="sort-pkg-icon"></span></th>
+        <th>Version Diff</th>
+        <th>Type</th>
+        <th>Manifest</th>
+        <th>Author</th>
+        <th>Commit</th>
+      </tr>
+      </thead>
+      <tbody id="events-tbody">
+      <tr>
+        <td colspan="8" style="padding: 0; border: none;">
+        <div class="scan-progress-container" id="scan-progress-box">
+          <div class="scan-spinner-wrap">
+          <div class="scan-spinner-glow"></div>
+          <div class="scan-spinner-ring"></div>
+          <svg class="scan-spinner-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          </div>
+          <div class="scan-badge">
+          <span class="scan-badge-dot"></span>
+          <span id="scan-stage-badge">Analyzing Repository</span>
+          </div>
+          <div class="scan-title" id="scan-title-text">Scanning commit history & manifests...</div>
+          <div class="scan-bar-track">
+          <div class="scan-bar-fill" id="scan-bar-fill" style="width: 15%;"></div>
+          </div>
+          <div class="scan-stats-row">
+          <span id="scan-commits-count">Reading history...</span>
+          <span id="scan-percent-label" style="font-weight: 700; color: var(--color-text);">15%</span>
+          </div>
+          <div class="scan-detail-ticker" id="scan-detail-ticker">Connecting to analysis stream...</div>
+        </div>
+        </td>
+      </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <!-- Calendar View -->
+    <div class="calendar-container" id="calendar-view">
+    <div class="calendar-topbar">
+      <div class="calendar-title-wrap">
+      <h2 class="calendar-title" id="calendar-month-title">September 2026</h2>
+      <div class="calendar-nav-group">
+        <button class="calendar-nav-btn" id="cal-prev-btn" title="Previous Month">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <button class="calendar-nav-btn" id="cal-today-btn" title="Jump to Latest Activity">Today</button>
+        <button class="calendar-nav-btn" id="cal-next-btn" title="Next Month">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+      </div>
+      </div>
+      <div class="calendar-legend">
+      <div class="calendar-legend-item"><span class="calendar-legend-dot added"></span><span>Added</span></div>
+      <div class="calendar-legend-item"><span class="calendar-legend-dot updated"></span><span>Updated</span></div>
+      <div class="calendar-legend-item"><span class="calendar-legend-dot removed"></span><span>Removed</span></div>
+      <span style="font-size: 11px; color: var(--color-text-secondary); margin-left: 4px;" id="calendar-month-stats"></span>
+      </div>
+    </div>
+    <div class="calendar-frame">
+      <div class="calendar-weekdays">
+      <div class="calendar-weekday">Sun</div>
+      <div class="calendar-weekday">Mon</div>
+      <div class="calendar-weekday">Tue</div>
+      <div class="calendar-weekday">Wed</div>
+      <div class="calendar-weekday">Thu</div>
+      <div class="calendar-weekday">Fri</div>
+      <div class="calendar-weekday">Sat</div>
+      </div>
+      <div class="calendar-days-grid" id="calendar-days-grid"></div>
+    </div>
+    </div>
+
+  </div>
 
   </div>
 
   <!-- Slide-out Archaeology Drawer (Fixed, Clean, and Neat Header) -->
   <div class="drawer-overlay" id="drawer-overlay">
-    <div class="drawer">
-      <div class="drawer-header">
-        <div class="drawer-header-top">
-          <div class="drawer-title-group">
-            <div class="drawer-pkg-avatar" id="drawer-pkg-avatar-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                <line x1="12" y1="22.08" x2="12" y2="12"></line>
-              </svg>
-            </div>
-            <div class="drawer-title-wrapper">
-              <div class="drawer-title-name-row">
-                <h2 class="drawer-pkg-title" id="drawer-title">package-name</h2>
-                <button class="drawer-copy-icon-btn" id="drawer-copy-name" title="Copy package name">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                </button>
-              </div>
-              <div class="drawer-meta-badges">
-                <span class="drawer-status-pill added" id="drawer-status">
-                  <span class="status-pulse-dot"></span>
-                  <span id="drawer-status-text">Active</span>
-                </span>
-                <span class="drawer-deptype-badge workspace" id="drawer-workspace-badge" style="display: none;">repo package</span>
-                <span class="drawer-deptype-badge" id="drawer-deptype">dependencies</span>
-                <span class="drawer-manifest-badge" id="drawer-manifest-summary">manifest</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="drawer-top-actions">
-            <button class="drawer-close-btn" id="drawer-close" title="Close drawer (Esc)">
-              <span class="kbd-hint">ESC</span>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
-          </div>
+  <div class="drawer">
+    <div class="drawer-header">
+    <div class="drawer-header-top">
+      <div class="drawer-title-group">
+      <div class="drawer-pkg-avatar" id="drawer-pkg-avatar-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+      </div>
+      <div class="drawer-title-wrapper">
+        <div class="drawer-title-name-row">
+        <h2 class="drawer-pkg-title" id="drawer-title">package-name</h2>
+        <button class="drawer-copy-icon-btn" id="drawer-copy-name" title="Copy package name">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>
         </div>
-
-        <div class="drawer-stats-strip">
-          <div class="drawer-stat-item">
-            <span class="stat-label">Total Changes</span>
-            <span class="stat-val" id="drawer-changes-count">0 changes</span>
-          </div>
-          <div class="drawer-stat-divider"></div>
-          <div class="drawer-stat-item">
-            <span class="stat-label">Introduced</span>
-            <span class="stat-val" id="drawer-first-date">-</span>
-          </div>
-          <div class="drawer-stat-divider"></div>
-          <div class="drawer-stat-item">
-            <span class="stat-label">Contributors</span>
-            <span class="stat-val" id="drawer-authors-count">0 authors</span>
-          </div>
-        </div>
-
-        <div class="drawer-action-toolbar">
-          <a class="drawer-action-btn accent" id="drawer-package-link" target="_blank" rel="noopener noreferrer" title="View package">
-            <span id="drawer-package-link-icon">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-            </span>
-            <span id="drawer-package-link-text">npm package</span>
-          </a>
-          <button class="drawer-action-btn" id="drawer-copy-md" title="Copy markdown summary of this package lifecycle">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            <span>Copy Markdown</span>
-          </button>
-          <button class="drawer-action-btn" id="drawer-filter-btn" title="Filter main view by this package">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <span>Filter in Table</span>
-          </button>
+        <div class="drawer-meta-badges">
+        <span class="drawer-status-pill added" id="drawer-status">
+          <span class="status-pulse-dot"></span>
+          <span id="drawer-status-text">Active</span>
+        </span>
+        <span class="drawer-deptype-badge workspace" id="drawer-workspace-badge" style="display: none;">repo package</span>
+        <span class="drawer-deptype-badge" id="drawer-deptype">dependencies</span>
+        <span class="drawer-manifest-badge" id="drawer-manifest-summary">manifest</span>
         </div>
       </div>
-
-      <div style="font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin-bottom: 8px;">
-        Chronological Archaeology Timeline:
       </div>
 
-      <div class="tree-timeline" id="drawer-timeline"></div>
+      <div class="drawer-top-actions">
+      <button class="drawer-close-btn" id="drawer-close" title="Close drawer (Esc)">
+        <span class="kbd-hint">ESC</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+      </div>
     </div>
+
+    <div class="drawer-stats-strip">
+      <div class="drawer-stat-item">
+      <span class="stat-label">Total Changes</span>
+      <span class="stat-val" id="drawer-changes-count">0 changes</span>
+      </div>
+      <div class="drawer-stat-divider"></div>
+      <div class="drawer-stat-item">
+      <span class="stat-label">Introduced</span>
+      <span class="stat-val" id="drawer-first-date">-</span>
+      </div>
+      <div class="drawer-stat-divider"></div>
+      <div class="drawer-stat-item">
+      <span class="stat-label">Contributors</span>
+      <span class="stat-val" id="drawer-authors-count">0 authors</span>
+      </div>
+    </div>
+
+    <div class="drawer-action-toolbar">
+      <a class="drawer-action-btn accent" id="drawer-package-link" target="_blank" rel="noopener noreferrer" title="View package">
+      <span id="drawer-package-link-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+      </span>
+      <span id="drawer-package-link-text">npm package</span>
+      </a>
+      <button class="drawer-action-btn" id="drawer-copy-md" title="Copy markdown summary of this package lifecycle">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      <span>Copy Markdown</span>
+      </button>
+      <button class="drawer-action-btn" id="drawer-filter-btn" title="Filter main view by this package">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <span>Filter in Table</span>
+      </button>
+    </div>
+    </div>
+
+    <div style="font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin-bottom: 8px;">
+    Chronological Archaeology Timeline:
+    </div>
+
+    <div class="tree-timeline" id="drawer-timeline"></div>
+  </div>
   </div>
 
   <!-- Fixed Small Bottom Status Bar -->
   <footer class="bottom-status-bar">
-    <div class="status-left">
-      <span class="status-item bold-text">dep-blame <span style="font-weight: normal; color: var(--color-text-muted);">v0.1.0</span></span>
-      <span class="status-divider">|</span>
-      <span class="status-item" title="Repository">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-        <span id="repo-name">repository</span>
-      </span>
-      <span class="status-divider">|</span>
-      <span class="status-item" title="Git Branch">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
-        <span id="branch-name">main</span>
-      </span>
-      <span class="status-divider">|</span>
-      <span class="status-item" id="pm-pill">npm</span>
-    </div>
-    <div class="status-right">
-      <span class="status-item status-live">
-        <span class="pulse-dot"></span>
-        <span id="index-time">Live Index</span>
-      </span>
-      <span class="status-divider">|</span>
-      <span class="status-hint">Press <kbd>/</kbd> to search &bull; <kbd>1</kbd> Timeline &bull; <kbd>2</kbd> Calendar</span>
-    </div>
+  <div class="status-left">
+    <span class="status-item bold-text">dep-blame <span style="font-weight: normal; color: var(--color-text-muted);">v0.1.0</span></span>
+    <span class="status-divider">|</span>
+    <span class="status-item" title="Repository">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+    <span id="repo-name">repository</span>
+    </span>
+    <span class="status-divider">|</span>
+    <span class="status-item" title="Git Branch">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+    <span id="branch-name">main</span>
+    </span>
+    <span class="status-divider">|</span>
+    <span class="status-item" id="pm-pill">npm</span>
+  </div>
+  <div class="status-right">
+    <span class="status-item status-live">
+    <span class="pulse-dot"></span>
+    <span id="index-time">Live Index</span>
+    </span>
+    <span class="status-divider">|</span>
+    <span class="status-hint">Press <kbd>/</kbd> to search &bull; <kbd>1</kbd> Timeline &bull; <kbd>2</kbd> Calendar</span>
+  </div>
   </footer>
 
   <!-- Toast Notification -->
   <div class="toast" id="toast">Copied to clipboard</div>
 
   <script>
-    let allEvents = [];
-    let currentFilter = 'all';
-    let currentSearch = '';
-    let currentManifest = 'all';
-    let currentView = 'timeline';
-    let sortField = 'date';
-    let sortAsc = false;
-    let selectedPkgName = null;
+  let allEvents = [];
+  let currentFilter = 'all';
+  let currentSearch = '';
+  let currentManifest = 'all';
+  let currentView = 'timeline';
+  let sortField = 'date';
+  let sortAsc = false;
+  let selectedPkgName = null;
 
-    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-    let repoOwner = null;
-    let repoHost = 'github.com';
-    let remoteUrl = null;
-    let currentBranch = 'main';
-    let currentRepo = '';
-    let currentPm = 'npm';
-    let workspacePackages = {};
-    let authorsMap = {};
+  let repoOwner = null;
+  let repoHost = 'github.com';
+  let remoteUrl = null;
+  let currentBranch = 'main';
+  let currentRepo = '';
+  let currentPm = 'npm';
+  let workspacePackages = {};
+  let authorsMap = {};
 
-    // Theme Management (Dark Theme Default)
-    function initTheme() {
-      const savedTheme = localStorage.getItem('dep-blame-theme') || 'dark';
-      setTheme(savedTheme);
+  // Theme Management (Dark Theme Default)
+  function initTheme() {
+    const savedTheme = localStorage.getItem('dep-blame-theme') || 'dark';
+    setTheme(savedTheme);
 
-      document.getElementById('theme-toggle').addEventListener('click', () => {
-        const current = document.documentElement.getAttribute('data-theme') || 'dark';
-        const next = current === 'dark' ? 'light' : 'dark';
-        setTheme(next);
-      });
-    }
-
-    function setTheme(theme) {
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('dep-blame-theme', theme);
-      const darkIcon = document.getElementById('theme-icon-dark');
-      const lightIcon = document.getElementById('theme-icon-light');
-      if (theme === 'dark') {
-        darkIcon.style.display = 'block';
-        lightIcon.style.display = 'none';
-      } else {
-        darkIcon.style.display = 'none';
-        lightIcon.style.display = 'block';
-      }
-    }
-
-    // Resolves author information (name, username, avatar picture, profile redirect URL)
-    function getAuthorDetails(author) {
-      if (!author || author === 'Unknown') {
-        return {
-          name: 'Unknown',
-          username: 'unknown',
-          avatarUrl: '',
-          profileUrl: '#'
-        };
-      }
-
-      if (authorsMap && authorsMap[author]) {
-        return authorsMap[author];
-      }
-
-      const clean = author.trim().replace(/^@/, '');
-      let username = '';
-      if (/^[a-zA-Z0-9_\-]+$/.test(clean)) {
-        username = clean;
-      } else if (repoOwner) {
-        username = repoOwner;
-      } else {
-        username = clean.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-      }
-
-      const cleanHost = repoHost || 'github.com';
-      const avatarUrl = username ? `https://${cleanHost}/${encodeURIComponent(username)}.png?size=64` : '';
-      const profileUrl = username ? `https://${cleanHost}/${encodeURIComponent(username)}` : '#';
-
-      return {
-        name: author,
-        username: username || 'author',
-        avatarUrl,
-        profileUrl
-      };
-    }
-
-    // Backward-compatibility wrapper
-    function getAuthorProfileUrl(author) {
-      return getAuthorDetails(author).profileUrl;
-    }
-
-    async function loadData() {
-      const syncIcon = document.getElementById('sync-icon');
-      if (syncIcon) syncIcon.style.animation = 'spin 1s linear infinite';
-      
-      try {
-        const res = await fetch('/api/events');
-        const data = await res.json();
-        allEvents = data.events || [];
-
-        repoOwner = data.repoOwner || null;
-        repoHost = data.repoHost || 'github.com';
-        remoteUrl = data.remoteUrl || null;
-        currentBranch = data.branch || 'main';
-        currentRepo = data.repository || '';
-        currentPm = data.packageManager || 'npm';
-        workspacePackages = data.workspacePackages || {};
-        authorsMap = data.authors || {};
-
-        document.getElementById('repo-name').textContent = data.repository || 'repository';
-        document.getElementById('branch-name').textContent = data.branch || 'main';
-        document.getElementById('pm-pill').textContent = data.packageManager || 'npm';
-        document.getElementById('index-time').textContent = 'Indexed ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-        populateManifestDropdown();
-        updateStats();
-        renderView();
-      } catch (err) {
-        document.getElementById('events-tbody').innerHTML = `
-          <tr><td colspan="8" class="empty-state" style="color: var(--color-removed)">
-            Failed to fetch dependency events from /api/events.
-          </td></tr>
-        `;
-      } finally {
-        if (syncIcon) syncIcon.style.animation = '';
-      }
-    }
-
-    // Custom Dropdown Populator (No native select)
-    function populateManifestDropdown() {
-      const manifests = Array.from(new Set(allEvents.map(e => e.manifest).filter(Boolean))).sort();
-      const menu = document.getElementById('manifest-dropdown-menu');
-      
-      let html = `<div class="dropdown-item ${currentManifest === 'all' ? 'selected' : ''}" data-value="all">All Manifests (${manifests.length})</div>`;
-      for (const m of manifests) {
-        html += `<div class="dropdown-item ${currentManifest === m ? 'selected' : ''}" data-value="${escapeHtml(m)}">${escapeHtml(m)}</div>`;
-      }
-      menu.innerHTML = html;
-
-      menu.querySelectorAll('.dropdown-item').forEach(item => {
-        item.addEventListener('click', () => {
-          currentManifest = item.dataset.value;
-          document.getElementById('manifest-selected-label').textContent = currentManifest === 'all' ? 'All Manifests' : currentManifest;
-          menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
-          item.classList.add('selected');
-          document.getElementById('manifest-dropdown').classList.remove('open');
-          renderView();
-        });
-      });
-    }
-
-    // Dropdown toggle & click outside
-    const manifestDropdown = document.getElementById('manifest-dropdown');
-    document.getElementById('manifest-dropdown-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      manifestDropdown.classList.toggle('open');
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    setTheme(next);
     });
-    window.addEventListener('click', (e) => {
-      if (!manifestDropdown.contains(e.target)) {
-        manifestDropdown.classList.remove('open');
-      }
+  }
+
+  function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('dep-blame-theme', theme);
+    const darkIcon = document.getElementById('theme-icon-dark');
+    const lightIcon = document.getElementById('theme-icon-light');
+    if (theme === 'dark') {
+    darkIcon.style.display = 'block';
+    lightIcon.style.display = 'none';
+    } else {
+    darkIcon.style.display = 'none';
+    lightIcon.style.display = 'block';
+    }
+  }
+
+  // Resolves author information (name, username, avatar picture, profile redirect URL)
+  function getAuthorDetails(author) {
+    if (!author || author === 'Unknown') {
+    return {
+      name: 'Unknown',
+      username: 'unknown',
+      avatarUrl: '',
+      profileUrl: '#'
+    };
+    }
+
+    if (authorsMap && authorsMap[author]) {
+    return authorsMap[author];
+    }
+
+    const clean = author.trim().replace(/^@/, '');
+    let username = '';
+    if (/^[a-zA-Z0-9_\-]+$/.test(clean)) {
+    username = clean;
+    } else if (repoOwner) {
+    username = repoOwner;
+    } else {
+    username = clean.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    }
+
+    const cleanHost = repoHost || 'github.com';
+    const avatarUrl = username ? `https://${cleanHost}/${encodeURIComponent(username)}.png?size=64` : '';
+    const profileUrl = username ? `https://${cleanHost}/${encodeURIComponent(username)}` : '#';
+
+    return {
+    name: author,
+    username: username || 'author',
+    avatarUrl,
+    profileUrl
+    };
+  }
+
+  // Backward-compatibility wrapper
+  function getAuthorProfileUrl(author) {
+    return getAuthorDetails(author).profileUrl;
+  }
+
+  function renderScanningState() {
+    const tbody = document.getElementById('events-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = `
+    <tr>
+      <td colspan="8" style="padding: 0; border: none;">
+      <div class="scan-progress-container" id="scan-progress-box">
+        <div class="scan-spinner-wrap">
+        <div class="scan-spinner-glow"></div>
+        <div class="scan-spinner-ring"></div>
+        <svg class="scan-spinner-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        </div>
+        <div class="scan-badge">
+        <span class="scan-badge-dot"></span>
+        <span id="scan-stage-badge">Analyzing Repository</span>
+        </div>
+        <div class="scan-title" id="scan-title-text">Scanning commit history & manifests...</div>
+        <div class="scan-bar-track">
+        <div class="scan-bar-fill" id="scan-bar-fill" style="width: 15%;"></div>
+        </div>
+        <div class="scan-stats-row">
+        <span id="scan-commits-count">Reading history...</span>
+        <span id="scan-percent-label" style="font-weight: 700; color: var(--color-text);">15%</span>
+        </div>
+        <div class="scan-detail-ticker" id="scan-detail-ticker">Connecting to analysis stream...</div>
+      </div>
+      </td>
+    </tr>
+    `;
+  }
+
+  function updateScanProgress(p) {
+    if (!p) return;
+    const badge = document.getElementById('scan-stage-badge');
+    const title = document.getElementById('scan-title-text');
+    const bar = document.getElementById('scan-bar-fill');
+    const count = document.getElementById('scan-commits-count');
+    const pctLabel = document.getElementById('scan-percent-label');
+    const ticker = document.getElementById('scan-detail-ticker');
+    const indexTime = document.getElementById('index-time');
+
+    let pct = 15;
+    let stageName = 'Scanning';
+
+    if (p.phase === 'initializing') {
+    pct = 15;
+    stageName = 'Initializing';
+    } else if (p.phase === 'discovering') {
+    pct = 30;
+    stageName = 'Manifests';
+    } else if (p.phase === 'reading_commits') {
+    pct = 45;
+    stageName = 'Commits';
+    } else if (p.phase === 'analyzing') {
+    stageName = 'Analyzing';
+    if (p.total > 0) {
+      pct = Math.min(95, Math.max(45, Math.round(45 + (p.current / p.total) * 50)));
+    }
+    } else if (p.phase === 'saving') {
+    pct = 97;
+    stageName = 'Saving';
+    } else if (p.phase === 'complete') {
+    pct = 100;
+    stageName = 'Ready';
+    }
+
+    if (badge) badge.textContent = stageName;
+    if (title && p.message) title.textContent = p.message;
+    if (bar) bar.style.width = pct + '%';
+    if (pctLabel) pctLabel.textContent = pct + '%';
+    if (count) {
+    if (p.phase === 'analyzing' && p.total > 0) {
+      count.textContent = `Commit ${p.current} of ${p.total}`;
+    } else {
+      count.textContent = p.message || 'Scanning...';
+    }
+    }
+    if (ticker) ticker.textContent = p.detail || '';
+    if (indexTime) indexTime.textContent = `Scanning ${pct}%`;
+  }
+
+  function applyLoadedData(data) {
+    allEvents = data.events || [];
+    repoOwner = data.repoOwner || null;
+    repoHost = data.repoHost || 'github.com';
+    remoteUrl = data.remoteUrl || null;
+    currentBranch = data.branch || 'main';
+    currentRepo = data.repository || '';
+    currentPm = data.packageManager || 'npm';
+    workspacePackages = data.workspacePackages || {};
+    authorsMap = data.authors || {};
+
+    document.getElementById('repo-name').textContent = data.repository || 'repository';
+    document.getElementById('branch-name').textContent = data.branch || 'main';
+    document.getElementById('pm-pill').textContent = data.packageManager || 'npm';
+    document.getElementById('index-time').textContent = 'Indexed ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    populateManifestDropdown();
+    updateStats();
+    renderView();
+  }
+
+  async function loadData() {
+    const syncIcon = document.getElementById('sync-icon');
+    if (syncIcon) syncIcon.style.animation = 'spin 1s linear infinite';
+    renderScanningState();
+
+    if (typeof window.EventSource !== 'undefined') {
+    try {
+      await new Promise((resolve, reject) => {
+      const es = new EventSource('/api/events/stream');
+      let settled = false;
+
+      es.addEventListener('progress', (e) => {
+        try {
+        updateScanProgress(JSON.parse(e.data));
+        } catch {}
+      });
+
+      es.addEventListener('complete', (e) => {
+        if (settled) return;
+        settled = true;
+        try {
+        applyLoadedData(JSON.parse(e.data));
+        es.close();
+        resolve();
+        } catch (err) {
+        es.close();
+        reject(err);
+        }
+      });
+
+      es.addEventListener('error', (err) => {
+        if (settled) return;
+        settled = true;
+        es.close();
+        reject(err);
+      });
+      });
+      return;
+    } catch {
+      // Fall through to regular fetch fallback
+    } finally {
+      if (syncIcon) syncIcon.style.animation = '';
+    }
+    }
+
+    try {
+    const res = await fetch('/api/events');
+    const data = await res.json();
+    applyLoadedData(data);
+    } catch (err) {
+    document.getElementById('events-tbody').innerHTML = `
+      <tr><td colspan="8" class="empty-state" style="color: var(--color-removed)">
+      Failed to fetch dependency events from /api/events.
+      </td></tr>
+    `;
+    } finally {
+    if (syncIcon) syncIcon.style.animation = '';
+    }
+  }
+
+  // Custom Dropdown Populator (No native select)
+  function populateManifestDropdown() {
+    const manifests = Array.from(new Set(allEvents.map(e => e.manifest).filter(Boolean))).sort();
+    const menu = document.getElementById('manifest-dropdown-menu');
+    
+    let html = `<div class="dropdown-item ${currentManifest === 'all' ? 'selected' : ''}" data-value="all">All Manifests (${manifests.length})</div>`;
+    for (const m of manifests) {
+    html += `<div class="dropdown-item ${currentManifest === m ? 'selected' : ''}" data-value="${escapeHtml(m)}">${escapeHtml(m)}</div>`;
+    }
+    menu.innerHTML = html;
+
+    menu.querySelectorAll('.dropdown-item').forEach(item => {
+    item.addEventListener('click', () => {
+      currentManifest = item.dataset.value;
+      document.getElementById('manifest-selected-label').textContent = currentManifest === 'all' ? 'All Manifests' : currentManifest;
+      menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
+      item.classList.add('selected');
+      document.getElementById('manifest-dropdown').classList.remove('open');
+      renderView();
     });
+    });
+  }
 
-    function updateStats() {
-      const added = allEvents.filter(e => e.type === 'added').length;
-      const updated = allEvents.filter(e => e.type === 'updated').length;
-      const removed = allEvents.filter(e => e.type === 'removed').length;
-      const distinct = new Set(allEvents.map(e => e.package)).size;
-
-      document.getElementById('kpi-total').textContent = allEvents.length.toLocaleString();
-      document.getElementById('kpi-distinct').textContent = `Across ${distinct} distinct packages`;
-      document.getElementById('kpi-added').textContent = added.toLocaleString();
-      document.getElementById('kpi-updated').textContent = updated.toLocaleString();
-      document.getElementById('kpi-removed').textContent = removed.toLocaleString();
-
-      document.getElementById('count-all').textContent = allEvents.length;
-      document.getElementById('count-added').textContent = added;
-      document.getElementById('count-updated').textContent = updated;
-      document.getElementById('count-removed').textContent = removed;
+  // Dropdown toggle & click outside
+  const manifestDropdown = document.getElementById('manifest-dropdown');
+  document.getElementById('manifest-dropdown-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    manifestDropdown.classList.toggle('open');
+  });
+  window.addEventListener('click', (e) => {
+    if (!manifestDropdown.contains(e.target)) {
+    manifestDropdown.classList.remove('open');
     }
-
-    function setFilter(type) {
-      if (currentFilter === type) return;
-      currentFilter = type;
-      document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.filter === type);
-      });
-      renderView();
-    }
-
-    function getFilteredEvents() {
-      return allEvents.filter(ev => {
-        if (currentFilter !== 'all' && ev.type !== currentFilter) return false;
-        if (currentManifest !== 'all' && ev.manifest !== currentManifest) return false;
-        if (currentSearch) {
-          const q = currentSearch.toLowerCase();
-          const matchDate = (ev.date || '').toLowerCase().includes(q);
-          const matchPkg = (ev.package || '').toLowerCase().includes(q);
-          const matchAuthor = (ev.author || '').toLowerCase().includes(q);
-          const authorInfo = getAuthorDetails(ev.author);
-          const matchUsername = (authorInfo && authorInfo.username ? authorInfo.username.toLowerCase().includes(q) : false);
-          const matchSha = (ev.commit || '').toLowerCase().includes(q);
-          const matchMsg = (ev.message || '').toLowerCase().includes(q);
-          const matchManifest = (ev.manifest || '').toLowerCase().includes(q);
-          const matchTo = (ev.to || '').toLowerCase().includes(q);
-          const matchFrom = (ev.from || '').toLowerCase().includes(q);
-          const matchDepType = (ev.depType || '').toLowerCase().includes(q);
-          if (!matchDate && !matchPkg && !matchAuthor && !matchUsername && !matchSha && !matchMsg && !matchManifest && !matchTo && !matchFrom && !matchDepType) return false;
-        }
-        return true;
-      });
-    }
-
-    function getSortedEvents() {
-      const events = getFilteredEvents();
-      return events.sort((a, b) => {
-        let valA = a[sortField] || '';
-        let valB = b[sortField] || '';
-        if (sortField === 'date') {
-          valA = new Date(valA).getTime() || 0;
-          valB = new Date(valB).getTime() || 0;
-        }
-        if (valA < valB) return sortAsc ? -1 : 1;
-        if (valA > valB) return sortAsc ? 1 : -1;
-        return 0;
-      });
-    }
-
-    function toggleSort(field) {
-      if (sortField === field) {
-        sortAsc = !sortAsc;
-      } else {
-        sortField = field;
-        sortAsc = false;
-      }
-      document.getElementById('sort-date-icon').textContent = sortField === 'date' ? (sortAsc ? '↑' : '↓') : '';
-      document.getElementById('sort-pkg-icon').textContent = sortField === 'package' ? (sortAsc ? '↑' : '↓') : '';
-      renderTable();
-    }
-
-    function renderView() {
-      if (currentView === 'timeline') renderTable();
-      else if (currentView === 'calendar') renderCalendar();
-    }
-
-    function renderTable() {
-      const tbody = document.getElementById('events-tbody');
-      const filtered = getSortedEvents();
-
-      if (filtered.length === 0) {
-        tbody.innerHTML = `
-          <tr><td colspan="8" class="empty-state">
-            <svg class="empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <div class="empty-title">No events matching your filter or search query</div>
-            <div class="empty-subtitle">Try adjusting your filters, clearing your search query, or switching tabs.</div>
-            <button class="btn-action" style="margin-top: 6px;" onclick="resetFilters()">Reset Filters</button>
-          </td></tr>
-        `;
-        return;
-      }
-
-      tbody.innerHTML = filtered.map(ev => {
-        const dateStr = (ev.date || '').slice(0, 10);
-        let badgeClass = 'updated';
-        let badgeLabel = '↑ Updated';
-
-        if (ev.type === 'added') {
-          badgeClass = 'added';
-          badgeLabel = '+ Added';
-        } else if (ev.type === 'removed') {
-          badgeClass = 'removed';
-          badgeLabel = '- Removed';
-        }
-
-        let changeHtml = '';
-        if (ev.type === 'added') {
-          changeHtml = `<span class="diff-to">${escapeHtml(ev.to || '')}</span>`;
-        } else if (ev.type === 'removed') {
-          changeHtml = `<span class="diff-from">was ${escapeHtml(ev.from || '')}</span>`;
-        } else {
-          changeHtml = `
-            <span class="diff-from">${escapeHtml(ev.from || '?')}</span>
-            <span class="diff-arrow">&rarr;</span>
-            <span class="diff-to">${escapeHtml(ev.to || '?')}</span>
-          `;
-        }
-
-        const authorInfo = getAuthorDetails(ev.author);
-        const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
-        const typeBadge = ev.is_direct 
-          ? `<span class="dep-type-tag direct">direct</span>` 
-          : `<span class="dep-type-tag">dep</span>`;
-
-        const isWs = Boolean(
-          (workspacePackages && Object.prototype.hasOwnProperty.call(workspacePackages, ev.package)) ||
-          (currentRepo && ev.package === currentRepo) ||
-          String(ev.to || ev.from || '').startsWith('workspace:')
-        );
-        const pkgIconSvg = isWs
-          ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`
-          : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>`;
-
-        return `
-          <tr>
-            <td style="color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11.5px;">${dateStr}</td>
-            <td><span class="badge-status ${badgeClass}">${badgeLabel}</span></td>
-            <td>
-              <div class="package-cell">
-                <span class="package-cell-icon ${isWs ? 'ws' : ''}" title="${isWs ? 'Internal repository package' : 'Package'}">${pkgIconSvg}</span>
-                <span class="package-name" onclick="openArchaeology('${escapeHtml(ev.package)}')" title="${escapeHtml(ev.package)} (click for archaeology)">
-                  ${escapeHtml(ev.package)}
-                </span>
-              </div>
-            </td>
-            <td><div class="diff-pill">${changeHtml}</div></td>
-            <td>${typeBadge}</td>
-            <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
-            <td>
-              <a href="${authorInfo.profileUrl}" target="_blank" rel="noopener noreferrer" class="author-cell-link" title="View ${escapeHtml(authorInfo.name)} (@${escapeHtml(authorInfo.username)}) on ${repoHost}">
-                <div class="author-avatar-wrapper">
-                  ${authorInfo.avatarUrl ? `<img class="author-avatar-img" src="${authorInfo.avatarUrl}" alt="${escapeHtml(authorInfo.name)}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
-                  <div class="author-avatar-fallback" style="${authorInfo.avatarUrl ? 'display: none;' : 'display: flex;'}">${authorInitial}</div>
-                </div>
-                <div class="author-meta">
-                  <span class="author-name">${escapeHtml(authorInfo.name)}</span>
-                  <span class="author-user">@${escapeHtml(authorInfo.username)}</span>
-                </div>
-              </a>
-            </td>
-            <td>
-              <span class="commit-tag" onclick="if (remoteUrl) window.open(remoteUrl + '/commit/' + '${ev.commit}', '_blank'); else copyText('${ev.commit}', 'Commit SHA copied!');" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open on GitHub' : 'click to copy'})">
-                ${ev.commit}
-              </span>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    let calendarYear = new Date().getFullYear();
-    let calendarMonth = new Date().getMonth();
-    let calendarInitialized = false;
-
-    function renderCalendar() {
-      const grid = document.getElementById('calendar-days-grid');
-      const titleElem = document.getElementById('calendar-month-title');
-      const statsElem = document.getElementById('calendar-month-stats');
-      if (!grid || !titleElem) return;
-
-      const filtered = getFilteredEvents();
-
-      // If opening calendar for first time, center on latest event's month
-      if (!calendarInitialized && filtered.length > 0) {
-        for (const ev of filtered) {
-          if (ev.date) {
-            const d = new Date(ev.date);
-            if (!isNaN(d.getTime())) {
-              calendarYear = d.getFullYear();
-              calendarMonth = d.getMonth();
-              break;
-            }
-          }
-        }
-        calendarInitialized = true;
-      }
-
-      titleElem.textContent = `${MONTHS[calendarMonth]} ${calendarYear}`;
-
-      const ymPrefix = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}`;
-      const monthEvents = filtered.filter(e => (e.date || '').startsWith(ymPrefix));
-
-      const dayEventMap = new Map();
-      let monthAdded = 0, monthUpdated = 0, monthRemoved = 0;
-      for (const ev of monthEvents) {
-        const day = parseInt(ev.date.slice(8, 10), 10);
-        if (!dayEventMap.has(day)) dayEventMap.set(day, []);
-        dayEventMap.get(day).push(ev);
-        if (ev.type === 'added') monthAdded++;
-        else if (ev.type === 'removed') monthRemoved++;
-        else monthUpdated++;
-      }
-
-      if (statsElem) {
-        statsElem.textContent = `${monthEvents.length} change${monthEvents.length === 1 ? '' : 's'} (${monthAdded} added, ${monthUpdated} updated, ${monthRemoved} removed)`;
-      }
-
-      const firstDayOfWeek = new Date(calendarYear, calendarMonth, 1).getDay(); // 0 = Sun
-      const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-      const daysInPrevMonth = new Date(calendarYear, calendarMonth, 0).getDate();
-
-      const now = new Date();
-      const isCurrentMonthYear = now.getFullYear() === calendarYear && now.getMonth() === calendarMonth;
-      const todayDate = now.getDate();
-
-      let cellsHtml = '';
-
-      // 1. Previous month trailing days
-      for (let i = firstDayOfWeek - 1; i >= 0; i--) {
-        const d = daysInPrevMonth - i;
-        cellsHtml += `
-          <div class="calendar-day-box outside-month">
-            <div class="day-box-header">
-              <span class="day-number">${d}</span>
-            </div>
-          </div>
-        `;
-      }
-
-      // 2. Current month days
-      for (let d = 1; d <= daysInMonth; d++) {
-        const dayEvents = dayEventMap.get(d) || [];
-        const isToday = isCurrentMonthYear && todayDate === d;
-        const dayStr = `${ymPrefix}-${String(d).padStart(2, '0')}`;
-
-        let eventsHtml = '';
-        if (dayEvents.length > 0) {
-          const displayCount = Math.min(dayEvents.length, 3);
-          for (let i = 0; i < displayCount; i++) {
-            const ev = dayEvents[i];
-            let symbol = '+';
-            if (ev.type === 'removed') symbol = '–';
-            else if (ev.type === 'updated') symbol = '↑';
-
-            const ver = ev.type === 'removed' ? (ev.from || '') : (ev.to || '');
-            eventsHtml += `
-              <div class="day-event-pill ${ev.type}" onclick="event.stopPropagation(); openArchaeology('${escapeHtml(ev.package)}')" title="${symbol} ${escapeHtml(ev.package)} ${ver ? '(' + escapeHtml(ver) + ')' : ''} by ${escapeHtml(ev.author || '')}">
-                <span>${symbol}</span>
-                <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(ev.package)}</span>
-              </div>
-            `;
-          }
-
-          if (dayEvents.length > 3) {
-            eventsHtml += `<div class="day-event-more">+${dayEvents.length - 3} more</div>`;
-          }
-        }
-
-        const countBadge = dayEvents.length > 0 ? `<span class="day-badge-count">${dayEvents.length}</span>` : '';
-
-        cellsHtml += `
-          <div class="calendar-day-box ${isToday ? 'today' : ''} ${dayEvents.length > 0 ? 'has-events' : ''}" onclick="filterByDay('${dayStr}')" title="${d} ${MONTHS[calendarMonth]}: ${dayEvents.length} change(s). Click to view day timeline.">
-            <div class="day-box-header">
-              <span class="day-number">${d}</span>
-              ${countBadge}
-            </div>
-            <div class="day-events-stack">
-              ${eventsHtml}
-            </div>
-          </div>
-        `;
-      }
-
-      // 3. Next month leading days to complete grid row
-      const totalCellsSoFar = firstDayOfWeek + daysInMonth;
-      const nextMonthDays = (7 - (totalCellsSoFar % 7)) % 7;
-      for (let d = 1; d <= nextMonthDays; d++) {
-        cellsHtml += `
-          <div class="calendar-day-box outside-month">
-            <div class="day-box-header">
-              <span class="day-number">${d}</span>
-            </div>
-          </div>
-        `;
-      }
-
-      grid.innerHTML = cellsHtml;
-    }
-
-    function filterByDay(dayStr) {
-      document.getElementById('search-input').value = dayStr;
-      currentSearch = dayStr;
-      document.getElementById('search-clear').style.display = 'block';
-      switchToTimeline();
-    }
-
-    function resetFilters() {
-      currentFilter = 'all';
-      currentSearch = '';
-      currentManifest = 'all';
-      document.getElementById('search-input').value = '';
-      document.getElementById('search-clear').style.display = 'none';
-      document.getElementById('manifest-selected-label').textContent = 'All Manifests';
-      document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.filter === 'all');
-      });
-      renderView();
-    }
-
-    // Archaeology Drawer
-    function openArchaeology(pkgName) {
-      selectedPkgName = pkgName;
-      const pkgEvents = allEvents.filter(e => e.package === pkgName);
-      if (pkgEvents.length === 0) return;
-
-      document.getElementById('drawer-title').textContent = pkgName;
-
-      // Detect if package is internal workspace / repo package
-      const isWorkspacePkg = Boolean(
-        (workspacePackages && Object.prototype.hasOwnProperty.call(workspacePackages, pkgName)) ||
-        (currentRepo && pkgName === currentRepo) ||
-        pkgEvents.some(e => {
-          const v = String(e.to || e.from || '');
-          return v.startsWith('workspace:') || v.startsWith('file:') || v.startsWith('link:') || v.startsWith('portal:');
-        })
-      );
-
-      // Workspace badge
-      const workspaceBadge = document.getElementById('drawer-workspace-badge');
-      if (workspaceBadge) {
-        workspaceBadge.style.display = isWorkspacePkg ? 'inline-block' : 'none';
-      }
-
-      // Package Avatar Icon: Book/Repo icon for workspace packages, 3D cube for external registry packages
-      const avatarContainer = document.getElementById('drawer-pkg-avatar-icon');
-      if (avatarContainer) {
-        if (isWorkspacePkg) {
-          avatarContainer.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-            </svg>
-          `;
-          avatarContainer.title = 'Internal workspace / repository package';
-        } else {
-          avatarContainer.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-              <line x1="12" y1="22.08" x2="12" y2="12"></line>
-            </svg>
-          `;
-          avatarContainer.title = 'External registry package';
-        }
-      }
-
-      // Package Action Link: link to GitHub repo directory or registry
-      const pkgLink = document.getElementById('drawer-package-link');
-      const pkgLinkText = document.getElementById('drawer-package-link-text');
-      const pkgLinkIcon = document.getElementById('drawer-package-link-icon');
-
-      if (pkgLink && pkgLinkText) {
-        if (isWorkspacePkg) {
-          const pkgRelDir = (workspacePackages && workspacePackages[pkgName]) || '';
-          if (remoteUrl) {
-            const cleanRemote = remoteUrl.replace(/\/+$/, '');
-            const branchRef = encodeURIComponent(currentBranch || 'main');
-            const targetUrl = pkgRelDir ? `${cleanRemote}/tree/${branchRef}/${pkgRelDir}` : cleanRemote;
-            pkgLink.href = targetUrl;
-            pkgLink.title = `View package directory (${pkgRelDir || 'root'}) on GitHub`;
-            pkgLinkText.textContent = 'View in Repo';
-            pkgLink.classList.remove('disabled');
-            pkgLink.setAttribute('target', '_blank');
-            if (pkgLinkIcon) {
-              pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`;
-            }
-          } else {
-            pkgLink.removeAttribute('href');
-            pkgLink.title = 'Internal repository package (no remote repository configured)';
-            pkgLinkText.textContent = 'Local Package';
-            pkgLink.classList.add('disabled');
-            if (pkgLinkIcon) {
-              pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
-            }
-          }
-        } else {
-          pkgLink.classList.remove('disabled');
-          pkgLink.setAttribute('target', '_blank');
-          if (currentPm === 'cargo') {
-            pkgLink.href = `https://crates.io/crates/${encodeURIComponent(pkgName)}`;
-            pkgLink.title = 'View on crates.io registry';
-            pkgLinkText.textContent = 'crates.io package';
-          } else {
-            pkgLink.href = `https://www.npmjs.com/package/${encodeURIComponent(pkgName)}`;
-            pkgLink.title = 'View on npm registry';
-            pkgLinkText.textContent = 'npm package';
-          }
-          if (pkgLinkIcon) {
-            pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`;
-          }
-        }
-      }
-
-      const latest = pkgEvents[pkgEvents.length - 1];
-      const statusBadge = document.getElementById('drawer-status');
-      const statusText = document.getElementById('drawer-status-text');
-      if (latest.type === 'removed') {
-        statusBadge.className = 'drawer-status-pill removed';
-        if (statusText) statusText.textContent = 'Removed (was ' + (latest.from || latest.to || '') + ')';
-      } else {
-        statusBadge.className = 'drawer-status-pill added';
-        if (statusText) statusText.textContent = 'Active ' + (latest.to || '');
-      }
-
-      // Deptype badge
-      const depTypeElem = document.getElementById('drawer-deptype');
-      if (depTypeElem) {
-        depTypeElem.textContent = latest.depType || pkgEvents[0].depType || 'dependencies';
-      }
-
-      // Manifest summary
-      const manifestElem = document.getElementById('drawer-manifest-summary');
-      if (manifestElem) {
-        const manifests = Array.from(new Set(pkgEvents.map(e => e.manifest).filter(Boolean)));
-        manifestElem.textContent = manifests.length === 1 ? manifests[0] : `${manifests.length} manifests`;
-      }
-
-      // Stats strip
-      const changesCountElem = document.getElementById('drawer-changes-count');
-      if (changesCountElem) {
-        changesCountElem.textContent = `${pkgEvents.length} ${pkgEvents.length === 1 ? 'change' : 'changes'}`;
-      }
-
-      const firstDateElem = document.getElementById('drawer-first-date');
-      if (firstDateElem) {
-        firstDateElem.textContent = (pkgEvents[0].date || '').slice(0, 10);
-      }
-
-      const authorsCountElem = document.getElementById('drawer-authors-count');
-      if (authorsCountElem) {
-        const authors = new Set(pkgEvents.map(e => e.author).filter(Boolean));
-        authorsCountElem.textContent = `${authors.size} ${authors.size === 1 ? 'author' : 'authors'}`;
-      }
-
-      const timeline = document.getElementById('drawer-timeline');
-      timeline.innerHTML = pkgEvents.map(ev => {
-        const dateStr = (ev.date || '').slice(0, 10);
-        let actionSymbol = '';
-        if (ev.type === 'added') actionSymbol = '+';
-        else if (ev.type === 'removed') actionSymbol = '–';
-        else actionSymbol = '↑';
-
-        let actionText = '';
-        if (ev.type === 'added') actionText = `Added version <span style="color: var(--color-added)">${escapeHtml(ev.to || '')}</span>`;
-        else if (ev.type === 'removed') actionText = `Removed dependency (was ${escapeHtml(ev.from || '')})`;
-        else actionText = `Upgraded ${escapeHtml(ev.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ev.to || '')}</span>`;
-
-        const authorInfo = getAuthorDetails(ev.author);
-        const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
-
-        return `
-          <div class="timeline-node ${ev.type}">
-            <div class="node-icon">${actionSymbol}</div>
-            <div class="node-card">
-              <div class="node-meta">
-                <span>${dateStr}</span>
-                <span class="commit-tag" onclick="if (remoteUrl) window.open(remoteUrl + '/commit/' + '${ev.commit}', '_blank'); else copyText('${ev.commit}', 'Commit SHA copied!')" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open on GitHub' : 'click to copy'})">${ev.commit}</span>
-              </div>
-              <div class="node-version">${actionText}</div>
-              <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
-              <div style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 7px;">
-                <div class="author-avatar-wrapper" style="width: 18px; height: 18px;">
-                  ${authorInfo.avatarUrl ? `<img class="author-avatar-img" src="${authorInfo.avatarUrl}" alt="${escapeHtml(authorInfo.name)}" style="width: 18px; height: 18px;" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
-                  <div class="author-avatar-fallback" style="font-size: 9px; ${authorInfo.avatarUrl ? 'display: none;' : 'display: flex;'}">${authorInitial}</div>
-                </div>
-                <span>by <a href="${authorInfo.profileUrl}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; font-weight: 500;" title="View ${escapeHtml(authorInfo.name)} (@${escapeHtml(authorInfo.username)}) on GitHub">${escapeHtml(authorInfo.name)}</a> <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-secondary);">@${escapeHtml(authorInfo.username)}</span> in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span></span>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      document.getElementById('drawer-overlay').classList.add('active');
-    }
-
-    function closeArchaeology() {
-      document.getElementById('drawer-overlay').classList.remove('active');
-      selectedPkgName = null;
-    }
-
-    function copyText(text, msg = 'Copied to clipboard!') {
-      navigator.clipboard.writeText(text).then(() => {
-        showToast(msg);
-      });
-    }
-
-    function showToast(msg) {
-      const toast = document.getElementById('toast');
-      toast.textContent = msg;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2000);
-    }
-
-    function escapeHtml(str) {
-      if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    function switchToTimeline() {
-      if (currentView === 'timeline') return;
-      currentView = 'timeline';
-      document.getElementById('view-timeline-btn').classList.add('active');
-      document.getElementById('view-calendar-btn').classList.remove('active');
-      document.getElementById('timeline-view').style.display = 'block';
-      document.getElementById('calendar-view').classList.remove('active');
-      renderTable();
-    }
-
-    function switchToCalendar() {
-      if (currentView === 'calendar') return;
-      currentView = 'calendar';
-      document.getElementById('view-calendar-btn').classList.add('active');
-      document.getElementById('view-timeline-btn').classList.remove('active');
-      document.getElementById('timeline-view').style.display = 'none';
-      document.getElementById('calendar-view').classList.add('active');
-      renderCalendar();
-    }
-
-    // View toggles
-    document.getElementById('view-timeline-btn').addEventListener('click', switchToTimeline);
-    document.getElementById('view-calendar-btn').addEventListener('click', switchToCalendar);
-
-    // Calendar navigation
-    const calPrev = document.getElementById('cal-prev-btn');
-    if (calPrev) {
-      calPrev.addEventListener('click', () => {
-        calendarMonth--;
-        if (calendarMonth < 0) {
-          calendarMonth = 11;
-          calendarYear--;
-        }
-        renderCalendar();
-      });
-    }
-
-    const calNext = document.getElementById('cal-next-btn');
-    if (calNext) {
-      calNext.addEventListener('click', () => {
-        calendarMonth++;
-        if (calendarMonth > 11) {
-          calendarMonth = 0;
-          calendarYear++;
-        }
-        renderCalendar();
-      });
-    }
-
-    const calToday = document.getElementById('cal-today-btn');
-    if (calToday) {
-      calToday.addEventListener('click', () => {
-        const filtered = getFilteredEvents();
-        if (filtered.length > 0) {
-          for (const ev of filtered) {
-            if (ev.date) {
-              const d = new Date(ev.date);
-              if (!isNaN(d.getTime())) {
-                calendarYear = d.getFullYear();
-                calendarMonth = d.getMonth();
-                renderCalendar();
-                return;
-              }
-            }
-          }
-        }
-        const now = new Date();
-        calendarYear = now.getFullYear();
-        calendarMonth = now.getMonth();
-        renderCalendar();
-      });
-    }
-
-    // Filter pills
+  });
+
+  function updateStats() {
+    const added = allEvents.filter(e => e.type === 'added').length;
+    const updated = allEvents.filter(e => e.type === 'updated').length;
+    const removed = allEvents.filter(e => e.type === 'removed').length;
+    const distinct = new Set(allEvents.map(e => e.package)).size;
+
+    document.getElementById('kpi-total').textContent = allEvents.length.toLocaleString();
+    document.getElementById('kpi-distinct').textContent = `Across ${distinct} distinct packages`;
+    document.getElementById('kpi-added').textContent = added.toLocaleString();
+    document.getElementById('kpi-updated').textContent = updated.toLocaleString();
+    document.getElementById('kpi-removed').textContent = removed.toLocaleString();
+
+    document.getElementById('count-all').textContent = allEvents.length;
+    document.getElementById('count-added').textContent = added;
+    document.getElementById('count-updated').textContent = updated;
+    document.getElementById('count-removed').textContent = removed;
+  }
+
+  function setFilter(type) {
+    if (currentFilter === type) return;
+    currentFilter = type;
     document.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        setFilter(btn.dataset.filter);
-      });
+    btn.classList.toggle('active', btn.dataset.filter === type);
     });
+    renderView();
+  }
 
-    // Live search
-    const searchInput = document.getElementById('search-input');
-    const searchClear = document.getElementById('search-clear');
-    searchInput.addEventListener('input', (e) => {
-      currentSearch = e.target.value.trim();
-      searchClear.style.display = currentSearch ? 'block' : 'none';
-      renderView();
+  function getFilteredEvents() {
+    return allEvents.filter(ev => {
+    if (currentFilter !== 'all' && ev.type !== currentFilter) return false;
+    if (currentManifest !== 'all' && ev.manifest !== currentManifest) return false;
+    if (currentSearch) {
+      const q = currentSearch.toLowerCase();
+      const matchDate = (ev.date || '').toLowerCase().includes(q);
+      const matchPkg = (ev.package || '').toLowerCase().includes(q);
+      const matchAuthor = (ev.author || '').toLowerCase().includes(q);
+      const authorInfo = getAuthorDetails(ev.author);
+      const matchUsername = (authorInfo && authorInfo.username ? authorInfo.username.toLowerCase().includes(q) : false);
+      const matchSha = (ev.commit || '').toLowerCase().includes(q);
+      const matchMsg = (ev.message || '').toLowerCase().includes(q);
+      const matchManifest = (ev.manifest || '').toLowerCase().includes(q);
+      const matchTo = (ev.to || '').toLowerCase().includes(q);
+      const matchFrom = (ev.from || '').toLowerCase().includes(q);
+      const matchDepType = (ev.depType || '').toLowerCase().includes(q);
+      if (!matchDate && !matchPkg && !matchAuthor && !matchUsername && !matchSha && !matchMsg && !matchManifest && !matchTo && !matchFrom && !matchDepType) return false;
+    }
+    return true;
     });
+  }
 
-    searchClear.addEventListener('click', () => {
-      searchInput.value = '';
-      currentSearch = '';
-      searchClear.style.display = 'none';
-      renderView();
-      searchInput.focus();
+  function getSortedEvents() {
+    const events = getFilteredEvents();
+    return events.sort((a, b) => {
+    let valA = a[sortField] || '';
+    let valB = b[sortField] || '';
+    if (sortField === 'date') {
+      valA = new Date(valA).getTime() || 0;
+      valB = new Date(valB).getTime() || 0;
+    }
+    if (valA < valB) return sortAsc ? -1 : 1;
+    if (valA > valB) return sortAsc ? 1 : -1;
+    return 0;
     });
+  }
 
-    // Keyboard shortcuts
-    window.addEventListener('keydown', (e) => {
-      if ((e.key === '/' || (e.ctrlKey && e.key === 'k') || (e.metaKey && e.key === 'k')) && document.activeElement !== searchInput) {
-        e.preventDefault();
-        searchInput.focus();
-      } else if (e.key === 'Escape') {
-        if (document.getElementById('drawer-overlay').classList.contains('active')) {
-          closeArchaeology();
-        } else if (document.activeElement === searchInput) {
-          searchInput.blur();
+  function toggleSort(field) {
+    if (sortField === field) {
+    sortAsc = !sortAsc;
+    } else {
+    sortField = field;
+    sortAsc = false;
+    }
+    document.getElementById('sort-date-icon').textContent = sortField === 'date' ? (sortAsc ? '↑' : '↓') : '';
+    document.getElementById('sort-pkg-icon').textContent = sortField === 'package' ? (sortAsc ? '↑' : '↓') : '';
+    renderTable();
+  }
+
+  function renderView() {
+    if (currentView === 'timeline') renderTable();
+    else if (currentView === 'calendar') renderCalendar();
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('events-tbody');
+    const filtered = getSortedEvents();
+
+    if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr><td colspan="8" class="empty-state">
+      <svg class="empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <div class="empty-title">No events matching your filter or search query</div>
+      <div class="empty-subtitle">Try adjusting your filters, clearing your search query, or switching tabs.</div>
+      <button class="btn-action" style="margin-top: 6px;" onclick="resetFilters()">Reset Filters</button>
+      </td></tr>
+    `;
+    return;
+    }
+
+    tbody.innerHTML = filtered.map(ev => {
+    const dateStr = (ev.date || '').slice(0, 10);
+    let badgeClass = 'updated';
+    let badgeLabel = '↑ Updated';
+
+    if (ev.type === 'added') {
+      badgeClass = 'added';
+      badgeLabel = '+ Added';
+    } else if (ev.type === 'removed') {
+      badgeClass = 'removed';
+      badgeLabel = '- Removed';
+    }
+
+    let changeHtml = '';
+    if (ev.type === 'added') {
+      changeHtml = `<span class="diff-to">${escapeHtml(ev.to || '')}</span>`;
+    } else if (ev.type === 'removed') {
+      changeHtml = `<span class="diff-from">was ${escapeHtml(ev.from || '')}</span>`;
+    } else {
+      changeHtml = `
+      <span class="diff-from">${escapeHtml(ev.from || '?')}</span>
+      <span class="diff-arrow">&rarr;</span>
+      <span class="diff-to">${escapeHtml(ev.to || '?')}</span>
+      `;
+    }
+
+    const authorInfo = getAuthorDetails(ev.author);
+    const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
+    const typeBadge = ev.is_direct 
+      ? `<span class="dep-type-tag direct">direct</span>` 
+      : `<span class="dep-type-tag">dep</span>`;
+
+    const isWs = Boolean(
+      (workspacePackages && Object.prototype.hasOwnProperty.call(workspacePackages, ev.package)) ||
+      (currentRepo && ev.package === currentRepo) ||
+      String(ev.to || ev.from || '').startsWith('workspace:')
+    );
+    const pkgIconSvg = isWs
+      ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`
+      : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>`;
+
+    return `
+      <tr>
+      <td style="color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11.5px;">${dateStr}</td>
+      <td><span class="badge-status ${badgeClass}">${badgeLabel}</span></td>
+      <td>
+        <div class="package-cell">
+        <span class="package-cell-icon ${isWs ? 'ws' : ''}" title="${isWs ? 'Internal repository package' : 'Package'}">${pkgIconSvg}</span>
+        <span class="package-name" onclick="openArchaeology('${escapeHtml(ev.package)}')" title="${escapeHtml(ev.package)} (click for archaeology)">
+          ${escapeHtml(ev.package)}
+        </span>
+        </div>
+      </td>
+      <td><div class="diff-pill">${changeHtml}</div></td>
+      <td>${typeBadge}</td>
+      <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
+      <td>
+        <a href="${authorInfo.profileUrl}" target="_blank" rel="noopener noreferrer" class="author-cell-link" title="View ${escapeHtml(authorInfo.name)} (@${escapeHtml(authorInfo.username)}) on ${repoHost}">
+        <div class="author-avatar-wrapper">
+          ${authorInfo.avatarUrl ? `<img class="author-avatar-img" src="${authorInfo.avatarUrl}" alt="${escapeHtml(authorInfo.name)}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+          <div class="author-avatar-fallback" style="${authorInfo.avatarUrl ? 'display: none;' : 'display: flex;'}">${authorInitial}</div>
+        </div>
+        <div class="author-meta">
+          <span class="author-name">${escapeHtml(authorInfo.name)}</span>
+          <span class="author-user">@${escapeHtml(authorInfo.username)}</span>
+        </div>
+        </a>
+      </td>
+      <td>
+        <span class="commit-tag" onclick="if (remoteUrl) window.open(remoteUrl + '/commit/' + '${ev.commit}', '_blank'); else copyText('${ev.commit}', 'Commit SHA copied!');" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open on GitHub' : 'click to copy'})">
+        ${ev.commit}
+        </span>
+      </td>
+      </tr>
+    `;
+    }).join('');
+  }
+
+  let calendarYear = new Date().getFullYear();
+  let calendarMonth = new Date().getMonth();
+  let calendarInitialized = false;
+
+  function renderCalendar() {
+    const grid = document.getElementById('calendar-days-grid');
+    const titleElem = document.getElementById('calendar-month-title');
+    const statsElem = document.getElementById('calendar-month-stats');
+    if (!grid || !titleElem) return;
+
+    const filtered = getFilteredEvents();
+
+    // If opening calendar for first time, center on latest event's month
+    if (!calendarInitialized && filtered.length > 0) {
+    for (const ev of filtered) {
+      if (ev.date) {
+      const d = new Date(ev.date);
+      if (!isNaN(d.getTime())) {
+        calendarYear = d.getFullYear();
+        calendarMonth = d.getMonth();
+        break;
+      }
+      }
+    }
+    calendarInitialized = true;
+    }
+
+    titleElem.textContent = `${MONTHS[calendarMonth]} ${calendarYear}`;
+
+    const ymPrefix = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}`;
+    const monthEvents = filtered.filter(e => (e.date || '').startsWith(ymPrefix));
+
+    const dayEventMap = new Map();
+    let monthAdded = 0, monthUpdated = 0, monthRemoved = 0;
+    for (const ev of monthEvents) {
+    const day = parseInt(ev.date.slice(8, 10), 10);
+    if (!dayEventMap.has(day)) dayEventMap.set(day, []);
+    dayEventMap.get(day).push(ev);
+    if (ev.type === 'added') monthAdded++;
+    else if (ev.type === 'removed') monthRemoved++;
+    else monthUpdated++;
+    }
+
+    if (statsElem) {
+    statsElem.textContent = `${monthEvents.length} change${monthEvents.length === 1 ? '' : 's'} (${monthAdded} added, ${monthUpdated} updated, ${monthRemoved} removed)`;
+    }
+
+    const firstDayOfWeek = new Date(calendarYear, calendarMonth, 1).getDay(); // 0 = Sun
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const daysInPrevMonth = new Date(calendarYear, calendarMonth, 0).getDate();
+
+    const now = new Date();
+    const isCurrentMonthYear = now.getFullYear() === calendarYear && now.getMonth() === calendarMonth;
+    const todayDate = now.getDate();
+
+    let cellsHtml = '';
+
+    // 1. Previous month trailing days
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const d = daysInPrevMonth - i;
+    cellsHtml += `
+      <div class="calendar-day-box outside-month">
+      <div class="day-box-header">
+        <span class="day-number">${d}</span>
+      </div>
+      </div>
+    `;
+    }
+
+    // 2. Current month days
+    for (let d = 1; d <= daysInMonth; d++) {
+    const dayEvents = dayEventMap.get(d) || [];
+    const isToday = isCurrentMonthYear && todayDate === d;
+    const dayStr = `${ymPrefix}-${String(d).padStart(2, '0')}`;
+
+    let eventsHtml = '';
+    if (dayEvents.length > 0) {
+      const displayCount = Math.min(dayEvents.length, 3);
+      for (let i = 0; i < displayCount; i++) {
+      const ev = dayEvents[i];
+      let symbol = '+';
+      if (ev.type === 'removed') symbol = '–';
+      else if (ev.type === 'updated') symbol = '↑';
+
+      const ver = ev.type === 'removed' ? (ev.from || '') : (ev.to || '');
+      eventsHtml += `
+        <div class="day-event-pill ${ev.type}" onclick="event.stopPropagation(); openArchaeology('${escapeHtml(ev.package)}')" title="${symbol} ${escapeHtml(ev.package)} ${ver ? '(' + escapeHtml(ver) + ')' : ''} by ${escapeHtml(ev.author || '')}">
+        <span>${symbol}</span>
+        <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(ev.package)}</span>
+        </div>
+      `;
+      }
+
+      if (dayEvents.length > 3) {
+      eventsHtml += `<div class="day-event-more">+${dayEvents.length - 3} more</div>`;
+      }
+    }
+
+    const countBadge = dayEvents.length > 0 ? `<span class="day-badge-count">${dayEvents.length}</span>` : '';
+
+    cellsHtml += `
+      <div class="calendar-day-box ${isToday ? 'today' : ''} ${dayEvents.length > 0 ? 'has-events' : ''}" onclick="filterByDay('${dayStr}')" title="${d} ${MONTHS[calendarMonth]}: ${dayEvents.length} change(s). Click to view day timeline.">
+      <div class="day-box-header">
+        <span class="day-number">${d}</span>
+        ${countBadge}
+      </div>
+      <div class="day-events-stack">
+        ${eventsHtml}
+      </div>
+      </div>
+    `;
+    }
+
+    // 3. Next month leading days to complete grid row
+    const totalCellsSoFar = firstDayOfWeek + daysInMonth;
+    const nextMonthDays = (7 - (totalCellsSoFar % 7)) % 7;
+    for (let d = 1; d <= nextMonthDays; d++) {
+    cellsHtml += `
+      <div class="calendar-day-box outside-month">
+      <div class="day-box-header">
+        <span class="day-number">${d}</span>
+      </div>
+      </div>
+    `;
+    }
+
+    grid.innerHTML = cellsHtml;
+  }
+
+  function filterByDay(dayStr) {
+    document.getElementById('search-input').value = dayStr;
+    currentSearch = dayStr;
+    document.getElementById('search-clear').style.display = 'block';
+    switchToTimeline();
+  }
+
+  function resetFilters() {
+    currentFilter = 'all';
+    currentSearch = '';
+    currentManifest = 'all';
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-clear').style.display = 'none';
+    document.getElementById('manifest-selected-label').textContent = 'All Manifests';
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === 'all');
+    });
+    renderView();
+  }
+
+  // Archaeology Drawer
+  function openArchaeology(pkgName) {
+    selectedPkgName = pkgName;
+    const pkgEvents = allEvents.filter(e => e.package === pkgName);
+    if (pkgEvents.length === 0) return;
+
+    document.getElementById('drawer-title').textContent = pkgName;
+
+    // Detect if package is internal workspace / repo package
+    const isWorkspacePkg = Boolean(
+    (workspacePackages && Object.prototype.hasOwnProperty.call(workspacePackages, pkgName)) ||
+    (currentRepo && pkgName === currentRepo) ||
+    pkgEvents.some(e => {
+      const v = String(e.to || e.from || '');
+      return v.startsWith('workspace:') || v.startsWith('file:') || v.startsWith('link:') || v.startsWith('portal:');
+    })
+    );
+
+    // Workspace badge
+    const workspaceBadge = document.getElementById('drawer-workspace-badge');
+    if (workspaceBadge) {
+    workspaceBadge.style.display = isWorkspacePkg ? 'inline-block' : 'none';
+    }
+
+    // Package Avatar Icon: Book/Repo icon for workspace packages, 3D cube for external registry packages
+    const avatarContainer = document.getElementById('drawer-pkg-avatar-icon');
+    if (avatarContainer) {
+    if (isWorkspacePkg) {
+      avatarContainer.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+      </svg>
+      `;
+      avatarContainer.title = 'Internal workspace / repository package';
+    } else {
+      avatarContainer.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+      </svg>
+      `;
+      avatarContainer.title = 'External registry package';
+    }
+    }
+
+    // Package Action Link: link to GitHub repo directory or registry
+    const pkgLink = document.getElementById('drawer-package-link');
+    const pkgLinkText = document.getElementById('drawer-package-link-text');
+    const pkgLinkIcon = document.getElementById('drawer-package-link-icon');
+
+    if (pkgLink && pkgLinkText) {
+    if (isWorkspacePkg) {
+      const pkgRelDir = (workspacePackages && workspacePackages[pkgName]) || '';
+      if (remoteUrl) {
+      const cleanRemote = remoteUrl.replace(/\/+$/, '');
+      const branchRef = encodeURIComponent(currentBranch || 'main');
+      const targetUrl = pkgRelDir ? `${cleanRemote}/tree/${branchRef}/${pkgRelDir}` : cleanRemote;
+      pkgLink.href = targetUrl;
+      pkgLink.title = `View package directory (${pkgRelDir || 'root'}) on GitHub`;
+      pkgLinkText.textContent = 'View in Repo';
+      pkgLink.classList.remove('disabled');
+      pkgLink.setAttribute('target', '_blank');
+      if (pkgLinkIcon) {
+        pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`;
+      }
+      } else {
+      pkgLink.removeAttribute('href');
+      pkgLink.title = 'Internal repository package (no remote repository configured)';
+      pkgLinkText.textContent = 'Local Package';
+      pkgLink.classList.add('disabled');
+      if (pkgLinkIcon) {
+        pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+      }
+      }
+    } else {
+      pkgLink.classList.remove('disabled');
+      pkgLink.setAttribute('target', '_blank');
+      if (currentPm === 'cargo') {
+      pkgLink.href = `https://crates.io/crates/${encodeURIComponent(pkgName)}`;
+      pkgLink.title = 'View on crates.io registry';
+      pkgLinkText.textContent = 'crates.io package';
+      } else {
+      pkgLink.href = `https://www.npmjs.com/package/${encodeURIComponent(pkgName)}`;
+      pkgLink.title = 'View on npm registry';
+      pkgLinkText.textContent = 'npm package';
+      }
+      if (pkgLinkIcon) {
+      pkgLinkIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`;
+      }
+    }
+    }
+
+    const latest = pkgEvents[pkgEvents.length - 1];
+    const statusBadge = document.getElementById('drawer-status');
+    const statusText = document.getElementById('drawer-status-text');
+    if (latest.type === 'removed') {
+    statusBadge.className = 'drawer-status-pill removed';
+    if (statusText) statusText.textContent = 'Removed (was ' + (latest.from || latest.to || '') + ')';
+    } else {
+    statusBadge.className = 'drawer-status-pill added';
+    if (statusText) statusText.textContent = 'Active ' + (latest.to || '');
+    }
+
+    // Deptype badge
+    const depTypeElem = document.getElementById('drawer-deptype');
+    if (depTypeElem) {
+    depTypeElem.textContent = latest.depType || pkgEvents[0].depType || 'dependencies';
+    }
+
+    // Manifest summary
+    const manifestElem = document.getElementById('drawer-manifest-summary');
+    if (manifestElem) {
+    const manifests = Array.from(new Set(pkgEvents.map(e => e.manifest).filter(Boolean)));
+    manifestElem.textContent = manifests.length === 1 ? manifests[0] : `${manifests.length} manifests`;
+    }
+
+    // Stats strip
+    const changesCountElem = document.getElementById('drawer-changes-count');
+    if (changesCountElem) {
+    changesCountElem.textContent = `${pkgEvents.length} ${pkgEvents.length === 1 ? 'change' : 'changes'}`;
+    }
+
+    const firstDateElem = document.getElementById('drawer-first-date');
+    if (firstDateElem) {
+    firstDateElem.textContent = (pkgEvents[0].date || '').slice(0, 10);
+    }
+
+    const authorsCountElem = document.getElementById('drawer-authors-count');
+    if (authorsCountElem) {
+    const authors = new Set(pkgEvents.map(e => e.author).filter(Boolean));
+    authorsCountElem.textContent = `${authors.size} ${authors.size === 1 ? 'author' : 'authors'}`;
+    }
+
+    const timeline = document.getElementById('drawer-timeline');
+    timeline.innerHTML = pkgEvents.map(ev => {
+    const dateStr = (ev.date || '').slice(0, 10);
+    let actionSymbol = '';
+    if (ev.type === 'added') actionSymbol = '+';
+    else if (ev.type === 'removed') actionSymbol = '–';
+    else actionSymbol = '↑';
+
+    let actionText = '';
+    if (ev.type === 'added') actionText = `Added version <span style="color: var(--color-added)">${escapeHtml(ev.to || '')}</span>`;
+    else if (ev.type === 'removed') actionText = `Removed dependency (was ${escapeHtml(ev.from || '')})`;
+    else actionText = `Upgraded ${escapeHtml(ev.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ev.to || '')}</span>`;
+
+    const authorInfo = getAuthorDetails(ev.author);
+    const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
+
+    return `
+      <div class="timeline-node ${ev.type}">
+      <div class="node-icon">${actionSymbol}</div>
+      <div class="node-card">
+        <div class="node-meta">
+        <span>${dateStr}</span>
+        <span class="commit-tag" onclick="if (remoteUrl) window.open(remoteUrl + '/commit/' + '${ev.commit}', '_blank'); else copyText('${ev.commit}', 'Commit SHA copied!')" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open on GitHub' : 'click to copy'})">${ev.commit}</span>
+        </div>
+        <div class="node-version">${actionText}</div>
+        <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
+        <div style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 7px;">
+        <div class="author-avatar-wrapper" style="width: 18px; height: 18px;">
+          ${authorInfo.avatarUrl ? `<img class="author-avatar-img" src="${authorInfo.avatarUrl}" alt="${escapeHtml(authorInfo.name)}" style="width: 18px; height: 18px;" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+          <div class="author-avatar-fallback" style="font-size: 9px; ${authorInfo.avatarUrl ? 'display: none;' : 'display: flex;'}">${authorInitial}</div>
+        </div>
+        <span>by <a href="${authorInfo.profileUrl}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; font-weight: 500;" title="View ${escapeHtml(authorInfo.name)} (@${escapeHtml(authorInfo.username)}) on GitHub">${escapeHtml(authorInfo.name)}</a> <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-secondary);">@${escapeHtml(authorInfo.username)}</span> in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span></span>
+        </div>
+      </div>
+      </div>
+    `;
+    }).join('');
+
+    document.getElementById('drawer-overlay').classList.add('active');
+  }
+
+  function closeArchaeology() {
+    document.getElementById('drawer-overlay').classList.remove('active');
+    selectedPkgName = null;
+  }
+
+  function copyText(text, msg = 'Copied to clipboard!') {
+    navigator.clipboard.writeText(text).then(() => {
+    showToast(msg);
+    });
+  }
+
+  function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  }
+
+  function switchToTimeline() {
+    if (currentView === 'timeline') return;
+    currentView = 'timeline';
+    document.getElementById('view-timeline-btn').classList.add('active');
+    document.getElementById('view-calendar-btn').classList.remove('active');
+    document.getElementById('timeline-view').style.display = 'block';
+    document.getElementById('calendar-view').classList.remove('active');
+    renderTable();
+  }
+
+  function switchToCalendar() {
+    if (currentView === 'calendar') return;
+    currentView = 'calendar';
+    document.getElementById('view-calendar-btn').classList.add('active');
+    document.getElementById('view-timeline-btn').classList.remove('active');
+    document.getElementById('timeline-view').style.display = 'none';
+    document.getElementById('calendar-view').classList.add('active');
+    renderCalendar();
+  }
+
+  // View toggles
+  document.getElementById('view-timeline-btn').addEventListener('click', switchToTimeline);
+  document.getElementById('view-calendar-btn').addEventListener('click', switchToCalendar);
+
+  // Calendar navigation
+  const calPrev = document.getElementById('cal-prev-btn');
+  if (calPrev) {
+    calPrev.addEventListener('click', () => {
+    calendarMonth--;
+    if (calendarMonth < 0) {
+      calendarMonth = 11;
+      calendarYear--;
+    }
+    renderCalendar();
+    });
+  }
+
+  const calNext = document.getElementById('cal-next-btn');
+  if (calNext) {
+    calNext.addEventListener('click', () => {
+    calendarMonth++;
+    if (calendarMonth > 11) {
+      calendarMonth = 0;
+      calendarYear++;
+    }
+    renderCalendar();
+    });
+  }
+
+  const calToday = document.getElementById('cal-today-btn');
+  if (calToday) {
+    calToday.addEventListener('click', () => {
+    const filtered = getFilteredEvents();
+    if (filtered.length > 0) {
+      for (const ev of filtered) {
+      if (ev.date) {
+        const d = new Date(ev.date);
+        if (!isNaN(d.getTime())) {
+        calendarYear = d.getFullYear();
+        calendarMonth = d.getMonth();
+        renderCalendar();
+        return;
         }
-      } else if (e.key === '1' && document.activeElement !== searchInput) {
-        switchToTimeline();
-      } else if (e.key === '2' && document.activeElement !== searchInput) {
-        document.getElementById('view-calendar-btn').click();
       }
+      }
+    }
+    const now = new Date();
+    calendarYear = now.getFullYear();
+    calendarMonth = now.getMonth();
+    renderCalendar();
     });
+  }
 
-    // Drawer events
-    document.getElementById('drawer-close').addEventListener('click', closeArchaeology);
-    document.getElementById('drawer-overlay').addEventListener('click', (e) => {
-      if (e.target.id === 'drawer-overlay') closeArchaeology();
+  // Filter pills
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+    setFilter(btn.dataset.filter);
     });
+  });
 
-    // Drawer copy package name
-    document.getElementById('drawer-copy-name').addEventListener('click', () => {
-      if (!selectedPkgName) return;
-      copyText(selectedPkgName, `Copied "${selectedPkgName}" to clipboard!`);
-    });
+  // Live search
+  const searchInput = document.getElementById('search-input');
+  const searchClear = document.getElementById('search-clear');
+  searchInput.addEventListener('input', (e) => {
+    currentSearch = e.target.value.trim();
+    searchClear.style.display = currentSearch ? 'block' : 'none';
+    renderView();
+  });
 
-    // Drawer filter table by package
-    document.getElementById('drawer-filter-btn').addEventListener('click', () => {
-      if (!selectedPkgName) return;
-      const pkg = selectedPkgName;
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    currentSearch = '';
+    searchClear.style.display = 'none';
+    renderView();
+    searchInput.focus();
+  });
+
+  // Keyboard shortcuts
+  window.addEventListener('keydown', (e) => {
+    if ((e.key === '/' || (e.ctrlKey && e.key === 'k') || (e.metaKey && e.key === 'k')) && document.activeElement !== searchInput) {
+    e.preventDefault();
+    searchInput.focus();
+    } else if (e.key === 'Escape') {
+    if (document.getElementById('drawer-overlay').classList.contains('active')) {
       closeArchaeology();
-      const searchInput = document.getElementById('search-input');
-      searchInput.value = pkg;
-      currentSearch = pkg;
-      document.getElementById('search-clear').style.display = 'block';
-      renderView();
-      showToast(`Filtered table by "${pkg}"`);
-    });
+    } else if (document.activeElement === searchInput) {
+      searchInput.blur();
+    }
+    } else if (e.key === '1' && document.activeElement !== searchInput) {
+    switchToTimeline();
+    } else if (e.key === '2' && document.activeElement !== searchInput) {
+    document.getElementById('view-calendar-btn').click();
+    }
+  });
 
-    // Copy Markdown Summary for drawer
-    document.getElementById('drawer-copy-md').addEventListener('click', () => {
-      if (!selectedPkgName) return;
-      const pkgEvents = allEvents.filter(e => e.package === selectedPkgName);
-      let md = `### Dependency Archaeology: \`${selectedPkgName}\`\n\n`;
-      md += `| Date | Action | From | To | Commit | Author |\n`;
-      md += `| :--- | :--- | :--- | :--- | :--- | :--- |\n`;
-      for (const ev of pkgEvents) {
-        const d = (ev.date || '').slice(0, 10);
-        md += `| ${d} | ${ev.type} | ${ev.from || '-'} | ${ev.to || '-'} | ${ev.commit} | ${ev.author || '-'} |\n`;
-      }
-      copyText(md, `Copied ${selectedPkgName} markdown changelog!`);
-    });
+  // Drawer events
+  document.getElementById('drawer-close').addEventListener('click', closeArchaeology);
+  document.getElementById('drawer-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'drawer-overlay') closeArchaeology();
+  });
 
-    // Export JSON
-    document.getElementById('export-json-btn').addEventListener('click', () => {
-      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(allEvents, null, 2));
-      const a = document.createElement('a');
-      a.setAttribute('href', dataStr);
-      a.setAttribute('download', `dep-blame-${document.getElementById('repo-name').textContent || 'export'}.json`);
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      showToast('Exported events as JSON');
-    });
+  // Drawer copy package name
+  document.getElementById('drawer-copy-name').addEventListener('click', () => {
+    if (!selectedPkgName) return;
+    copyText(selectedPkgName, `Copied "${selectedPkgName}" to clipboard!`);
+  });
 
-    // Sync button
-    document.getElementById('refresh-btn').addEventListener('click', () => {
-      loadData();
-      showToast('Synced with git repository!');
-    });
+  // Drawer filter table by package
+  document.getElementById('drawer-filter-btn').addEventListener('click', () => {
+    if (!selectedPkgName) return;
+    const pkg = selectedPkgName;
+    closeArchaeology();
+    const searchInput = document.getElementById('search-input');
+    searchInput.value = pkg;
+    currentSearch = pkg;
+    document.getElementById('search-clear').style.display = 'block';
+    renderView();
+    showToast(`Filtered table by "${pkg}"`);
+  });
 
-    initTheme();
+  // Copy Markdown Summary for drawer
+  document.getElementById('drawer-copy-md').addEventListener('click', () => {
+    if (!selectedPkgName) return;
+    const pkgEvents = allEvents.filter(e => e.package === selectedPkgName);
+    let md = `### Dependency Archaeology: \`${selectedPkgName}\`\n\n`;
+    md += `| Date | Action | From | To | Commit | Author |\n`;
+    md += `| :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+    for (const ev of pkgEvents) {
+    const d = (ev.date || '').slice(0, 10);
+    md += `| ${d} | ${ev.type} | ${ev.from || '-'} | ${ev.to || '-'} | ${ev.commit} | ${ev.author || '-'} |\n`;
+    }
+    copyText(md, `Copied ${selectedPkgName} markdown changelog!`);
+  });
+
+  // Export JSON
+  document.getElementById('export-json-btn').addEventListener('click', () => {
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(allEvents, null, 2));
+    const a = document.createElement('a');
+    a.setAttribute('href', dataStr);
+    a.setAttribute('download', `dep-blame-${document.getElementById('repo-name').textContent || 'export'}.json`);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Exported events as JSON');
+  });
+
+  // Sync button
+  document.getElementById('refresh-btn').addEventListener('click', () => {
     loadData();
+    showToast('Synced with git repository!');
+  });
+
+  initTheme();
+  loadData();
   </script>
 </body>
 </html>

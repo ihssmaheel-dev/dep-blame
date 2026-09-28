@@ -50,6 +50,59 @@ export async function checkGit(): Promise<boolean> {
   }
 }
 
+export interface RepoState {
+  repoRoot: string;
+  isShallow: boolean;
+  currentHead: string | null;
+  branch: string;
+}
+
+/**
+ * Fast-path: resolves repoRoot, isShallow, currentHead, and branch in a single git execution.
+ */
+export async function getRepoState(cwd: string = process.cwd()): Promise<RepoState> {
+  try {
+    const { stdout } = await execGit([
+      'rev-parse',
+      '--show-toplevel',
+      '--is-shallow-repository',
+      'HEAD',
+      '--abbrev-ref',
+      'HEAD'
+    ], cwd);
+
+    const lines = stdout.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    const repoRoot = path.resolve(lines[0]);
+    const isShallow = lines[1] === 'true';
+    const currentHead = lines[2] || null;
+    let branch = lines[3] || 'main';
+    if (branch === 'HEAD' && currentHead) {
+      branch = currentHead.slice(0, 7);
+    }
+    return { repoRoot, isShallow, currentHead, branch };
+  } catch (err: any) {
+    if (err instanceof GitError && err.isMissingGit) {
+      throw err;
+    }
+    // Fallback for unborn HEAD or detached/special states
+    const repoRoot = await getRepoRoot(cwd);
+    const isShallow = await isShallowRepo(repoRoot);
+    let currentHead: string | null = null;
+    try {
+      currentHead = await getCurrentHead(repoRoot);
+    } catch {
+      currentHead = null;
+    }
+    let branch = 'main';
+    try {
+      branch = await getCurrentBranch(repoRoot);
+    } catch {
+      branch = 'main';
+    }
+    return { repoRoot, isShallow, currentHead, branch };
+  }
+}
+
 /**
  * Finds the top-level repository root.
  */
