@@ -387,29 +387,33 @@
       padding: 2px;
       border-radius: var(--radius);
       border: 1px solid var(--color-border);
+      gap: 2px;
+      flex-shrink: 0;
     }
 
     .filter-btn {
       background: transparent;
-      border: none;
+      border: 1px solid transparent;
       color: var(--color-text-secondary);
       padding: 4px 10px;
       border-radius: var(--radius);
       font-size: 11px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      transition: all 0.1s ease;
+      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
       font-family: var(--font-sans);
+      user-select: none;
+      white-space: nowrap;
     }
     .filter-btn:hover { color: var(--color-text); }
     .filter-btn.active {
       background: var(--color-surface);
       color: var(--color-text);
       font-weight: 600;
-      border: 1px solid var(--color-border);
+      border-color: var(--color-border);
       box-shadow: var(--shadow-subtle);
     }
 
@@ -553,58 +557,72 @@
       min-height: 520px;
     }
 
-    /* Technical Minimal Table */
+    /* Rock-Solid Technical Table */
     .table-responsive {
       overflow-x: auto;
       width: 100%;
+      min-height: 480px;
     }
 
-    table {
+    table.events-table {
       width: 100%;
-      border-collapse: collapse;
+      min-width: 980px;
+      table-layout: fixed;
+      border-collapse: separate;
+      border-spacing: 0;
       text-align: left;
     }
 
-    thead th {
+    table.events-table thead th {
       background: var(--color-bg-secondary);
       border-bottom: 1px solid var(--color-border);
-      padding: 9px 14px;
-      font-size: 10.5px;
+      padding: 10px 14px;
+      font-size: 11px;
       font-weight: 600;
       color: var(--color-text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       white-space: nowrap;
       user-select: none;
+      position: sticky;
+      top: 0;
+      z-index: 5;
     }
 
-    thead th.sortable { cursor: pointer; }
-    thead th.sortable:hover { color: var(--color-text); }
+    table.events-table thead th.sortable { cursor: pointer; }
+    table.events-table thead th.sortable:hover { color: var(--color-text); }
 
-    tbody tr {
+    table.events-table tbody tr {
       border-bottom: 1px solid var(--color-border);
       transition: background 0.1s ease;
+      height: 52px;
     }
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: var(--color-surface-hover); }
+    table.events-table tbody tr:hover { background: var(--color-surface-hover); }
 
-    td {
-      padding: 9px 14px;
+    table.events-table td {
+      padding: 8px 14px;
       font-size: 12px;
       vertical-align: middle;
       white-space: nowrap;
       color: var(--color-text);
+      border-bottom: 1px solid var(--color-border);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    table.events-table tbody tr:last-child td {
+      border-bottom: none;
     }
 
     .badge-status {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 2px 6px;
+      padding: 3px 7px;
       border-radius: var(--radius-sm);
-      font-size: 10.5px;
+      font-size: 11px;
       font-weight: 600;
       border: 1px solid transparent;
+      line-height: 1.3;
     }
     .badge-status.added {
       background: var(--color-added-bg);
@@ -625,23 +643,43 @@
     .package-cell {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .package-cell-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      background: var(--color-bg-secondary);
+      border: 1px solid var(--color-border);
+      color: var(--color-text-secondary);
+      flex-shrink: 0;
+    }
+    .package-cell-icon.ws {
+      background: var(--color-accent-glow);
+      color: var(--color-accent);
+      border-color: rgba(99, 102, 241, 0.3);
     }
 
     .package-name {
       font-family: var(--font-mono);
       font-weight: 600;
+      font-size: 12px;
       color: var(--color-text);
       cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 1px 4px;
-      border-radius: var(--radius-sm);
+      display: inline-block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: color 0.1s ease;
     }
     .package-name:hover {
       text-decoration: underline;
-      background: var(--color-bg-secondary);
       color: var(--color-accent);
     }
 
@@ -652,9 +690,13 @@
       align-items: center;
       gap: 5px;
       background: var(--color-bg-secondary);
-      padding: 2px 6px;
+      padding: 2px 7px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--color-border);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .diff-from { color: var(--color-removed); }
@@ -670,6 +712,7 @@
       background: var(--color-bg-secondary);
       color: var(--color-text-secondary);
       border: 1px solid var(--color-border);
+      letter-spacing: 0.03em;
     }
     .dep-type-tag.direct {
       background: var(--color-accent-glow);
@@ -679,16 +722,41 @@
 
     .manifest-badge {
       display: inline-block;
-      max-width: 170px;
+      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
-      font-size: 10.5px;
+      white-space: nowrap;
+      font-size: 11px;
       color: var(--color-text-secondary);
       font-family: var(--font-mono);
       background: var(--color-bg-secondary);
-      padding: 1px 6px;
+      padding: 2px 6px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--color-border);
+    }
+
+    .empty-state {
+      padding: 80px 20px !important;
+      text-align: center;
+      color: var(--color-text-secondary);
+      height: 380px;
+      vertical-align: middle;
+    }
+    .empty-icon {
+      margin-bottom: 12px;
+      color: var(--color-text-secondary);
+      opacity: 0.5;
+    }
+    .empty-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--color-text);
+      margin-bottom: 4px;
+    }
+    .empty-subtitle {
+      font-size: 11.5px;
+      color: var(--color-text-secondary);
+      margin-bottom: 14px;
     }
 
     /* Author Profile & Username Display */
@@ -1628,7 +1696,17 @@
       
       <!-- Table View -->
       <div class="table-responsive" id="timeline-view">
-        <table>
+        <table class="events-table">
+          <colgroup>
+            <col style="width: 105px;">
+            <col style="width: 115px;">
+            <col style="width: 22%;">
+            <col style="width: 18%;">
+            <col style="width: 80px;">
+            <col style="width: 16%;">
+            <col style="width: 20%;">
+            <col style="width: 95px;">
+          </colgroup>
           <thead>
             <tr>
               <th class="sortable" onclick="toggleSort('date')">Date <span id="sort-date-icon">↓</span></th>
@@ -1645,7 +1723,7 @@
             <tr>
               <td colspan="8" class="empty-state">
                 <svg class="empty-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                <div>Scanning repository history...</div>
+                <div class="empty-title">Scanning repository history...</div>
               </td>
             </tr>
           </tbody>
@@ -1985,6 +2063,7 @@
     }
 
     function setFilter(type) {
+      if (currentFilter === type) return;
       currentFilter = type;
       document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.filter === type);
@@ -1998,13 +2077,18 @@
         if (currentManifest !== 'all' && ev.manifest !== currentManifest) return false;
         if (currentSearch) {
           const q = currentSearch.toLowerCase();
+          const matchDate = (ev.date || '').toLowerCase().includes(q);
           const matchPkg = (ev.package || '').toLowerCase().includes(q);
           const matchAuthor = (ev.author || '').toLowerCase().includes(q);
+          const authorInfo = getAuthorDetails(ev.author);
+          const matchUsername = (authorInfo && authorInfo.username ? authorInfo.username.toLowerCase().includes(q) : false);
           const matchSha = (ev.commit || '').toLowerCase().includes(q);
           const matchMsg = (ev.message || '').toLowerCase().includes(q);
+          const matchManifest = (ev.manifest || '').toLowerCase().includes(q);
           const matchTo = (ev.to || '').toLowerCase().includes(q);
           const matchFrom = (ev.from || '').toLowerCase().includes(q);
-          if (!matchPkg && !matchAuthor && !matchSha && !matchMsg && !matchTo && !matchFrom) return false;
+          const matchDepType = (ev.depType || '').toLowerCase().includes(q);
+          if (!matchDate && !matchPkg && !matchAuthor && !matchUsername && !matchSha && !matchMsg && !matchManifest && !matchTo && !matchFrom && !matchDepType) return false;
         }
         return true;
       });
@@ -2049,9 +2133,10 @@
       if (filtered.length === 0) {
         tbody.innerHTML = `
           <tr><td colspan="8" class="empty-state">
-            <svg class="empty-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <div>No events matching your filter or search query.</div>
-            <button class="btn-action" style="margin-top: 10px;" onclick="resetFilters()">Reset Filters</button>
+            <svg class="empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <div class="empty-title">No events matching your filter or search query</div>
+            <div class="empty-subtitle">Try adjusting your filters, clearing your search query, or switching tabs.</div>
+            <button class="btn-action" style="margin-top: 6px;" onclick="resetFilters()">Reset Filters</button>
           </td></tr>
         `;
         return;
@@ -2089,13 +2174,23 @@
           ? `<span class="dep-type-tag direct">direct</span>` 
           : `<span class="dep-type-tag">dep</span>`;
 
+        const isWs = Boolean(
+          (workspacePackages && Object.prototype.hasOwnProperty.call(workspacePackages, ev.package)) ||
+          (currentRepo && ev.package === currentRepo) ||
+          String(ev.to || ev.from || '').startsWith('workspace:')
+        );
+        const pkgIconSvg = isWs
+          ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`
+          : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>`;
+
         return `
           <tr>
-            <td style="color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11px;">${dateStr}</td>
+            <td style="color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11.5px;">${dateStr}</td>
             <td><span class="badge-status ${badgeClass}">${badgeLabel}</span></td>
             <td>
               <div class="package-cell">
-                <span class="package-name" onclick="openArchaeology('${escapeHtml(ev.package)}')" title="Click to view archaeology lifecycle">
+                <span class="package-cell-icon ${isWs ? 'ws' : ''}" title="${isWs ? 'Internal repository package' : 'Package'}">${pkgIconSvg}</span>
+                <span class="package-name" onclick="openArchaeology('${escapeHtml(ev.package)}')" title="${escapeHtml(ev.package)} (click for archaeology)">
                   ${escapeHtml(ev.package)}
                 </span>
               </div>
