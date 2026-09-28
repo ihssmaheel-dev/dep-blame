@@ -16,6 +16,8 @@ export {
   getRepoRoot,
   getCurrentHead,
   getCurrentBranch,
+  getRepoRemoteInfo,
+  type RepoRemoteInfo,
   getGitCommonDir,
   isShallowRepo,
   isAncestor,

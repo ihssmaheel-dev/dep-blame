@@ -1345,6 +1345,10 @@
 
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+    let repoOwner = null;
+    let repoHost = 'github.com';
+    let remoteUrl = null;
+
     // Theme Management (Dark Theme Default)
     function initTheme() {
       const savedTheme = localStorage.getItem('dep-blame-theme') || 'dark';
@@ -1371,14 +1375,21 @@
       }
     }
 
-    // Author profile redirection link
+    // Author profile redirection link (direct to proper profile, never search page)
     function getAuthorProfileUrl(author) {
       if (!author || author === 'Unknown') return '#';
       const clean = author.trim().replace(/^@/, '');
+      // 1. Single username handle
       if (/^[a-zA-Z0-9_\-]+$/.test(clean)) {
-        return `https://github.com/${encodeURIComponent(clean)}`;
+        return `https://${repoHost || 'github.com'}/${encodeURIComponent(clean)}`;
       }
-      return `https://github.com/search?q=${encodeURIComponent(clean)}&type=users`;
+      // 2. Map author to repo owner (e.g. 'Mohamed Ismail S' -> 'https://github.com/ihssmaheel-dev')
+      if (repoOwner) {
+        return `https://${repoHost || 'github.com'}/${encodeURIComponent(repoOwner)}`;
+      }
+      // 3. Fallback direct profile slug
+      const slug = clean.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      return `https://${repoHost || 'github.com'}/${encodeURIComponent(slug)}`;
     }
 
     async function loadData() {
@@ -1389,6 +1400,10 @@
         const res = await fetch('/api/events');
         const data = await res.json();
         allEvents = data.events || [];
+
+        repoOwner = data.repoOwner || null;
+        repoHost = data.repoHost || 'github.com';
+        remoteUrl = data.remoteUrl || null;
 
         document.getElementById('repo-name').textContent = data.repository || 'repository';
         document.getElementById('branch-name').textContent = data.branch || 'main';
@@ -1583,13 +1598,13 @@
             <td>${typeBadge}</td>
             <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
             <td>
-              <a href="${authorProfile}" target="_blank" rel="noopener noreferrer" class="author-link" title="View profile on GitHub">
+              <a href="${authorProfile}" target="_blank" rel="noopener noreferrer" class="author-link" title="View ${escapeHtml(ev.author || '')}'s GitHub profile">
                 <div class="author-avatar">${authorInitial}</div>
                 <span class="author-name">${escapeHtml(ev.author || '')}</span>
               </a>
             </td>
             <td>
-              <span class="commit-tag" onclick="copyText('${ev.commit}', 'Commit SHA copied!')" title="${escapeHtml(ev.message || '')} (click to copy)">
+              <span class="commit-tag" onclick="if (remoteUrl) window.open(remoteUrl + '/commit/' + '${ev.commit}', '_blank'); else copyText('${ev.commit}', 'Commit SHA copied!');" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open on GitHub' : 'click to copy'})">
                 ${ev.commit}
               </span>
             </td>
@@ -1731,12 +1746,12 @@
             <div class="node-card">
               <div class="node-meta">
                 <span>${dateStr}</span>
-                <span class="commit-tag" onclick="copyText('${ev.commit}', 'Commit SHA copied!')">${ev.commit}</span>
+                <span class="commit-tag" onclick="if (remoteUrl) window.open(remoteUrl + '/commit/' + '${ev.commit}', '_blank'); else copyText('${ev.commit}', 'Commit SHA copied!')" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open on GitHub' : 'click to copy'})">${ev.commit}</span>
               </div>
               <div class="node-version">${actionText}</div>
               <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
               <div style="font-size: 10.5px; color: var(--color-text-secondary); margin-top: 5px;">
-                by <a href="${authorProfile}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">${escapeHtml(ev.author || 'Unknown')}</a> in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span>
+                by <a href="${authorProfile}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;" title="View ${escapeHtml(ev.author || '')}'s GitHub profile">${escapeHtml(ev.author || 'Unknown')}</a> in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span>
               </div>
             </div>
           </div>

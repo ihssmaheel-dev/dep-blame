@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runDepBlame } from 'dep-blame';
+import { runDepBlame, getRepoRemoteInfo } from 'dep-blame';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,11 +71,15 @@ export function startServer(options = {}) {
       if (req.method === 'GET' && url.pathname === '/api/events') {
         try {
           const result = await runDepBlame({ cwd, silent: true });
+        const remoteInfo = await getRepoRemoteInfo(cwd).catch(() => ({ remoteUrl: null, owner: null, repo: null, host: 'github.com' }));
         const json = JSON.stringify({
           schemaVersion: 1,
           repository: result.repository,
           branch: result.branch || 'main',
           packageManager: result.packageManager,
+          remoteUrl: remoteInfo.remoteUrl,
+          repoOwner: remoteInfo.owner,
+          repoHost: remoteInfo.host || 'github.com',
           generatedAt: new Date().toISOString(),
           events: result.events
         });

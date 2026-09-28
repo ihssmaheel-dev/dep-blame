@@ -102,6 +102,40 @@ export async function getCurrentBranch(cwd: string = process.cwd()): Promise<str
   }
 }
 
+export interface RepoRemoteInfo {
+  remoteUrl: string | null;
+  owner: string | null;
+  repo: string | null;
+  host: string;
+}
+
+/**
+ * Parses git remote origin info (e.g. https://github.com/owner/repo.git or git@github.com:owner/repo.git)
+ */
+export async function getRepoRemoteInfo(cwd: string = process.cwd()): Promise<RepoRemoteInfo> {
+  try {
+    const { stdout } = await execGit(['config', '--get', 'remote.origin.url'], cwd);
+    const raw = stdout.trim();
+    if (!raw) return { remoteUrl: null, owner: null, repo: null, host: 'github.com' };
+
+    const match = raw.match(/^(?:https?:\/\/|git@)([^/:]+)[/:]([^/]+)\/([^/]+?)(?:\.git)?$/i);
+    if (match) {
+      const host = match[1];
+      const owner = match[2];
+      const repo = match[3];
+      return {
+        remoteUrl: `https://${host}/${owner}/${repo}`,
+        owner,
+        repo,
+        host
+      };
+    }
+    return { remoteUrl: raw, owner: null, repo: null, host: 'github.com' };
+  } catch {
+    return { remoteUrl: null, owner: null, repo: null, host: 'github.com' };
+  }
+}
+
 /**
  * Checks if candidate is an ancestor of target commit.
  */
