@@ -283,6 +283,35 @@ export function startServer(options = {}) {
         return;
       }
 
+      // Bundled Manrope variable font (same-origin, immutable). woff2 is
+      // already compressed; served as-is with a year-long cache.
+      if (req.method === 'GET' && url.pathname.startsWith('/fonts/')) {
+        const name = url.pathname.slice('/fonts/'.length);
+        if (!/^[a-z0-9-]+\.woff2$/i.test(name)) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Not Found');
+          return;
+        }
+        const fontPath = path.join(__dirname, 'fonts', name);
+        let fontBytes;
+        try {
+          fontBytes = fs.readFileSync(fontPath);
+        } catch {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Not Found');
+          return;
+        }
+        res.writeHead(200, {
+          'Content-Type': 'font/woff2',
+          'Content-Length': fontBytes.length,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': CSP
+        });
+        res.end(fontBytes);
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/events/stream') {
         res.writeHead(200, {
           'Content-Type': 'text/event-stream; charset=utf-8',

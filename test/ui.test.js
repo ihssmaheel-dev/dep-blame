@@ -36,6 +36,41 @@ test('ui: no inline event handlers remain in served markup or script', () => {
   assert.ok(!/onclick\s*=/.test(js), 'app.js must not interpolate inline onclick');
   assert.ok(!/onerror\s*=/.test(js), 'app.js must not interpolate inline onerror');
   assert.ok(!html.includes('fonts.googleapis.com'), 'dashboard must work offline (no remote fonts)');
+  assert.ok(html.includes('/fonts/manrope-latin.woff2'), 'Manrope must load from the bundled same-origin fonts');
+});
+
+test('ui: bundled fonts stay small and serve correctly', async () => {
+  const fontsDir = path.join(__dirname, '../packages/ui/src/fonts');
+  const files = fs.readdirSync(fontsDir).filter((f) => f.endsWith('.woff2')).sort();
+  assert.ok(files.length >= 1, 'expected bundled woff2 fonts');
+
+  // Variable font, subsetted: the whole family must fit in ~60KB raw.
+  let total = 0;
+  for (const f of files) {
+    const st = fs.statSync(path.join(fontsDir, f));
+    assert.ok(st.size < 64 * 1024, `${f} exceeds 64KB: ${st.size} bytes`);
+    total += st.size;
+  }
+  assert.ok(total < 96 * 1024, `bundled fonts exceed 96KB raw: ${total} bytes`);
+
+  const { url, close } = await startServer({ port: 0, host: '127.0.0.1', cwd: path.resolve(__dirname, '..') });
+  try {
+    const fontRes = await fetch(`${url}/fonts/manrope-latin.woff2`);
+    assert.equal(fontRes.status, 200);
+    assert.equal(fontRes.headers.get('content-type'), 'font/woff2');
+    assert.ok((fontRes.headers.get('cache-control') || '').includes('immutable'));
+    const buf = Buffer.from(await fontRes.arrayBuffer());
+    assert.ok(buf.length > 1024, 'font body too small to be real');
+    assert.equal(buf.subarray(0, 4).toString('ascii'), 'wOF2', 'not a woff2 file');
+
+    // Path traversal is rejected, unknown fonts 404.
+    const evil = await fetch(`${url}/fonts/%2e%2e/%2e%2e/package.json`);
+    assert.equal(evil.status, 404);
+    const missing = await fetch(`${url}/fonts/nope.woff2`);
+    assert.equal(missing.status, 404);
+  } finally {
+    await close();
+  }
 });
 
 test('ui: local server serves HTML page and /api/events JSON endpoint', async () => {
