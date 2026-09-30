@@ -262,17 +262,21 @@ export async function getCommitDate(sha: string, cwd: string = process.cwd()): P
 }
 
 /**
- * Lists full commit SHAs in `baseSha..HEAD` (newest last not guaranteed).
+ * Lists full commit SHAs in `baseSha..HEAD`.
  * Used by CI mode to scope events to the PR range without relying on
  * short-SHA string equality.
+ *
+ * Returns `null` when the range cannot be listed (bad ref, git failure) —
+ * callers must NOT treat that as an empty range. An empty (non-null) set
+ * is a genuine empty range and must stay empty.
  */
 export async function getCommitsInRange(
   baseSha: string,
   cwd: string = process.cwd(),
   manifestPaths: string[] = []
-): Promise<Set<string>> {
+): Promise<Set<string> | null> {
   const out = new Set<string>();
-  if (!baseSha || !/^[0-9a-f]{4,40}$/i.test(baseSha.trim())) return out;
+  if (!baseSha || !/^[0-9a-f]{4,40}$/i.test(baseSha.trim())) return null;
   const args = ['log', '--format=%H', `${baseSha}..HEAD`];
   if (manifestPaths.length > 0) args.push('--', ...manifestPaths);
   try {
@@ -282,7 +286,7 @@ export async function getCommitsInRange(
       if (/^[0-9a-f]{40}$/i.test(sha)) out.add(sha);
     }
   } catch {
-    // Empty set -> caller falls back to date-based filtering.
+    return null;
   }
   return out;
 }

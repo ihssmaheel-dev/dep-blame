@@ -1,4 +1,4 @@
-import { c } from './ansi.js';
+import { c, stripControl } from './ansi.js';
 import type { DependencyEvent } from '../types.js';
 
 function formatDate(isoString?: string): string {
@@ -8,15 +8,19 @@ function formatDate(isoString?: string): string {
 
 function formatChange(event: DependencyEvent): string {
   if (event.type === 'added') {
-    return event.to || '';
+    return stripControl(event.to || '');
   }
   if (event.type === 'removed') {
-    return event.from || '';
+    return stripControl(event.from || '');
   }
   if (event.type === 'updated') {
-    return `${event.from || '?'} -> ${event.to || '?'}`;
+    return `${stripControl(event.from || '?')} -> ${stripControl(event.to || '?')}`;
   }
   return '';
+}
+
+function formatSource(event: DependencyEvent): string {
+  return event.source === 'lockfile' ? c.dim('[lock]') : c.dim('[decl]');
 }
 
 function formatType(type: string): string {
@@ -28,7 +32,7 @@ function formatType(type: string): string {
     case 'removed':
       return c.red('- removed');
     default:
-      return type.padEnd(9);
+      return stripControl(type).padEnd(9);
   }
 }
 
@@ -71,6 +75,7 @@ export function renderEventTable(
   const header = [
     'DATE'.padEnd(10),
     'TYPE'.padEnd(9),
+    'SRC'.padEnd(6),
     'PACKAGE'.padEnd(maxPkg),
     'CHANGE'.padEnd(maxChange),
     'AUTHOR'.padEnd(maxAuthor),
@@ -104,11 +109,12 @@ export function renderEventTable(
   const renderSingleRow = (ev: DependencyEvent): string => {
     const date = formatDate(ev.date);
     const type = formatType(ev.type);
-    const pkg = ev.package;
+    const source = formatSource(ev);
+    const pkg = stripControl(ev.package);
     const change = formatChange(ev);
-    const author = ev.author || '';
-    const commit = ev.commit || '';
-    const message = ev.message || '';
+    const author = stripControl(ev.author || '');
+    const commit = stripControl(ev.commit || '');
+    const message = stripControl(ev.message || '');
 
     const pkgTruncated = pkg.length > maxPkg ? pkg.slice(0, maxPkg - 1) + '…' : pkg;
     const changeTruncated = change.length > maxChange ? change.slice(0, maxChange - 1) + '…' : change;
@@ -117,6 +123,7 @@ export function renderEventTable(
     return [
       c.dim(date.padEnd(10)),
       type,
+      source,
       c.bold(pkgTruncated.padEnd(maxPkg)),
       changeTruncated.padEnd(maxChange),
       c.dim(authorTruncated.padEnd(maxAuthor)),
@@ -129,18 +136,26 @@ export function renderEventTable(
     if (!verbose && group.length >= collapseThreshold) {
       const first = group[0];
       const date = formatDate(first.date);
-      const commit = first.commit;
+      const commit = stripControl(first.commit);
       const count = group.length;
+      const added = group.filter((e) => e.type === 'added').length;
+      const updated = group.filter((e) => e.type === 'updated').length;
+      const removed = group.filter((e) => e.type === 'removed').length;
+      const parts: string[] = [];
+      if (added > 0) parts.push(`${added} added`);
+      if (updated > 0) parts.push(`${updated} updated`);
+      if (removed > 0) parts.push(`${removed} removed`);
       const distinctManifests = new Set(group.map((e) => e.manifest)).size;
-      const summaryMsg = `${count} packages updated across ${distinctManifests} manifest(s) [use --verbose to expand]`;
+      const summaryMsg = `${count} changes (${parts.join(', ')}) across ${distinctManifests} manifest(s) [use --verbose to expand]`;
 
       const collapsedLine = [
         c.dim(date.padEnd(10)),
         c.yellow('⚡ collapsed'),
+        c.dim('[group] '.padEnd(6)),
         c.bold(summaryMsg.padEnd(maxPkg + maxChange + 2)),
-        c.dim((first.author || '').slice(0, maxAuthor).padEnd(maxAuthor)),
+        c.dim(stripControl(first.author || '').slice(0, maxAuthor).padEnd(maxAuthor)),
         c.cyan(commit.padEnd(7)),
-        c.dim(first.message || '')
+        c.dim(stripControl(first.message || ''))
       ].join('  ');
 
       lines.push(collapsedLine);

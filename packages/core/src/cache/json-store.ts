@@ -22,9 +22,27 @@ function isValidEvent(e: any): e is DependencyEvent {
   );
 }
 
+/** Instant-based comparison: never let `00:30+05:30` pass a midnight-UTC cutoff. */
+function passesSince(date: string, since: string): boolean {
+  const a = Date.parse(date);
+  const b = Date.parse(since);
+  if (!isNaN(a) && !isNaN(b)) return a >= b;
+  return date >= since;
+}
+
+/** Segment-aware manifest match: no `website` for filter `web`. */
+function matchesWorkspace(manifest: string, workspace: string): boolean {
+  const m = manifest.replace(/\\/g, '/');
+  const w = workspace.replace(/\\/g, '/');
+  if (m === w) return true;
+  if (m.startsWith(w + '/')) return true;
+  return m.split('/').includes(w);
+}
+
 export class JsonStore implements StoreInterface {
   filePath: string;
   data: JsonCacheData;
+  private suppressSave = 0;
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -64,6 +82,8 @@ export class JsonStore implements StoreInterface {
   }
 
   save(): void {
+    // Suppressed inside transaction(): one persist per scan, not per window.
+    if (this.suppressSave > 0) return;
     // Atomic write: tmp + rename so a crash never leaves half-written JSON.
     const dir = path.dirname(this.filePath);
     const tmp = path.join(dir, `.cache-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
@@ -102,6 +122,23 @@ export class JsonStore implements StoreInterface {
     this.save();
   }
 
+  /**
+   * Coalesced writes: suppresses per-call persists so a full scan costs
+   * one write at the end instead of O(windows) full-file rewrites.
+   */
+  transaction(fn: () => void): void {
+    this.suppressSave++;
+    try {
+      fn();
+    } finally {
+      this.suppressSave--;
+      if (this.suppressSave <= 0) {
+        this.suppressSave = 0;
+        this.save();
+      }
+    }
+  }
+
   queryEvents(filter: FilterOptions = {}): DependencyEvent[] {
     let list = this.data.events;
 
@@ -112,13 +149,16 @@ export class JsonStore implements StoreInterface {
       list = list.filter((e) => e.type === filter.type);
     }
     if (filter.since) {
-      list = list.filter((e) => e.date >= filter.since!);
+      list = list.filter((e) => passesSince(e.date, filter.since!));
     }
     if (filter.manifest) {
       list = list.filter((e) => e.manifest === filter.manifest);
     }
     if (filter.workspace) {
-      list = list.filter((e) => e.manifest.includes(filter.workspace!));
+      list = list.filter((e) => matchesWorkspace(e.manifest, filter.workspace!));
+    }
+    if (filter.source) {
+      list = list.filter((e) => (e.source || 'manifest') === filter.source);
     }
     if (filter.directOnly) {
       list = list.filter((e) => e.isDirect !== false);

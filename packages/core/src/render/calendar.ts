@@ -1,4 +1,4 @@
-import { c } from './ansi.js';
+import { c, stripControl } from './ansi.js';
 import type { DependencyEvent } from '../types.js';
 
 const MONTH_NAMES = [
@@ -6,11 +6,27 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+/**
+ * Local calendar day for an event timestamp. One basis everywhere
+ * (grouping, month selection, day cells) so events near a month
+ * boundary can't select one month but render in another.
+ */
+export function eventDayKey(isoString?: string): string | null {
+  if (!isoString) return null;
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function groupEventsByMonth(events: DependencyEvent[]): Map<string, DependencyEvent[]> {
   const map = new Map<string, DependencyEvent[]>();
   for (const ev of events) {
-    if (!ev.date) continue;
-    const key = ev.date.slice(0, 7); // "YYYY-MM"
+    const dayKey = eventDayKey(ev.date);
+    if (!dayKey) continue;
+    const key = dayKey.slice(0, 7); // "YYYY-MM" in viewer-local time
     if (!map.has(key)) {
       map.set(key, []);
     }
@@ -22,7 +38,9 @@ function groupEventsByMonth(events: DependencyEvent[]): Map<string, DependencyEv
 function renderMonthGrid(year: number, month: number, monthEvents: DependencyEvent[]): string {
   const dayMap = new Map<number, DependencyEvent[]>();
   for (const ev of monthEvents) {
-    const day = parseInt(ev.date.slice(8, 10), 10);
+    const dayKey = eventDayKey(ev.date);
+    if (!dayKey) continue;
+    const day = parseInt(dayKey.slice(8, 10), 10);
     if (!dayMap.has(day)) {
       dayMap.set(day, []);
     }
@@ -75,7 +93,7 @@ function renderMonthGrid(year: number, month: number, monthEvents: DependencyEve
       const pkgSummary = evs
         .map((e) => {
           const sign = e.type === 'added' ? '+' : e.type === 'removed' ? '-' : '↑';
-          return `${sign}${e.package}`;
+          return `${sign}${stripControl(e.package)}`;
         })
         .slice(0, 4)
         .join(', ');

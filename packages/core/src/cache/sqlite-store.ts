@@ -32,6 +32,30 @@ export class SqliteStore implements StoreInterface {
   private stmtGetMeta: any = null;
   private stmtSetMeta: any = null;
   private stmtInsertEvent: any = null;
+  private txDepth = 0;
+
+  /** Nesting-aware BEGIN: inner callers reuse the outer transaction. */
+  private beginTx(): void {
+    if (this.txDepth === 0) this.db.exec('BEGIN IMMEDIATE');
+    this.txDepth++;
+  }
+
+  private commitTx(): void {
+    this.txDepth--;
+    if (this.txDepth <= 0) {
+      this.txDepth = 0;
+      this.db.exec('COMMIT');
+    }
+  }
+
+  private rollbackTx(): void {
+    this.txDepth = 0;
+    try {
+      this.db.exec('ROLLBACK');
+    } catch {
+      // Ignore rollback failures.
+    }
+  }
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -43,12 +67,73 @@ export class SqliteStore implements StoreInterface {
     const DatabaseSync = loadDatabaseSync();
     this.db = new DatabaseSync(filePath);
     this.initSchema();
-    // Record schema version for future migrations.
+    // Validate BEFORE stamping: a stale version must trigger migration,
+    // otherwise the check in openCache could never observe it.
+    let prev: string | null = null;
     try {
-      this.setMeta('schema_version', CACHE_SCHEMA_VERSION);
+      prev = this.getMeta('schema_version');
     } catch {
-      // Ignore meta write failures on read-only caches.
+      prev = null;
     }
+    if (prev && prev !== CACHE_SCHEMA_VERSION) {
+      this.migrate(prev);
+    } else if (!prev) {
+      try {
+        this.setMeta('schema_version', CACHE_SCHEMA_VERSION);
+      } catch {
+        // Ignore meta write failures on read-only caches.
+      }
+    }
+  }
+
+  /**
+   * Migrates or clears on version mismatch inside a transaction, so an
+   * interrupted migration can't leave a half-migrated database behind.
+   */
+  migrate(prevVersion: string): void {
+    void prevVersion;
+    let inTx = false;
+    try {
+      this.db.exec('BEGIN IMMEDIATE');
+      inTx = true;
+      this.db.exec('DELETE FROM events');
+      this.db.exec('DELETE FROM meta');
+      this.initSchema();
+      this.resetStatements();
+      this.setMeta('schema_version', CACHE_SCHEMA_VERSION);
+      this.db.exec('COMMIT');
+      inTx = false;
+    } catch {
+      try {
+        if (inTx) this.db.exec('ROLLBACK');
+      } catch {
+        // Ignore rollback failures.
+      }
+      // Last resort: drop and rebuild outside a transaction.
+      try {
+        this.db.exec('DROP TABLE IF EXISTS events');
+      } catch {
+        // Ignore
+      }
+      try {
+        this.db.exec('DROP TABLE IF EXISTS meta');
+      } catch {
+        // Ignore
+      }
+      this.initSchema();
+      this.resetStatements();
+      try {
+        this.setMeta('schema_version', CACHE_SCHEMA_VERSION);
+      } catch {
+        // Ignore
+      }
+    }
+  }
+
+  private resetStatements(): void {
+    this.stmtGetMeta = null;
+    this.stmtSetMeta = null;
+    this.stmtInsertEvent = null;
   }
 
   initSchema(): void {
@@ -75,10 +160,14 @@ export class SqliteStore implements StoreInterface {
         to_version TEXT,
         date TEXT NOT NULL,
         commit_sha TEXT NOT NULL,
+        commit_full TEXT,
         author TEXT NOT NULL,
         message TEXT NOT NULL,
         manifest TEXT NOT NULL,
         dep_type TEXT NOT NULL,
+        dep_type_from TEXT,
+        source TEXT NOT NULL DEFAULT 'manifest',
+        lockfile TEXT,
         is_direct INTEGER NOT NULL DEFAULT 1
       )
     `);
@@ -87,13 +176,25 @@ export class SqliteStore implements StoreInterface {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_manifest ON events(manifest)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_commit ON events(commit_sha)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_source ON events(source)`);
 
-    // Schema migration for existing databases created before is_direct was added
-    try {
-      this.db.exec('ALTER TABLE events ADD COLUMN is_direct INTEGER NOT NULL DEFAULT 1;');
-    } catch {
-      // Column already exists, safe to ignore
+    // Schema migrations for databases created before these columns existed.
+    // Each is idempotent: failure means the column already exists.
+    const additions = [
+      'ALTER TABLE events ADD COLUMN is_direct INTEGER NOT NULL DEFAULT 1',
+      'ALTER TABLE events ADD COLUMN commit_full TEXT',
+      "ALTER TABLE events ADD COLUMN source TEXT NOT NULL DEFAULT 'manifest'",
+      'ALTER TABLE events ADD COLUMN dep_type_from TEXT',
+      'ALTER TABLE events ADD COLUMN lockfile TEXT'
+    ];
+    for (const sql of additions) {
+      try {
+        this.db.exec(sql + ';');
+      } catch {
+        // Column already exists, safe to ignore.
+      }
     }
+    this.resetStatements();
   }
 
   getMeta(key: string): string | null {
@@ -120,16 +221,17 @@ export class SqliteStore implements StoreInterface {
       return;
     }
 
-    let inTx = false;
+    let started = false;
     try {
-      this.db.exec('BEGIN IMMEDIATE');
-      inTx = true;
+      this.beginTx();
+      started = true;
       if (!this.stmtInsertEvent) {
         this.stmtInsertEvent = this.db.prepare(`
           INSERT INTO events (
             package, type, from_version, to_version,
-            date, commit_sha, author, message, manifest, dep_type, is_direct
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            date, commit_sha, commit_full, author, message, manifest,
+            dep_type, dep_type_from, source, lockfile, is_direct
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
       }
       const stmt = this.stmtInsertEvent;
@@ -142,21 +244,36 @@ export class SqliteStore implements StoreInterface {
           ev.to || null,
           ev.date,
           ev.commit,
+          ev.commitFull || null,
           ev.author,
           ev.message,
           ev.manifest,
           ev.depType,
+          ev.depTypeFrom || null,
+          ev.source || 'manifest',
+          ev.lockfile || null,
           ev.isDirect === false ? 0 : 1
         );
       }
-      this.db.exec('COMMIT');
-      inTx = false;
+      this.commitTx();
+      started = false;
     } catch (err) {
-      try {
-        if (inTx) this.db.exec('ROLLBACK');
-      } catch {
-        // Ignore rollback failures.
-      }
+      if (started) this.rollbackTx();
+      throw err;
+    }
+  }
+
+  /**
+   * Coalesced writes: wraps `fn` in a single transaction so N window
+   * inserts cost one commit. Safe to nest around `insertEvents`.
+   */
+  transaction(fn: () => void): void {
+    this.beginTx();
+    try {
+      fn();
+      this.commitTx();
+    } catch (err) {
+      this.rollbackTx();
       throw err;
     }
   }
@@ -176,7 +293,10 @@ export class SqliteStore implements StoreInterface {
     }
 
     if (filter.since) {
-      conditions.push('date >= ?');
+      // Instant comparison (not lexicographic): SQLite normalizes the
+      // `+05:30` offsets git emits, so a 00:30+05:30 event can't pass a
+      // midnight-UTC cutoff it predates.
+      conditions.push('datetime(date) >= datetime(?)');
       params.push(filter.since);
     }
 
@@ -186,10 +306,20 @@ export class SqliteStore implements StoreInterface {
     }
 
     if (filter.workspace) {
-      // Escape LIKE wildcards so `web%` doesn't match `website`.
-      const escaped = String(filter.workspace).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-      conditions.push('manifest LIKE ? ESCAPE \'\\\'');
-      params.push(`%${escaped}%`);
+      // Segment-aware match: exact path, directory prefix, or a single
+      // path segment — so `web` matches `apps/web/package.json` but
+      // never an unrelated `website` path.
+      const w = String(filter.workspace).replace(/\\/g, '/');
+      const like = (s: string) => s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+      conditions.push(
+        "(manifest = ? OR manifest LIKE ? ESCAPE '\\' OR manifest LIKE ? ESCAPE '\\')"
+      );
+      params.push(w, `${like(w)}/%`, `%/${like(w)}/%`);
+    }
+
+    if (filter.source) {
+      conditions.push('source = ?');
+      params.push(filter.source);
     }
 
     if (filter.directOnly) {
@@ -215,12 +345,28 @@ export class SqliteStore implements StoreInterface {
         message: row.message,
         manifest: row.manifest,
         depType: row.dep_type,
+        source: row.source === 'lockfile' ? 'lockfile' : 'manifest',
         isDirect: row.is_direct === 1
       };
+      if (row.commit_full) ev.commitFull = row.commit_full;
       if (row.from_version) ev.from = row.from_version;
       if (row.to_version) ev.to = row.to_version;
+      if (row.dep_type_from) ev.depTypeFrom = row.dep_type_from;
+      if (row.lockfile) ev.lockfile = row.lockfile;
       return ev;
     });
+  }
+
+  /**
+   * Instant-based `since` check shared with the JSON store: compares
+   * timestamps, not raw strings, so `00:30+05:30` never passes a
+   * midnight-UTC cutoff it predates.
+   */
+  static passesSince(date: string, since: string): boolean {
+    const a = Date.parse(date);
+    const b = Date.parse(since);
+    if (!isNaN(a) && !isNaN(b)) return a >= b;
+    return date >= since;
   }
 
   clear(): void {
@@ -245,6 +391,8 @@ export class SqliteStore implements StoreInterface {
       }
       this.initSchema();
     }
+    // DROP invalidates cached prepared statements — always reset.
+    this.resetStatements();
     try {
       this.setMeta('schema_version', CACHE_SCHEMA_VERSION);
     } catch {

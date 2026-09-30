@@ -1,8 +1,5 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import type { CommitInfo } from '../types.js';
-
-const execFileAsync = promisify(execFile);
 
 export interface GitLogOptions {
   sinceCommit?: string | null;
@@ -11,11 +8,16 @@ export interface GitLogOptions {
 }
 
 /**
- * Fetches commits touching specified manifest paths in chronological order.
+ * Fetches commits touching specified manifest paths in topological order
+ * (parents before children), oldest first by default.
  *
- * @param repoRoot Path to git repository root
- * @param options Log options
- * @returns Array of commit details
+ * - `--topo-order` makes cross-branch enumeration deterministic so each
+ *   commit can be diffed against its own parents (see engine).
+ * - `-m` forces merge commits to list their changed files; without it,
+ *   merges are silently absent from `--name-only` output and their
+ *   dependency changes vanish from the timeline.
+ * - Output streams through `spawn` with incremental parsing — no
+ *   `maxBuffer` ceiling, so large histories can't fail or truncate.
  */
 export async function getManifestCommits(
   repoRoot: string,
@@ -28,51 +30,39 @@ export async function getManifestCommits(
   } = options;
 
   const range = sinceCommit ? `${sinceCommit}..HEAD` : 'HEAD';
-  const args = ['log'];
+  const args = ['log', '--topo-order'];
 
   if (reverse) {
     args.push('--reverse');
   }
 
   // Never --follow with multiple paths: git silently drops it past one path.
-  // Record separator \x1e, Unit separator \x1f (control chars can't appear in
-  // normal commit text, so plain split() is safe).
-  args.push('--format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f', '--name-only', range);
+  // %P = parent SHAs (empty for root). \x1e records / \x1f fields: control
+  // chars can't appear in normal commit text, so plain split() is safe.
+  args.push('-m', '--format=%x1e%H%x1f%P%x1f%aI%x1f%an%x1f%s%x1f', '--name-only', range);
 
   if (manifestPaths && manifestPaths.length > 0) {
     args.push('--', ...manifestPaths);
   }
 
-  let stdout: string;
-  try {
-    const res = await execFileAsync('git', args, {
-      cwd: repoRoot,
-      windowsHide: true,
-      maxBuffer: 64 * 1024 * 1024
-    });
-    stdout = res.stdout;
-  } catch (err: any) {
-    // If range is invalid (e.g. unknown revision when shallow or rewrite)
-    if (err.stderr && (err.stderr.includes('Invalid symmetric difference') || err.stderr.includes('unknown revision'))) {
-      throw err;
-    }
-    throw err;
-  }
+  const stdout = await streamGitLog(repoRoot, args);
 
   const rawRecords = stdout.split('\x1e').filter((rec) => rec.trim().length > 0);
   const commits: CommitInfo[] = [];
+  const bySha = new Map<string, CommitInfo>();
 
   for (const record of rawRecords) {
     const parts = record.split('\x1f');
-    if (parts.length < 4) {
+    if (parts.length < 5) {
       continue;
     }
 
     const commit = parts[0].trim();
-    const date = parts[1].trim();
-    const author = parts[2].trim();
-    const message = parts[3].trim();
-    const rawFiles = parts[4] || '';
+    const parents = (parts[1] || '').trim().split(/\s+/).filter((s) => /^[0-9a-f]{40}$/i.test(s));
+    const date = parts[2].trim();
+    const author = parts[3].trim();
+    const message = parts[4].trim();
+    const rawFiles = parts[5] || '';
 
     if (!/^[0-9a-f]{40}$/i.test(commit)) continue;
 
@@ -84,14 +74,55 @@ export async function getManifestCommits(
       .map((f) => f.trim())
       .filter((f) => f.length > 0);
 
-    commits.push({
+    // `-m` can repeat a merge SHA once per parent diff; merge the file
+    // sets so each commit is processed exactly once.
+    const existing = bySha.get(commit);
+    if (existing) {
+      const seen = new Set(existing.files);
+      for (const f of files) {
+        if (!seen.has(f)) {
+          seen.add(f);
+          existing.files.push(f);
+        }
+      }
+      continue;
+    }
+
+    const info: CommitInfo = {
       commit,
+      parents,
       date,
       author,
       message,
       files
-    });
+    };
+    bySha.set(commit, info);
+    commits.push(info);
   }
 
   return commits;
+}
+
+/** Runs `git log` streaming stdout so history size has no buffer ceiling. */
+function streamGitLog(repoRoot: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, { cwd: repoRoot, windowsHide: true });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      out += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      err += chunk.toString('utf8');
+    });
+    child.on('error', (e) => reject(e));
+    child.on('close', (code) => {
+      if (code !== 0) {
+        const msg = (err || `git log exited with code ${code}`).trim();
+        reject(new Error(msg));
+        return;
+      }
+      resolve(out);
+    });
+  });
 }

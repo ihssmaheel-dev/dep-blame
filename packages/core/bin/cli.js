@@ -15,7 +15,6 @@ import {
   getRepoRoot,
   getCurrentHead,
   resolveBaseRef,
-  getCommitDate,
   getCommitsInRange,
   renderEventTable,
   renderArchaeologyView,
@@ -23,6 +22,7 @@ import {
   renderStatsView,
   renderCiSummary,
   renderJson,
+  renderCsv,
   c
 } from '../dist/index.js';
 
@@ -149,9 +149,11 @@ ${c.bold('OPTIONS:')}
   ${c.yellow('--since <ref|window>')}     Time window (7d, 30d, 2w...) or git ref for CI (e.g. origin/main)
   ${c.yellow('--workspace <name>')}       Filter events to a specific workspace/manifest path
   ${c.yellow('--direct-only')}            Restrict events to direct dependencies (ignore transitives)
+  ${c.yellow('--source <kind>')}          Filter by event source: manifest (declared) or lockfile (resolved)
   ${c.yellow('--fail-on-removal')}        (CI only) Exit non-zero if any dependency was removed
   ${c.yellow('--verbose')}                Expand collapsed bulk updates across manifests
   ${c.yellow('--json')}                   Output raw JSON matching v1 schema contract
+  ${c.yellow('--csv')}                    Output events as CSV (for release notes, spreadsheets)
   ${c.yellow('--clear-cache')}            Wipe cached index and perform fresh scan
   ${c.yellow('--no-cache')}               Force full rescan without cache
   ${c.yellow('--cache-dir <path>')}       Override cache storage location
@@ -174,9 +176,11 @@ async function main() {
     help: { type: 'boolean', short: 'h' },
     version: { type: 'boolean', short: 'v' },
     json: { type: 'boolean' },
+    csv: { type: 'boolean' },
     verbose: { type: 'boolean' },
     since: { type: 'string' },
     workspace: { type: 'string' },
+    source: { type: 'string' },
     'direct-only': { type: 'boolean' },
     'fail-on-removal': { type: 'boolean' },
     'clear-cache': { type: 'boolean' },
@@ -221,6 +225,28 @@ async function main() {
     filter.workspace = values.workspace;
   }
 
+  if (values.source) {
+    const src = String(values.source).toLowerCase();
+    if (src !== 'manifest' && src !== 'lockfile') {
+      console.error(c.red(`Invalid --source value: "${values.source}". Use "manifest" or "lockfile".`));
+      process.exit(1);
+    }
+    filter.source = src;
+  }
+
+  if (values.json && values.csv) {
+    console.error(c.red('Error: --json and --csv are mutually exclusive.'));
+    process.exit(1);
+  }
+
+  function printWarnings(result) {
+    if (!result || !result.warnings || result.warnings.length === 0) return;
+    if (values.json || values.csv) return; // machine output stays clean
+    for (const w of result.warnings) {
+      console.warn(c.yellow(`⚠ ${w}`));
+    }
+  }
+
   if (subCommand === 'ui') {
     const localUiPath = path.resolve(__dirname, '../../ui/bin/cli.js');
     if (fs.existsSync(localUiPath)) {
@@ -249,7 +275,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
 
     const { baseRef, baseSha } = await resolveBaseRef(values.since, repoRoot);
 
-    const progress = createCliProgress({ json: values.json });
+    const progress = createCliProgress({ json: values.json || values.csv });
     try {
       // Use the incremental cache like every other command — CI runners
       // with a warm .git cache stay fast; cold runners do one full scan.
@@ -262,51 +288,53 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
       });
       progress.done();
 
-      let ciEvents = result.events;
-      if (baseSha) {
-        // Primary: exact commit-range membership (prefix-safe for short SHAs).
-        let rangeSet = null;
-        try {
-          rangeSet = await getCommitsInRange(baseSha, repoRoot, []);
-        } catch {
-          rangeSet = null;
-        }
-        if (rangeSet && rangeSet.size > 0) {
-          const inRange = (shortSha) => {
-            if (!shortSha) return false;
-            for (const full of rangeSet) {
-              if (full.startsWith(shortSha) || shortSha.startsWith(full.slice(0, 7))) return true;
-            }
-            return false;
-          };
-          const ranged = ciEvents.filter((e) => inRange(e.commit));
-          // Only adopt range filtering if it actually matched something;
-          // otherwise fall back to date filtering (e.g. shallow clones).
-          if (ranged.length > 0 || ciEvents.length === 0) {
-            ciEvents = ranged;
-          } else {
-            const baseDate = await getCommitDate(baseSha, repoRoot);
-            if (baseDate) ciEvents = ciEvents.filter((e) => e.date >= baseDate);
-          }
-        } else {
-          // Fallback: date-based (works even when range listing fails).
-          const baseDate = await getCommitDate(baseSha, repoRoot);
-          if (baseDate) {
-            ciEvents = ciEvents.filter((e) => e.date >= baseDate);
-          }
-        }
+      if (!baseSha) {
+        console.error(
+          c.red(`Error: could not resolve CI base "${baseRef}".`) +
+          c.dim(`\n  Pass an explicit ref, e.g. --since origin/main, and fetch full history (fetch-depth: 0).`)
+        );
+        process.exit(2);
       }
+
+      // Exact range membership on full SHAs. A null range means the range
+      // could not be listed (never treated as empty); an empty set is a
+      // genuine empty range and stays empty — no date fallback.
+      const rangeSet = await getCommitsInRange(baseSha, repoRoot, []);
+      if (rangeSet === null) {
+        console.error(
+          c.red(`Error: could not list commits in range ${baseSha.slice(0, 7)}..HEAD.`) +
+          c.dim(`\n  The base may be missing locally (shallow clone?) — fetch full history and retry.`)
+        );
+        process.exit(2);
+      }
+      const inRange = new Set(rangeSet);
+      let ciEvents = result.events.filter((e) => {
+        if (e.commitFull && inRange.has(e.commitFull)) return true;
+        // Back-compat for caches written before full SHAs were stored.
+        if (!e.commitFull && e.commit) {
+          for (const full of inRange) {
+            if (full.startsWith(e.commit)) return true;
+          }
+        }
+        return false;
+      });
 
       if (values.json) {
         console.log(
           renderJson({
             repository: result.repository,
+            branch: result.branch,
             packageManager: result.packageManager,
             command: 'ci',
-            events: ciEvents
+            events: ciEvents,
+            warnings: result.warnings,
+            truncated: result.truncated
           })
         );
+      } else if (values.csv) {
+        console.log(renderCsv(ciEvents));
       } else {
+        printWarnings(result);
         console.log(renderCiSummary(ciEvents, baseRef));
       }
 
@@ -354,7 +382,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
     process.exit(1);
   }
 
-  const progress = createCliProgress({ json: values.json });
+  const progress = createCliProgress({ json: values.json || values.csv });
   try {
     const result = await runDepBlame({
       noCache: values['no-cache'],
@@ -369,16 +397,27 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
       console.log(
         renderJson({
           repository: result.repository,
+          branch: result.branch,
           packageManager: result.packageManager,
           command: subCommand,
-          events: result.events
+          events: result.events,
+          warnings: result.warnings,
+          truncated: result.truncated,
+          headState: result.headState
         })
       );
       return;
     }
 
+    if (values.csv) {
+      console.log(renderCsv(result.events));
+      return;
+    }
+
+    printWarnings(result);
+
     if (subCommand === 'pkg' && targetPkg) {
-      console.log(renderArchaeologyView(targetPkg, result.events));
+      console.log(renderArchaeologyView(targetPkg, result.events, result.headState));
     } else if (subCommand === 'calendar') {
       console.log(renderCalendarView(result.events));
     } else if (subCommand === 'stats') {

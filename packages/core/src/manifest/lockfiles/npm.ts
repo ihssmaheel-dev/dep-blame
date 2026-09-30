@@ -1,35 +1,33 @@
-import type { DependencyEntry, DepType } from '../../types.js';
+import type { DependencyEntry, DepType, ParseResult } from '../../types.js';
 
 export interface NpmLockfileOptions {
   directOnly?: boolean;
 }
 
 /**
- * Parses package-lock.json content into a normalized Map (supporting v1, v2, and v3).
- *
- * @param content Raw JSON string of package-lock.json
- * @param options Options including directOnly filter
+ * Parses package-lock.json content (v1, v2, v3). Tri-state: corrupt JSON
+ * yields `ok: false` so callers retain the last-good snapshot.
  */
 export function parseNpmLockfile(
   content?: string | null,
   options: NpmLockfileOptions = {}
-): Map<string, DependencyEntry> {
+): ParseResult {
   const { directOnly = true } = options;
   const map = new Map<string, DependencyEntry>();
 
   if (!content || typeof content !== 'string') {
-    return map;
+    return { ok: true, entries: map };
   }
 
   let parsed: any;
   try {
     parsed = JSON.parse(content);
   } catch {
-    return map;
+    return { ok: false, entries: map, note: 'invalid JSON' };
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    return map;
+    return { ok: false, entries: map, note: 'not a JSON object' };
   }
 
   // Handle v2 & v3 (parsed.packages)
@@ -78,7 +76,7 @@ export function parseNpmLockfile(
       }
     }
 
-    return map;
+    return { ok: true, entries: map };
   }
 
   // Handle v1 (parsed.dependencies)
@@ -99,5 +97,5 @@ export function parseNpmLockfile(
     }
   }
 
-  return map;
+  return { ok: true, entries: map };
 }

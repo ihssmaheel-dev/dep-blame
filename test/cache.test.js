@@ -8,6 +8,73 @@ import { JsonStore } from '../packages/core/dist/cache/json-store.js';
 import { openCache, isSqliteAvailable } from '../packages/core/dist/cache/index.js';
 import { getRepoRoot } from '../packages/core/dist/git/repo.js';
 
+test('SqliteStore migrates a stale schema instead of serving it', async () => {
+  if (!(await isSqliteAvailable())) {
+    console.log('  (skip: node:sqlite unavailable, JSON fallback active)');
+    return;
+  }
+  const { createRequire } = await import('node:module');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dep-blame-migrate-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  try {
+    // Craft a version-1 database with a stale event, bypassing the store.
+    const req = createRequire(import.meta.url);
+    const { DatabaseSync } = req('node:sqlite');
+    const raw = new DatabaseSync(dbPath);
+    raw.exec('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)');
+    raw.exec(`CREATE TABLE events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, package TEXT NOT NULL, type TEXT NOT NULL,
+      from_version TEXT, to_version TEXT, date TEXT NOT NULL, commit_sha TEXT NOT NULL,
+      author TEXT NOT NULL, message TEXT NOT NULL, manifest TEXT NOT NULL, dep_type TEXT NOT NULL
+    )`);
+    raw.exec(`INSERT INTO meta (key, value) VALUES ('schema_version', '1')`);
+    raw.exec(`INSERT INTO events (package, type, to_version, date, commit_sha, author, message, manifest, dep_type)
+      VALUES ('stale', 'added', '0.0.0', '2020-01-01T00:00:00Z', 'abc1234', 'Old', 'stale', 'package.json', 'dependencies')`);
+    raw.close();
+
+    const store = await openCache({ repoRoot: tmpDir, cacheDir: tmpDir });
+    assert.equal(store.queryEvents().length, 0, 'stale v1 history must not be served');
+    assert.equal(store.getMeta('schema_version'), '2');
+    store.close();
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('SqliteStore transaction coalesces writes atomically', async () => {
+  if (!(await isSqliteAvailable())) {
+    console.log('  (skip: node:sqlite unavailable, JSON fallback active)');
+    return;
+  }
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dep-blame-tx-'));
+  try {
+    const store = new SqliteStore(path.join(tmpDir, 'test.db'));
+    const ev = (pkg) => ({
+      package: pkg,
+      type: 'added',
+      to: '1.0.0',
+      date: '2026-01-01T00:00:00Z',
+      commit: 'abc1234',
+      commitFull: 'abc1234def5678901234567890123456789abcd',
+      author: 'Dev',
+      message: 'add',
+      manifest: 'package.json',
+      depType: 'dependencies',
+      source: 'manifest'
+    });
+    store.transaction(() => {
+      store.insertEvents([ev('a'), ev('b')]);
+      store.setMeta('cached_head', 'abc1234');
+    });
+    assert.equal(store.queryEvents().length, 2);
+    assert.equal(store.queryEvents({ package: 'a' })[0].commitFull, 'abc1234def5678901234567890123456789abcd');
+    assert.equal(store.getMeta('cached_head'), 'abc1234');
+    store.close();
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('SqliteStore stores and queries events with metadata', async () => {
   if (!(await isSqliteAvailable())) {
     console.log('  (skip: node:sqlite unavailable, JSON fallback active)');

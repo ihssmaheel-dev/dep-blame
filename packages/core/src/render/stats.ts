@@ -1,4 +1,4 @@
-import { c } from './ansi.js';
+import { c, stripControl } from './ansi.js';
 import type { DependencyEvent } from '../types.js';
 
 interface PackageStat {
@@ -10,6 +10,8 @@ interface PackageStat {
 
 /**
  * Calculates and formats aggregate stats over dependency events.
+ * Declared (package.json) and resolved (lockfile) changes are counted
+ * separately so one dependency isn't tallied twice for a single intent.
  */
 export function renderStatsView(events: DependencyEvent[]): string {
   if (!events || events.length === 0) {
@@ -19,6 +21,8 @@ export function renderStatsView(events: DependencyEvent[]): string {
   let added = 0;
   let updated = 0;
   let removed = 0;
+  let declared = 0;
+  let resolved = 0;
 
   const packageCounts = new Map<string, PackageStat>();
   const authorCounts = new Map<string, number>();
@@ -28,7 +32,10 @@ export function renderStatsView(events: DependencyEvent[]): string {
     else if (ev.type === 'updated') updated++;
     else if (ev.type === 'removed') removed++;
 
-    const pkg = ev.package;
+    if (ev.source === 'lockfile') resolved++;
+    else declared++;
+
+    const pkg = stripControl(ev.package);
     if (!packageCounts.has(pkg)) {
       packageCounts.set(pkg, { added: 0, updated: 0, removed: 0, total: 0 });
     }
@@ -36,7 +43,7 @@ export function renderStatsView(events: DependencyEvent[]): string {
     pEntry[ev.type] = (pEntry[ev.type] || 0) + 1;
     pEntry.total++;
 
-    const author = ev.author || 'Unknown';
+    const author = stripControl(ev.author) || 'Unknown';
     authorCounts.set(author, (authorCounts.get(author) || 0) + 1);
   }
 
@@ -58,6 +65,8 @@ export function renderStatsView(events: DependencyEvent[]): string {
     `Timeframe:             ${c.cyan(firstDate)} to ${c.cyan(lastDate)}`,
     `Total Events:          ${c.bold(events.length)}`,
     `Distinct Packages:     ${c.bold(packageCounts.size)}`,
+    `Declared Changes:      ${c.bold(declared)} (package.json)`,
+    `Resolved Changes:      ${c.bold(resolved)} (lockfiles)`,
     '',
     c.bold('Event Breakdown:'),
     `  ${c.green('+ Added:')}            ${c.bold(added)}`,

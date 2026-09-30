@@ -2,61 +2,81 @@ import type {
   CommitInfo,
   DependencyEntry,
   DependencyEvent,
-  DepType
+  DepType,
+  EventSource
 } from '../types.js';
+
+export interface DiffOptions {
+  /** Defaults to 'manifest'. Lockfile diffs must pass 'lockfile'. */
+  source?: EventSource;
+  /** Originating lockfile when a lockfile resolves deps for another manifest. */
+  lockfile?: string;
+}
 
 /**
  * Diffs two snapshot maps and produces normalized DependencyEvents.
  *
- * @param prevSnapshot Previous dependencies map
- * @param currSnapshot Current dependencies map
- * @param commitInfo Commit metadata
- * @param manifest Path to manifest file
- * @returns Array of DependencyEvent
+ * A depType-only move (same version, different section) is an `updated`
+ * event carrying `depTypeFrom` so category changes are explicit.
  */
 export function diffSnapshots(
   prevSnapshot: Map<string, DependencyEntry> | undefined,
   currSnapshot: Map<string, DependencyEntry> | undefined,
   commitInfo: CommitInfo,
-  manifest: string
+  manifest: string,
+  options: DiffOptions = {}
 ): DependencyEvent[] {
   const events: DependencyEvent[] = [];
-  const shortSha = commitInfo.commit.length > 7 ? commitInfo.commit.slice(0, 7) : commitInfo.commit;
+  const source: EventSource = options.source || 'manifest';
+  const full = commitInfo.commit;
+  const shortSha = full.length > 7 ? full.slice(0, 7) : full;
 
   const prev = prevSnapshot || new Map<string, DependencyEntry>();
   const curr = currSnapshot || new Map<string, DependencyEntry>();
 
+  const base = (extra: Partial<DependencyEvent>): DependencyEvent =>
+    ({
+      package: '',
+      type: 'added',
+      date: commitInfo.date,
+      commit: shortSha,
+      commitFull: full,
+      author: commitInfo.author,
+      message: commitInfo.message,
+      manifest,
+      depType: 'dependencies' as DepType,
+      source,
+      isDirect: true,
+      ...(options.lockfile ? { lockfile: options.lockfile } : {}),
+      ...extra
+    }) as DependencyEvent;
+
   // Find added and updated
   for (const [name, current] of curr.entries()) {
     if (!prev.has(name)) {
-      events.push({
-        package: name,
-        type: 'added',
-        to: current.version,
-        date: commitInfo.date,
-        commit: shortSha,
-        author: commitInfo.author,
-        message: commitInfo.message,
-        manifest,
-        depType: current.depType,
-        isDirect: current.isDirect ?? true
-      });
+      events.push(
+        base({
+          package: name,
+          type: 'added',
+          to: current.version,
+          depType: current.depType,
+          isDirect: current.isDirect ?? true
+        })
+      );
     } else {
       const previous = prev.get(name)!;
       if (previous.version !== current.version || previous.depType !== current.depType) {
-        events.push({
-          package: name,
-          type: 'updated',
-          from: previous.version,
-          to: current.version,
-          date: commitInfo.date,
-          commit: shortSha,
-          author: commitInfo.author,
-          message: commitInfo.message,
-          manifest,
-          depType: current.depType,
-          isDirect: current.isDirect ?? true
-        });
+        events.push(
+          base({
+            package: name,
+            type: 'updated',
+            from: previous.version,
+            to: current.version,
+            depType: current.depType,
+            ...(previous.depType !== current.depType ? { depTypeFrom: previous.depType } : {}),
+            isDirect: current.isDirect ?? true
+          })
+        );
       }
     }
   }
@@ -64,18 +84,15 @@ export function diffSnapshots(
   // Find removed
   for (const [name, previous] of prev.entries()) {
     if (!curr.has(name)) {
-      events.push({
-        package: name,
-        type: 'removed',
-        from: previous.version,
-        date: commitInfo.date,
-        commit: shortSha,
-        author: commitInfo.author,
-        message: commitInfo.message,
-        manifest,
-        depType: previous.depType,
-        isDirect: previous.isDirect ?? true
-      });
+      events.push(
+        base({
+          package: name,
+          type: 'removed',
+          from: previous.version,
+          depType: previous.depType,
+          isDirect: previous.isDirect ?? true
+        })
+      );
     }
   }
 
@@ -83,19 +100,24 @@ export function diffSnapshots(
 }
 
 /**
- * Generates low-fidelity lockfile updated event for pnpm/yarn in v0.1 compatibility.
+ * Generates low-fidelity lockfile updated event when the optional parser
+ * is unavailable. Never used for lockfile *deletion* — lost resolution
+ * info is a warning, not a removal.
  */
 export function createLockfileLowFiEvent(commitInfo: CommitInfo, manifest: string): DependencyEvent {
-  const shortSha = commitInfo.commit.length > 7 ? commitInfo.commit.slice(0, 7) : commitInfo.commit;
+  const full = commitInfo.commit;
+  const shortSha = full.length > 7 ? full.slice(0, 7) : full;
   return {
     package: '(lockfile)',
     type: 'updated',
     date: commitInfo.date,
     commit: shortSha,
+    commitFull: full,
     author: commitInfo.author,
     message: commitInfo.message || 'resolved versions changed',
     manifest,
     depType: 'dependencies' as DepType,
+    source: 'lockfile' as EventSource,
     isDirect: false
   };
 }

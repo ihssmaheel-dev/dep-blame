@@ -1,4 +1,4 @@
-import type { DependencyEntry } from '../../types.js';
+import type { DependencyEntry, ParseResult } from '../../types.js';
 
 let yamlMissingWarned = false;
 
@@ -29,15 +29,23 @@ function looksLikeBerry(content: string): boolean {
 }
 
 /**
- * Parses yarn.lock into a normalized Map (Berry v2+ and v1 Classic).
+ * Parses yarn.lock (Berry v2+ and v1 Classic) into resolved entries.
+ *
+ * Honesty rules: a lockfile records the whole resolved tree, so entries
+ * are `isDirect: false` — only a `package.json` can declare directness.
+ * Consumers filtering `--direct-only` therefore skip yarn entries; see the
+ * README. When one name resolves to several versions, the first is kept
+ * and the rest are reported via `note` so callers can warn.
+ *
  * Returns null when Berry is detected but the YAML parser is unavailable.
  */
 export async function parseYarnLockfile(
   content?: string | null
-): Promise<Map<string, DependencyEntry> | null> {
+): Promise<ParseResult | null> {
   const map = new Map<string, DependencyEntry>();
+  const multiVersion = new Set<string>();
   if (!content || typeof content !== 'string') {
-    return map;
+    return { ok: true, entries: map };
   }
 
   // Berry (v2+) is real YAML with __metadata — parse structurally.
@@ -53,17 +61,26 @@ export async function parseYarnLockfile(
             const nameMatch = descriptor.match(/^"?((?:@[^/]+\/)?[^@\s,:]+)/);
             if (nameMatch) {
               const name = nameMatch[1];
-              if (!map.has(name) && name !== '__metadata') {
+              if (name === '__metadata') continue;
+              if (!map.has(name)) {
                 map.set(name, {
                   version: String(entry.version),
                   depType: 'dependencies',
-                  isDirect: true
+                  isDirect: false
                 });
+              } else if (map.get(name)!.version !== String(entry.version)) {
+                multiVersion.add(name);
               }
             }
           }
         }
-        return map;
+        return {
+          ok: true,
+          entries: map,
+          ...(multiVersion.size > 0
+            ? { note: `multiple resolved versions for: ${Array.from(multiVersion).sort().join(', ')} (showing first)` }
+            : {})
+        };
       }
       // Berry-looking but unparsable -> fall through to v1 parser (best effort).
     } catch {
@@ -88,13 +105,21 @@ export async function parseYarnLockfile(
           map.set(currentPackage, {
             version,
             depType: 'dependencies',
-            isDirect: true
+            isDirect: false
           });
+        } else if (map.get(currentPackage)!.version !== version) {
+          multiVersion.add(currentPackage);
         }
       }
       currentPackage = null;
     }
   }
 
-  return map;
+  return {
+    ok: true,
+    entries: map,
+    ...(multiVersion.size > 0
+      ? { note: `multiple resolved versions for: ${Array.from(multiVersion).sort().join(', ')} (showing first)` }
+      : {})
+  };
 }

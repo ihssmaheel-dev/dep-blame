@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePnpmLockfile } from '../packages/core/dist/manifest/lockfiles/pnpm.js';
+import { parsePnpmLockfile, parsePnpmLockfiles } from '../packages/core/dist/manifest/lockfiles/pnpm.js';
 import { parseYarnLockfile } from '../packages/core/dist/manifest/lockfiles/yarn.js';
-import { parseBunLockfile } from '../packages/core/dist/manifest/lockfiles/bun.js';
+import { parseBunLockfile, parseBunLockfiles } from '../packages/core/dist/manifest/lockfiles/bun.js';
+import { parsePackageJson } from '../packages/core/dist/manifest/package-json.js';
 import { createTestRepo } from './helpers/git-fixture.js';
 import { runDepBlame } from '../packages/core/dist/engine.js';
 import { renderEventTable } from '../packages/core/dist/render/table.js';
@@ -23,11 +24,40 @@ importers:
 `;
 
   const map = await parsePnpmLockfile(pnpmV6Content);
+  assert.ok(map);
   assert.equal(map.size, 2);
   assert.equal(map.get('react')?.version, '18.2.0');
   assert.equal(map.get('react')?.depType, 'dependencies');
   assert.equal(map.get('typescript')?.version, '5.0.4');
   assert.equal(map.get('typescript')?.depType, 'devDependencies');
+});
+
+test('manifest: parsePnpmLockfiles tracks every workspace importer', async () => {
+  const content = `
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      a:
+        specifier: ^1.0.0
+        version: 1.0.0
+  packages/app:
+    dependencies:
+      b:
+        specifier: ^2.0.0
+        version: 2.0.1
+`;
+  const res = await parsePnpmLockfiles(content);
+  assert.ok(res);
+  assert.equal(res.ok, true);
+  assert.ok(res.maps.get('package.json')?.has('a'));
+  assert.equal(res.maps.get('packages/app/package.json')?.get('b')?.version, '2.0.1');
+});
+
+test('manifest: corrupt package.json reports ok:false instead of empty', async () => {
+  const res = parsePackageJson('{ invalid json');
+  assert.equal(res.ok, false);
+  assert.equal(res.entries.size, 0);
 });
 
 test('manifest: parseYarnLockfile parses Yarn v1 and Berry formats', async () => {
@@ -44,10 +74,27 @@ test('manifest: parseYarnLockfile parses Yarn v1 and Berry formats', async () =>
   resolved "https://registry.yarnpkg.com/@types/node/-/node-20.1.0.tgz"
 `;
 
-  const map = await parseYarnLockfile(yarnV1Content);
+  const res = await parseYarnLockfile(yarnV1Content);
+  assert.equal(res.ok, true);
+  const map = res.entries;
   assert.equal(map.size, 2);
   assert.equal(map.get('react')?.version, '18.2.0');
   assert.equal(map.get('@types/node')?.version, '20.1.0');
+  // Lockfile entries are resolved, never declared-direct.
+  assert.equal(map.get('react')?.isDirect, false);
+});
+
+test('manifest: yarn multi-version names warn instead of silently winning', async () => {
+  const content = `
+# yarn lockfile v1
+"left-pad@^1.0.0":
+  version "1.0.0"
+"left-pad@^1.3.0":
+  version "1.3.0"
+`;
+  const res = await parseYarnLockfile(content);
+  assert.equal(res.ok, true);
+  assert.ok(res.note && res.note.includes('left-pad'));
 });
 
 test('manifest: parseBunLockfile parses JSONC format with comments', async () => {
@@ -71,6 +118,29 @@ test('manifest: parseBunLockfile parses JSONC format with comments', async () =>
   const map = parseBunLockfile(bunContent);
   assert.equal(map.size, 1);
   assert.equal(map.get('zod')?.version, '3.22.4');
+});
+
+test('manifest: parseBunLockfiles supports workspaces + array packages', async () => {
+  const content = JSON.stringify({
+    lockfileVersion: 1,
+    workspaces: {
+      '': { name: 'root', dependencies: { a: '^1.0.0' } },
+      'packages/app': { name: 'app', dependencies: { b: '^2.0.0' } }
+    },
+    packages: {
+      'a@1.0.5': ['a@1.0.5', 'npm:a', {}, 'sha'],
+      'b@2.1.0': ['b@2.1.0', 'npm:b', {}, 'sha']
+    }
+  });
+  const res = parseBunLockfiles(content);
+  assert.equal(res.ok, true);
+  assert.equal(res.maps.get('package.json')?.get('a')?.version, '1.0.5');
+  assert.equal(res.maps.get('packages/app/package.json')?.get('b')?.version, '2.1.0');
+});
+
+test('manifest: binary bun.lockb reports ok:false', async () => {
+  const res = parseBunLockfiles('{"lockfileVersion":\0binary');
+  assert.equal(res.ok, false);
 });
 
 test('manifest & monorepo: tracks multiple workspace manifests independently', async () => {
@@ -141,7 +211,7 @@ test('render: collapses multi-manifest bulk changes unless verbose is requested'
 
   const collapsedOutput = renderEventTable(events, { verbose: false, collapseThreshold: 5 });
   assert.ok(collapsedOutput.includes('collapsed'));
-  assert.ok(collapsedOutput.includes('packages updated across'));
+  assert.ok(collapsedOutput.includes('6 changes (6 updated) across'));
 
   const expandedOutput = renderEventTable(events, { verbose: true, collapseThreshold: 5 });
   assert.ok(!expandedOutput.includes('collapsed'));

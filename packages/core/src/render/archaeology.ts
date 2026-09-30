@@ -1,5 +1,5 @@
-import { c } from './ansi.js';
-import type { DependencyEvent } from '../types.js';
+import { c, stripControl } from './ansi.js';
+import type { DependencyEvent, HeadEntry } from '../types.js';
 
 function formatDate(isoString?: string): string {
   if (!isoString) return '';
@@ -24,31 +24,49 @@ function formatRelativeTime(isoString?: string): string {
 
 /**
  * Renders the package archaeology lifecycle view.
+ *
+ * When `headState` (HEAD-declared dependencies from the engine) is given,
+ * per-manifest status comes from HEAD reality — not from the last
+ * chronological event, which may live on an unmerged branch.
  */
-export function renderArchaeologyView(packageName: string, events: DependencyEvent[]): string {
+export function renderArchaeologyView(
+  packageName: string,
+  events: DependencyEvent[],
+  headState?: HeadEntry[]
+): string {
+  const safeName = stripControl(packageName);
   const pkgEvents = events.filter((e) => e.package === packageName);
 
   if (pkgEvents.length === 0) {
     return [
-      c.bold('Archaeology for ') + c.bold(c.cyan(packageName)),
-      c.dim(`No change events found for package "${packageName}".`)
+      c.bold('Archaeology for ') + c.bold(c.cyan(safeName)),
+      c.dim(`No change events found for package "${safeName}".`)
     ].join('\n\n');
   }
 
   const latestEvent = pkgEvents[pkgEvents.length - 1];
   let statusBanner = '';
 
-  if (latestEvent.type === 'removed') {
-    statusBanner = c.red('● Currently removed') + c.dim(` (last active in ${latestEvent.commit})`);
+  const headEntries = headState ? headState.filter((h) => h.package === packageName) : null;
+
+  if (headEntries && headEntries.length > 0) {
+    const parts = headEntries.map(
+      (h) => `${stripControl(h.version)} (${stripControl(h.depType)} in ${stripControl(h.manifest)})`
+    );
+    statusBanner = c.green('● Active at HEAD') + c.dim(` in ${headEntries.length} manifest(s): ${parts.join('; ')}`);
+  } else if (headEntries && latestEvent.type !== 'removed') {
+    statusBanner = c.red('● Currently removed at HEAD') + c.dim(` (last event in ${stripControl(latestEvent.commit)})`);
+  } else if (latestEvent.type === 'removed') {
+    statusBanner = c.red('● Currently removed') + c.dim(` (last active in ${stripControl(latestEvent.commit)})`);
   } else {
     statusBanner =
       c.green('● Active') +
-      c.bold(` ${latestEvent.to || ''}`) +
-      c.dim(` (${latestEvent.depType || 'dependencies'} in ${latestEvent.manifest})`);
+      c.bold(` ${stripControl(latestEvent.to || '')}`) +
+      c.dim(` (${stripControl(latestEvent.depType || 'dependencies')} in ${stripControl(latestEvent.manifest)})`);
   }
 
   const lines = [
-    c.bold('Archaeology for ') + c.bold(c.cyan(packageName)),
+    c.bold('Archaeology for ') + c.bold(c.cyan(safeName)),
     `Status: ${statusBanner}`,
     `Total modifications: ${c.bold(pkgEvents.length)}`,
     '',
@@ -67,22 +85,23 @@ export function renderArchaeologyView(packageName: string, events: DependencyEve
 
     if (ev.type === 'added') {
       typeStr = c.green('+ added  ');
-      changeStr = c.bold(ev.to || '');
+      changeStr = c.bold(stripControl(ev.to || ''));
     } else if (ev.type === 'updated') {
       typeStr = c.yellow('↑ updated');
-      changeStr = `${ev.from || '?'} -> ${c.bold(ev.to || '?')}`;
+      const move = ev.depTypeFrom && ev.depTypeFrom !== ev.depType ? c.dim(` [${ev.depTypeFrom} → ${ev.depType}]`) : '';
+      changeStr = `${stripControl(ev.from || '?')} -> ${c.bold(stripControl(ev.to || '?'))}${move}`;
     } else if (ev.type === 'removed') {
       typeStr = c.red('- removed');
-      changeStr = c.dim(`was ${ev.from || 'installed'}`);
+      changeStr = c.dim(`was ${stripControl(ev.from || 'installed')}`);
     }
 
     const nodeSymbol = ev.type === 'added' ? c.green('●') : ev.type === 'removed' ? c.red('●') : c.yellow('●');
     const timeLabel = rel ? `${date} (${rel})` : date;
 
     lines.push(
-      `${nodeSymbol}  ${c.dim(timeLabel.padEnd(20))}  ${typeStr}  ${changeStr.padEnd(24)}  ${c.cyan(ev.commit)}  ${c.dim(ev.author)}`
+      `${nodeSymbol}  ${c.dim(timeLabel.padEnd(20))}  ${typeStr}  ${changeStr.padEnd(24)}  ${c.cyan(stripControl(ev.commit))}  ${c.dim(stripControl(ev.author))}`
     );
-    lines.push(`   ${c.dim('↳ ' + (ev.message || 'no commit message'))}`);
+    lines.push(`   ${c.dim('↳ ' + stripControl(ev.message || 'no commit message'))}`);
 
     if (!isLast) {
       lines.push(c.dim('│'));

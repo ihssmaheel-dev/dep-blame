@@ -1,4 +1,4 @@
-import type { DependencyEntry, DepType } from '../types.js';
+import type { DependencyEntry, DepType, ParseResult } from '../types.js';
 
 export const DEP_TYPES: DepType[] = [
   'dependencies',
@@ -10,25 +10,25 @@ export const DEP_TYPES: DepType[] = [
 /**
  * Parses a package.json content string into a normalized Map of dependencies.
  *
- * @param content Raw JSON string of package.json
- * @returns Map of package name to version & type
+ * Tri-state: `ok: false` means present-but-corrupt content. Callers must
+ * retain the last-good snapshot and warn — never treat it as an empty
+ * manifest, which would invent removals followed by re-additions.
  */
-export function parsePackageJson(content?: string | null): Map<string, DependencyEntry> {
+export function parsePackageJson(content?: string | null): ParseResult {
   const map = new Map<string, DependencyEntry>();
   if (!content || typeof content !== 'string') {
-    return map;
+    return { ok: true, entries: map };
   }
 
   let parsed: any;
   try {
     parsed = JSON.parse(content);
   } catch {
-    // Return empty map on invalid/corrupted JSON
-    return map;
+    return { ok: false, entries: map, note: 'invalid JSON' };
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    return map;
+    return { ok: false, entries: map, note: 'not a JSON object' };
   }
 
   for (const depType of DEP_TYPES) {
@@ -46,5 +46,5 @@ export function parsePackageJson(content?: string | null): Map<string, Dependenc
     }
   }
 
-  return map;
+  return { ok: true, entries: map };
 }

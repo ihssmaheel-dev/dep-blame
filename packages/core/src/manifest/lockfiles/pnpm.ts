@@ -1,4 +1,4 @@
-import type { DependencyEntry, DepType } from '../../types.js';
+import type { DependencyEntry, DepType, ParseResult } from '../../types.js';
 
 let yamlMissingWarned = false;
 
@@ -26,15 +26,19 @@ export function isYamlMissingForPnpm(): boolean {
 }
 
 /**
- * Parses pnpm-lock.yaml into a normalized Map of dependencies.
+ * Parses pnpm-lock.yaml into per-manifest dependency maps, one entry per
+ * importer. Importer `.` (or `/`) maps to the root `package.json`; any
+ * other importer (e.g. `packages/app`) maps to `<dir>/package.json`.
+ *
  * Returns null when the YAML parser is unavailable (caller: low-fi event).
+ * `ok: false` means corrupt YAML — retain last-good snapshots and warn.
  */
-export async function parsePnpmLockfile(
+export async function parsePnpmLockfiles(
   content?: string | null
-): Promise<Map<string, DependencyEntry> | null> {
-  const map = new Map<string, DependencyEntry>();
+): Promise<{ ok: boolean; maps: Map<string, Map<string, DependencyEntry>>; note?: string } | null> {
+  const maps = new Map<string, Map<string, DependencyEntry>>();
   if (!content || typeof content !== 'string') {
-    return map;
+    return { ok: true, maps };
   }
 
   const yaml = await loadYamlParser();
@@ -46,14 +50,17 @@ export async function parsePnpmLockfile(
   try {
     parsed = yaml.parse(content);
   } catch {
-    return map;
+    return { ok: false, maps, note: 'invalid YAML' };
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    return map;
+    return { ok: false, maps, note: 'not a YAML mapping' };
   }
 
-  const extractSection = (section: any, depType: DepType) => {
+  const toManifest = (importer: string): string =>
+    importer === '.' || importer === '/' ? 'package.json' : `${importer.replace(/\/$/, '')}/package.json`;
+
+  const extractSection = (map: Map<string, DependencyEntry>, section: any, depType: DepType) => {
     if (!section || typeof section !== 'object') return;
     for (const [name, val] of Object.entries<any>(section)) {
       let version = '';
@@ -74,21 +81,45 @@ export async function parsePnpmLockfile(
     }
   };
 
-  // pnpm v6+ / v9 (importers)
+  const extractImporter = (manifest: string, root: any) => {
+    const map = new Map<string, DependencyEntry>();
+    extractSection(map, root.dependencies, 'dependencies');
+    extractSection(map, root.devDependencies, 'devDependencies');
+    extractSection(map, root.peerDependencies, 'peerDependencies');
+    extractSection(map, root.optionalDependencies, 'optionalDependencies');
+    maps.set(manifest, map);
+  };
+
+  // pnpm v6+ / v9 (importers) — every workspace importer tracked separately.
   if (parsed.importers && typeof parsed.importers === 'object') {
-    const root = parsed.importers['.'] || parsed.importers['/'] || {};
-    extractSection(root.dependencies, 'dependencies');
-    extractSection(root.devDependencies, 'devDependencies');
-    extractSection(root.peerDependencies, 'peerDependencies');
-    extractSection(root.optionalDependencies, 'optionalDependencies');
-    return map;
+    for (const [importer, root] of Object.entries<any>(parsed.importers)) {
+      if (!root || typeof root !== 'object') continue;
+      extractImporter(toManifest(importer), root);
+    }
+    // Ensure a root entry exists even when the lockfile omits it.
+    if (!maps.has('package.json')) maps.set('package.json', new Map());
+    return { ok: true, maps };
   }
 
   // pnpm v5 (root dependencies & devDependencies)
-  extractSection(parsed.dependencies, 'dependencies');
-  extractSection(parsed.devDependencies, 'devDependencies');
-  extractSection(parsed.peerDependencies, 'peerDependencies');
-  extractSection(parsed.optionalDependencies, 'optionalDependencies');
+  const rootMap = new Map<string, DependencyEntry>();
+  extractSection(rootMap, parsed.dependencies, 'dependencies');
+  extractSection(rootMap, parsed.devDependencies, 'devDependencies');
+  extractSection(rootMap, parsed.peerDependencies, 'peerDependencies');
+  extractSection(rootMap, parsed.optionalDependencies, 'optionalDependencies');
+  maps.set('package.json', rootMap);
 
-  return map;
+  return { ok: true, maps };
+}
+
+/**
+ * Root-only convenience wrapper (root `package.json` importer).
+ * Prefer `parsePnpmLockfiles` when workspace attribution matters.
+ */
+export async function parsePnpmLockfile(
+  content?: string | null
+): Promise<Map<string, DependencyEntry> | null> {
+  const res = await parsePnpmLockfiles(content);
+  if (res === null) return null;
+  return res.maps.get('package.json') || new Map<string, DependencyEntry>();
 }

@@ -2,6 +2,15 @@
   "name": "dep-blame",
   "version": "0.1.0",
   "description": "See exactly how your project's dependencies changed over time.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ihssmaheel-dev/dep-blame.git"
+  },
+  "homepage": "https://github.com/ihssmaheel-dev/dep-blame#readme",
+  "bugs": {
+    "url": "https://github.com/ihssmaheel-dev/dep-blame/issues"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -29,6 +38,7 @@
   "files": [
     "bin",
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ]
 }

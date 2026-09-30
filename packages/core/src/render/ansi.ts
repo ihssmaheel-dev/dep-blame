@@ -27,3 +27,18 @@ export const c = {
   bold: wrap(1, 22),
   strip: (s: string | number) => String(s).replace(/\x1b\[[0-9;]*m/g, '')
 };
+
+/**
+ * Strips terminal control characters (CSI/OSC/bells, ASCII controls)
+ * from untrusted git/manifest data so a hostile commit message or
+ * version string can't manipulate terminal output. Newlines and tabs
+ * are collapsed to spaces since table cells are single-line.
+ */
+export function stripControl(s: string | number | undefined | null): string {
+  if (s === undefined || s === null) return '';
+  return String(s)
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+    .replace(/[\r\n\t]+/g, ' ');
+}
