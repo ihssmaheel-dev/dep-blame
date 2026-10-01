@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { createTestRepo } from './helpers/git-fixture.js';
 import { runDepBlame } from '../packages/core/dist/engine.js';
 import { getCommitsInRange } from '../packages/core/dist/git/repo.js';
+import { resolveBlobOids } from '../packages/core/dist/git/batch.js';
 import { JsonStore } from '../packages/core/dist/cache/json-store.js';
 import { resolveWorkspaceManifests } from '../packages/core/dist/manifest/detect.js';
 import { renderCsv } from '../packages/core/dist/render/csv.js';
@@ -337,4 +338,52 @@ test('audit: CSV export quotes correctly', async () => {
   ]);
   assert.ok(csv.includes('"weird""name"'));
   assert.ok(csv.includes('"say ""hi"", bye"'));
+});
+
+test('audit: unchanged blobs are skipped by OID without losing history', async () => {
+  const repo = await createTestRepo();
+  try {
+    await repo.commitFile(
+      'packages/a/package.json',
+      { name: 'a', dependencies: { alpha: '1.0.0' } },
+      'add alpha in a'
+    );
+    await repo.commitFile(
+      'packages/b/package.json',
+      { name: 'b', dependencies: { beta: '1.0.0' } },
+      'add beta in b'
+    );
+    // Touch only a twice: b's blob OID never changes afterwards.
+    await repo.commitFile(
+      'packages/a/package.json',
+      { name: 'a', dependencies: { alpha: '2.0.0' } },
+      'bump alpha'
+    );
+    await repo.commitFile(
+      'packages/a/package.json',
+      { name: 'a', dependencies: { alpha: '3.0.0' } },
+      'bump alpha again'
+    );
+
+    const res = await runDepBlame({ cwd: repo.repoDir, silent: true });
+    const beta = res.events.filter((e) => e.package === 'beta');
+    assert.equal(beta.length, 1, 'untouched manifest must yield exactly one event');
+    assert.equal(beta[0].type, 'added');
+    const alpha = res.events.filter((e) => e.package === 'alpha');
+    assert.equal(alpha.length, 3);
+
+    // OID identity: b's blob resolves identically at every later commit.
+    const { stdout: log } = await repo.runGit(['log', '--format=%H', '--', 'packages/b/package.json']);
+    const shas = log.trim().split('\n').filter(Boolean);
+    assert.ok(shas.length >= 1);
+    const ids = await resolveBlobOids(
+      repo.repoDir,
+      shas.map((sha) => ({ commit: sha, path: 'packages/b/package.json' }))
+    );
+    const oids = shas.map((sha) => ids.get(`${sha}:packages/b/package.json`)?.oid).filter(Boolean);
+    assert.ok(oids.length >= 1);
+    assert.ok(oids.every((o) => o === oids[0]), 'identical content must resolve to one OID');
+  } finally {
+    repo.cleanup();
+  }
 });

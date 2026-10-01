@@ -1,6 +1,15 @@
 import { spawn } from 'node:child_process';
 import type { BlobRequest } from '../types.js';
 
+export interface BlobId {
+  /** Resolved object ID (empty when missing). */
+  oid: string;
+  /** Byte size (0 when missing). */
+  size: number;
+  /** True when the object does not exist at the requested revision. */
+  missing: boolean;
+}
+
 interface HeaderInfo {
   objectId: string;
   type: string;
@@ -12,6 +21,10 @@ interface HeaderInfo {
 /**
  * Batch-reads manifest blobs from git using `git cat-file --batch`.
  * Features chunked stream parsing, backpressure handling, and timeout safeguards.
+ *
+ * For large histories prefer `resolveBlobOids` + fetching only changed
+ * blobs: re-reading an unchanged multi-megabyte lockfile in every commit
+ * is the dominant scan cost.
  *
  * @param repoRoot Absolute path to git repository root
  * @param requests Array of commit and path pairs
@@ -201,5 +214,136 @@ function batchReadBlobsChunk(
     }
 
     writeMore();
+  });
+}
+
+/**
+ * Cheap sizing pass over `git cat-file --batch-check`: resolves every
+ * request to its object ID and byte size without transferring contents.
+ * Lets callers skip re-fetching blobs they already hold and pack
+ * windows by bytes. Missing objects map to `{ oid: '', size: 0,
+ * missing: true }`. Never throws for missing objects; rejects only when
+ * git itself fails or a request is malformed.
+ */
+export function resolveBlobOids(
+  repoRoot: string,
+  requests: BlobRequest[]
+): Promise<Map<string, BlobId>> {
+  const results = new Map<string, BlobId>();
+  if (!requests || requests.length === 0) {
+    return Promise.resolve(results);
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)'], {
+      cwd: repoRoot,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let buffer = '';
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        child.kill();
+        reject(new Error('git cat-file --batch-check timed out after 30 seconds.'));
+      }
+    }, 30000);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      settled = true;
+    };
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      let nl: number;
+      while ((nl = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        const req = requests[results.size];
+        if (!req) continue;
+        const key = `${req.commit}:${req.path}`;
+        if (line.endsWith('missing') || line.length === 0) {
+          results.set(key, { oid: '', size: 0, missing: true });
+          continue;
+        }
+        const parts = line.split(' ');
+        const size = parseInt(parts[2], 10);
+        results.set(key, {
+          oid: parts[0] || '',
+          size: Number.isInteger(size) && size >= 0 ? size : 0,
+          missing: false
+        });
+      }
+    });
+
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      if (settled) return;
+      cleanup();
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      cleanup();
+      if (code !== 0) {
+        reject(new Error(`git cat-file --batch-check exited with code ${code}: ${stderr}`));
+        return;
+      }
+      // Trailing line without newline (should not happen, but be safe).
+      if (buffer.trim().length > 0 && results.size < requests.length) {
+        const req = requests[results.size];
+        const key = `${req.commit}:${req.path}`;
+        const line = buffer.trim();
+        if (line.endsWith('missing')) {
+          results.set(key, { oid: '', size: 0, missing: true });
+        } else {
+          const parts = line.split(' ');
+          const size = parseInt(parts[2], 10);
+          results.set(key, {
+            oid: parts[0] || '',
+            size: Number.isInteger(size) && size >= 0 ? size : 0,
+            missing: false
+          });
+        }
+      }
+      // Any unanswered requests (short reads) count as missing.
+      for (const req of requests) {
+        const key = `${req.commit}:${req.path}`;
+        if (!results.has(key)) results.set(key, { oid: '', size: 0, missing: true });
+      }
+      resolve(results);
+    });
+
+    child.stdin.on('error', () => {});
+
+    for (const req of requests) {
+      if (!req || !/^[0-9a-f]{4,40}$/i.test(req.commit) || !req.path || req.path.includes('\n')) {
+        cleanup();
+        child.kill();
+        reject(new Error(`Invalid blob request: ${JSON.stringify(req)}`));
+        return;
+      }
+    }
+
+    try {
+      for (const req of requests) {
+        child.stdin.write(`${req.commit}:${req.path}\n`);
+      }
+      child.stdin.end();
+    } catch (err: any) {
+      if (!settled) {
+        cleanup();
+        child.kill();
+        reject(err);
+      }
+    }
   });
 }

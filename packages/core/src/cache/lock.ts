@@ -15,8 +15,11 @@ const POLL_MS = 100;
  * atomic on POSIX and Windows). Prevents two concurrent scans from
  * interleaving events in the same cache. Stale locks (crashed
  * processes) are reclaimed after {@link STALE_MS}.
+ *
+ * `onWait` fires (at most every 2s) while blocked so callers can show
+ * exactly what the scan is waiting on instead of hanging silently.
  */
-export async function acquireScanLock(baseDir: string): Promise<ScanLock> {
+export async function acquireScanLock(baseDir: string, onWait?: () => void): Promise<ScanLock> {
   try {
     fs.mkdirSync(baseDir, { recursive: true });
   } catch {
@@ -26,6 +29,19 @@ export async function acquireScanLock(baseDir: string): Promise<ScanLock> {
 
   const lockPath = path.join(baseDir, LOCK_DIR);
   const deadline = Date.now() + WAIT_MS;
+  let waitedNotifiedAt = 0;
+
+  const notifyWait = () => {
+    const now = Date.now();
+    if (onWait && now - waitedNotifiedAt > 2000) {
+      waitedNotifiedAt = now;
+      try {
+        onWait();
+      } catch {
+        // Progress callbacks must never break locking.
+      }
+    }
+  };
 
   for (;;) {
     try {
@@ -69,6 +85,7 @@ export async function acquireScanLock(baseDir: string): Promise<ScanLock> {
         }
       }
       await new Promise((r) => setTimeout(r, POLL_MS));
+      notifyWait();
     }
   }
 }

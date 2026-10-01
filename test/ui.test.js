@@ -85,13 +85,12 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     assert.ok(htmlBody.includes('dep-blame'));
     assert.ok(htmlBody.includes('drawer-overlay'));
 
-    // Proper datatable: rich per-column filters (panels + inputs/selects).
-    for (const panel of ['date', 'package', 'change', 'author']) {
+    // Proper datatable: every column header carries a filter icon.
+    for (const panel of ['date', 'action', 'package', 'change', 'type', 'manifest', 'author', 'commit']) {
       assert.ok(htmlBody.includes(`data-panel="${panel}"`), `missing column filter panel: ${panel}`);
     }
-    for (const col of ['action', 'type', 'manifest', 'commit']) {
-      assert.ok(htmlBody.includes(`data-col="${col}"`), `missing column filter: ${col}`);
-    }
+    assert.ok(htmlBody.includes('col-filter-icon'), 'missing header filter icons');
+    assert.ok(!htmlBody.includes('class="col-filters"'), 'filter bar must live in header icons, not a second row');
     assert.ok(htmlBody.includes('id="filter-panel"'), 'missing shared filter panel container');
 
     // Proper pagination: first/numbered/last + page-size selector.

@@ -7,7 +7,7 @@ import {
   isAncestor
 } from './git/repo.js';
 import { getManifestCommits } from './git/log.js';
-import { batchReadBlobs } from './git/batch.js';
+import { batchReadBlobs, resolveBlobOids, type BlobId } from './git/batch.js';
 import { detectPackageManager, discoverHistoricManifests, mergeManifestPaths } from './manifest/detect.js';
 import { parsePackageJson } from './manifest/package-json.js';
 import { parseNpmLockfile } from './manifest/lockfiles/npm.js';
@@ -143,10 +143,12 @@ async function parseLockfilePerManifest(
   return null;
 }
 
-/** Snapshot entry: parsed map plus content hash for skip-fast paths. */
+/** Snapshot entry: parsed map plus content hash and blob OID for skip-fast paths. */
 interface SnapEntry {
   map: Map<string, DependencyEntry>;
   hash: string;
+  /** Blob object ID the map was parsed from (absent for seeded baselines). */
+  oid?: string;
 }
 
 type StateMap = Map<string, SnapEntry>;
@@ -214,7 +216,14 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
   }
 
   const baseDir = await resolveCacheBaseDir(repoRoot, cacheDir);
-  const lock = await acquireScanLock(baseDir);
+  const lock = await acquireScanLock(baseDir, () =>
+    onProgress?.({
+      phase: 'initializing',
+      current: 0,
+      total: 100,
+      message: 'Waiting for another scan to finish…'
+    })
+  );
   try {
     return await runScanLocked({
       repoRoot,
@@ -604,8 +613,31 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
 
   let processed = 0;
   const newEvents: DependencyEvent[] = [];
+  let lastProgressAt = 0;
 
-  const processWindow = async (window: CommitInfo[]): Promise<void> => {
+  // Throttled heartbeat: at most one update per 150ms, always on window
+  // edges, so long fetches never look stalled and huge histories never
+  // flood the SSE stream / terminal with per-commit spam.
+  const emitProgress = (windowIndex: number, windowTotal: number, message: string, detail?: string) => {
+    if (!onProgress) return;
+    const now = Date.now();
+    const isEdge = processed === 0 || processed >= commits.length;
+    if (!isEdge && now - lastProgressAt < 150) return;
+    lastProgressAt = now;
+    onProgress({
+      phase: 'analyzing',
+      current: processed,
+      total: commits.length,
+      message: windowTotal > 1 ? `Batch ${windowIndex + 1}/${windowTotal}: ${message}` : message,
+      detail: detail ?? (windowTotal > 1 ? `${processed}/${commits.length} commits` : undefined)
+    });
+  };
+
+  // Blob OID of a snapshot entry's source content (absent for seeded baselines).
+  const snapshotOid = (state: StateMap | undefined, key: string): string | undefined =>
+    state?.get(key)?.oid;
+
+  const processWindow = async (window: CommitInfo[], windowIndex: number, windowTotal: number): Promise<void> => {
     if (window.length === 0) return;
     const blobRequests: BlobRequest[] = [];
     for (const c of window) {
@@ -613,14 +645,71 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
         if (isManifestFile(f)) blobRequests.push({ commit: c.commit, path: f });
       }
     }
-    const blobs = await batchReadBlobs(repoRoot, blobRequests);
+
+    // Cheap identity pass first: only blobs whose object ID differs from
+    // the parent snapshot are transferred. Unchanged lockfiles (the
+    // common case) cost one short line each, not megabytes, per commit.
+    emitProgress(windowIndex, windowTotal, `Locating changed files (${blobRequests.length} lookups)…`);
+    let ids: Map<string, import('./git/batch.js').BlobId>;
+    try {
+      ids = await resolveBlobOids(repoRoot, blobRequests);
+    } catch {
+      // Sizing is an optimization; fall back to fetching everything.
+      ids = new Map();
+    }
+    const blobs = new Map<string, string | null>();
+    const oids = new Map<string, string>();
+    const toFetch: BlobRequest[] = [];
+    const byCommit = new Map(window.map((c) => [c.commit, c]));
+    let skippedBytes = 0;
+    for (const req of blobRequests) {
+      const key = `${req.commit}:${req.path}`;
+      const id = ids.get(key);
+      if (!id || id.missing || !id.oid) {
+        if (id?.missing) {
+          // Authoritative absence: no fetch needed, same as a null read.
+          blobs.set(key, null);
+          continue;
+        }
+        toFetch.push(req);
+        continue;
+      }
+      oids.set(key, id.oid);
+      const commit = byCommit.get(req.commit);
+      const firstParent = commit && commit.parents.length > 0 ? commit.parents[0] : null;
+      const base = (firstParent && states.get(firstParent)) || undefined;
+      // Multi-manifest lockfiles carry one lock-level snapshot record
+      // under the lockfile path itself; identical content implies an
+      // identical importer set, so the whole file skips without parsing.
+      const prevOid = snapshotOid(base, req.path);
+      if (prevOid !== undefined && prevOid === id.oid) {
+        skippedBytes += id.size;
+        continue;
+      }
+      toFetch.push(req);
+    }
+
+    if (toFetch.length > 0) {
+      const fetchBytes = toFetch.reduce((n, r) => n + (ids.get(`${r.commit}:${r.path}`)?.size || 0), 0);
+      const skipped = skippedBytes > 0 ? ` (skipped ${(skippedBytes / 1048576).toFixed(1)} MB unchanged)` : '';
+      emitProgress(
+        windowIndex,
+        windowTotal,
+        `Reading ${toFetch.length} file(s) (~${(fetchBytes / 1024).toFixed(0)} KB)${skipped}…`,
+        `${processed}/${commits.length} commits`
+      );
+      const fetched = await batchReadBlobs(repoRoot, toFetch);
+      for (const [k, v] of fetched) blobs.set(k, v);
+    } else {
+      emitProgress(windowIndex, windowTotal, 'All files unchanged, reusing snapshots…', `${processed}/${commits.length} commits`);
+    }
 
     for (const c of window) {
       // Awaited: each commit's snapshots must be stored before pruning
       // runs and before the next commit reads them. Fire-and-forget here
       // used to lose async continuations (e.g. yaml imports) past the
       // cache transaction and corrupt parent-state pruning.
-      await processCommit(c, blobs, states, newEvents, warnOnce);
+      await processCommit(c, blobs, states, newEvents, warnOnce, oids);
       processed++;
       // Prune parent states no longer needed by future commits.
       for (const p of c.parents) {
@@ -632,15 +721,7 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
           needCount.set(p, left);
         }
       }
-      if (onProgress) {
-        onProgress({
-          phase: 'analyzing',
-          current: processed,
-          total: commits.length,
-          message: `Analyzing commit ${processed} of ${commits.length}...`,
-          detail: `${c.commit.slice(0, 7)}: ${c.message.slice(0, 60)}`
-        });
-      }
+      emitProgress(windowIndex, windowTotal, `Analyzing commit ${processed} of ${commits.length}...`, `${c.commit.slice(0, 7)}: ${c.message.slice(0, 60)}`);
     }
 
     if (showProgress) {
@@ -648,19 +729,27 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
     }
   };
 
-  // Slice commits so no window exceeds blob or count budgets.
-  let window: CommitInfo[] = [];
-  let windowBlobs = 0;
-  for (const c of commits) {
-    window.push(c);
-    windowBlobs += c.files.length;
-    if (window.length >= WINDOW_MAX_COMMITS || windowBlobs >= WINDOW_TARGET_BLOBS) {
-      await processWindow(window);
-      window = [];
-      windowBlobs = 0;
+  // Slice commits so no window exceeds blob or count budgets. Slicing is
+  // synchronous metadata work, so window indexes are known up front and
+  // every fetch carries an exact "batch i/n" label — no silent stretches.
+  const windows: CommitInfo[][] = [];
+  {
+    let window: CommitInfo[] = [];
+    let windowBlobs = 0;
+    for (const c of commits) {
+      window.push(c);
+      windowBlobs += c.files.length;
+      if (window.length >= WINDOW_MAX_COMMITS || windowBlobs >= WINDOW_TARGET_BLOBS) {
+        windows.push(window);
+        window = [];
+        windowBlobs = 0;
+      }
     }
+    if (window.length > 0) windows.push(window);
   }
-  await processWindow(window);
+  for (let i = 0; i < windows.length; i++) {
+    await processWindow(windows[i], i, windows.length);
+  }
 
   // Single atomic unit: events + HEAD pointer + manifest list commit
   // together, so an interrupted scan retries cleanly with no duplicates.
@@ -786,7 +875,8 @@ async function processCommit(
   blobs: Map<string, string | null>,
   states: Map<string, StateMap>,
   newEvents: DependencyEvent[],
-  warnOnce: (key: string, message: string) => void
+  warnOnce: (key: string, message: string) => void,
+  oids: Map<string, string>
 ): Promise<void> {
   void processCommitSyncPlaceholder;
   const short = c.commit.length > 7 ? c.commit.slice(0, 7) : c.commit;
@@ -798,7 +888,11 @@ async function processCommit(
   // Declared manifests first: direct intent wins same-commit dedup.
   for (const f of c.files) {
     if (!f.endsWith('package.json')) continue;
-    const content = blobs.get(`${c.commit}:${f}`);
+    const key = `${c.commit}:${f}`;
+    // Absent from the fetch set means OID-identical to the parent
+    // snapshot: carry the shared state forward untouched.
+    if (!blobs.has(key)) continue;
+    const content = blobs.get(key);
     const prev = base.get(f);
     if (!content) {
       if (prev && prev.map.size > 0) {
@@ -827,13 +921,15 @@ async function processCommit(
       directPackagesInCommit.add(ev.package);
       newEvents.push(ev);
     }
-    next.set(f, { map: currMap, hash: h });
+    next.set(f, { map: currMap, hash: h, oid: oids.get(key) });
   }
 
   // Resolved lockfiles second.
   for (const f of c.files) {
     if (!isLockfilePath(f)) continue;
-    const content = blobs.get(`${c.commit}:${f}`);
+    const key = `${c.commit}:${f}`;
+    if (!blobs.has(key)) continue;
+    const content = blobs.get(key);
     if (!content) {
       // Resolution info lost — never removals of declared packages.
       const had = baseHasLockData(base, f);
@@ -844,7 +940,7 @@ async function processCommit(
       continue;
     }
     if (f.endsWith('pnpm-lock.yaml') || f.endsWith('bun.lock') || f.endsWith('bun.lockb')) {
-      await processMultiManifestLockfile(c, f, content, base, next, newEvents, directPackagesInCommit, warnOnce);
+      await processMultiManifestLockfile(c, f, content, base, next, newEvents, directPackagesInCommit, warnOnce, oids.get(key));
       continue;
     }
     const h = hashContent(content);
@@ -871,7 +967,7 @@ async function processCommit(
     for (const ev of lockEvents) {
       if (!directPackagesInCommit.has(ev.package)) newEvents.push(ev);
     }
-    next.set(f, { map: currMap, hash: h });
+    next.set(f, { map: currMap, hash: h, oid: oids.get(key) });
   }
 
   states.set(c.commit, next);
@@ -907,7 +1003,8 @@ async function processMultiManifestLockfile(
   next: StateMap,
   newEvents: DependencyEvent[],
   directPackagesInCommit: Set<string>,
-  warnOnce: (key: string, message: string) => void
+  warnOnce: (key: string, message: string) => void,
+  lockOid: string | undefined
 ): Promise<void> {
   const short = c.commit.length > 7 ? c.commit.slice(0, 7) : c.commit;
   const h = hashContent(content);
@@ -931,7 +1028,14 @@ async function processMultiManifestLockfile(
     seenManifests.add(manifest);
     const key = lockStateKey(lockPath, manifest);
     const prev = base.get(key);
-    if (prev && h === prev.hash) continue;
+    if (prev && h === prev.hash) {
+      // Carry the recorded blob OID forward so later commits keep
+      // skipping this importer without re-fetching.
+      if (prev.oid === undefined && lockOid !== undefined) {
+        next.set(key, { map: prev.map, hash: prev.hash, oid: lockOid });
+      }
+      continue;
+    }
     const prevMap = prev ? prev.map : new Map<string, DependencyEntry>();
     const lockEvents = diffSnapshots(prevMap, currMap, c, manifest, {
       source: 'lockfile' as EventSource,
@@ -940,8 +1044,11 @@ async function processMultiManifestLockfile(
     for (const ev of lockEvents) {
       if (!directPackagesInCommit.has(ev.package)) newEvents.push(ev);
     }
-    next.set(key, { map: currMap, hash: h });
+    next.set(key, { map: currMap, hash: h, oid: lockOid });
   }
+  // Lock-level identity record: identical content implies an identical
+  // importer set, so future commits skip the whole file without parsing.
+  next.set(lockPath, { map: new Map(), hash: h, oid: lockOid });
   // Importers that vanished from the lockfile: resolution lost, not removals.
   const prefix = `${lockPath}::`;
   for (const [key, entry] of base) {

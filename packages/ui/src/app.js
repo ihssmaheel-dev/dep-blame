@@ -522,6 +522,10 @@
       const btn = el.closest('.col-filter-btn');
       if (btn) btn.classList.toggle('active-filter', colFiltersActiveFor(col));
     });
+    // Header icon buttons carry the active state (with unread dot).
+    document.querySelectorAll('.col-filter-icon[data-panel]').forEach(btn => {
+      btn.classList.toggle('active-filter', colFiltersActiveFor(btn.dataset.panel));
+    });
   }
 
   function colFiltersActiveFor(col) {
@@ -530,6 +534,10 @@
     if (col === 'package') return f.packages.length > 0;
     if (col === 'change') return f.changes.length > 0;
     if (col === 'author') return f.authors.length > 0;
+    if (col === 'manifest') return f.manifest !== '';
+    if (col === 'commit') return f.commit !== '';
+    if (col === 'action') return f.action !== 'all';
+    if (col === 'type') return f.type !== 'all';
     return false;
   }
 
@@ -589,6 +597,8 @@
     }
     openPanelKind = kind;
     if (kind === 'date') renderDatePanel(panel);
+    else if (kind === 'manifest' || kind === 'commit') renderTextPanel(panel, kind);
+    else if (kind === 'action' || kind === 'type') renderOptionsPanel(panel, kind);
     else renderMultiPanel(panel, kind);
     panel.hidden = false;
     const rect = anchor.getBoundingClientRect();
@@ -652,6 +662,63 @@
       if (!from && !to) colFilters.datePreset = '';
       else if (!colFilters.datePreset) colFilters.datePreset = 'custom';
       currentPage = 1;
+      refreshColFilterState();
+      closeFilterPanel();
+      renderView();
+    });
+  }
+
+  // Single-value text panel (manifest substring, commit SHA/prefix).
+  function renderTextPanel(panel, kind) {
+    const titles = { manifest: 'Manifest path', commit: 'Commit SHA' };
+    const current = colFilters[kind] || '';
+    panel.innerHTML = `
+      <div class="filter-panel-head">${titles[kind]}</div>
+      <div style="padding: 0 12px 8px;"><input type="text" class="filter-panel-search" style="margin:0; width:100%;" value="${escapeHtml(current)}" placeholder="Type to filter…" aria-label="${titles[kind]} filter"></div>
+      <div class="filter-panel-foot">
+        <button class="pager-btn" data-panel-act="clear">Clear</button>
+        <button class="pager-btn apply" data-panel-act="apply">Apply</button>
+      </div>`;
+    const input = panel.querySelector('.filter-panel-search');
+    const apply = () => {
+      setColFilter(kind, input.value.trim().toLowerCase());
+      refreshColFilterState();
+      closeFilterPanel();
+      renderView();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') apply();
+      else e.stopPropagation();
+    });
+    panel.querySelector('[data-panel-act="clear"]').addEventListener('click', () => {
+      setColFilter(kind, '');
+      refreshColFilterState();
+      closeFilterPanel();
+      renderView();
+    });
+    panel.querySelector('[data-panel-act="apply"]').addEventListener('click', apply);
+  }
+
+  // Single-choice option panel (action, type). Applies immediately.
+  function renderOptionsPanel(panel, kind) {
+    const titles = { action: 'Action', type: 'Type' };
+    const options = kind === 'action'
+      ? [['all', 'All actions'], ['added', '+ Added'], ['updated', '↑ Updated'], ['removed', '− Removed']]
+      : [['all', 'All types'], ['direct', 'direct'], ['dep', 'dep'], ['resolved', 'resolved']];
+    const current = colFilters[kind];
+    panel.innerHTML = `
+      <div class="filter-panel-head">${titles[kind]}</div>
+      <div class="filter-panel-list" role="radiogroup" aria-label="${titles[kind]}">
+        ${options.map(([value, label]) => `
+          <button class="filter-check" data-value="${value}" role="radio" aria-checked="${current === value}">
+            <span class="box">${current === value ? '●' : ''}</span>
+            <span class="lbl">${label}</span>
+          </button>`).join('')}
+      </div>`;
+    panel.querySelector('.filter-panel-list').addEventListener('click', (e) => {
+      const row = e.target.closest('[data-value]');
+      if (!row) return;
+      setColFilter(kind, row.getAttribute('data-value') || 'all');
       refreshColFilterState();
       closeFilterPanel();
       renderView();
@@ -1538,7 +1605,7 @@
 
   // Per-column datatable filters (debounced text, immediate selects).
   // Date/package/change/author columns open rich floating panels instead.
-  document.querySelectorAll('.col-filter-btn[data-panel]').forEach(btn => {
+  document.querySelectorAll('.col-filter-icon[data-panel]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openFilterPanel(btn.dataset.panel, btn);
@@ -1546,7 +1613,7 @@
   });
   document.addEventListener('click', (e) => {
     const panel = document.getElementById('filter-panel');
-    if (panel && !panel.hidden && !panel.contains(e.target) && !e.target.closest('.col-filter-btn')) {
+    if (panel && !panel.hidden && !panel.contains(e.target) && !e.target.closest('.col-filter-icon')) {
       closeFilterPanel();
     }
   });

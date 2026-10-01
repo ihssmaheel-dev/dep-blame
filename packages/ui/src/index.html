@@ -31,24 +31,24 @@
     --radius-sm: 2px;
     --radius-md: 4px;
 
-    /* Dark Theme (Default) */
-    --color-bg: #090b10;
-    --color-bg-secondary: #0f131c;
-    --color-surface: #131722;
-    --color-surface-hover: #1a2030;
-    --color-surface-card: rgba(18, 23, 34, 0.85);
+    /* Dark Theme (Default) — warm black, never blue */
+    --color-bg: #121110;
+    --color-bg-secondary: #1a1815;
+    --color-surface: #1e1b17;
+    --color-surface-hover: #26221d;
+    --color-surface-card: rgba(30, 27, 23, 0.85);
     
-    --color-border: rgba(255, 255, 255, 0.08);
-    --color-border-hover: rgba(255, 255, 255, 0.18);
-    --color-border-focus: #6366f1;
+    --color-border: rgba(255, 244, 230, 0.09);
+    --color-border-hover: rgba(255, 244, 230, 0.20);
+    --color-border-focus: #d97706;
     
-    --color-text: #f8fafc;
-    --color-text-secondary: #94a3b8;
-    --color-text-muted: #64748b;
+    --color-text: #f5f0e8;
+    --color-text-secondary: #a8a094;
+    --color-text-muted: #6f6a5e;
     
     --color-primary: #888888;
-    --color-accent: #6366f1;
-    --color-accent-glow: rgba(99, 102, 241, 0.15);
+    --color-accent: #d97706;
+    --color-accent-glow: rgba(217, 119, 6, 0.16);
     
     --color-added: #10b981;
     --color-added-bg: rgba(16, 185, 129, 0.12);
@@ -62,12 +62,12 @@
     --color-removed-bg: rgba(244, 63, 94, 0.12);
     --color-removed-border: rgba(244, 63, 94, 0.28);
 
-    --pattern-line: rgba(255, 255, 255, 0.035);
-    --pattern-dot: rgba(255, 255, 255, 0.09);
-    --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(99, 102, 241, 0.13), transparent 75%);
+    --pattern-line: rgba(255, 244, 230, 0.035);
+    --pattern-dot: rgba(255, 244, 230, 0.09);
+    --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(217, 119, 6, 0.10), transparent 75%);
     --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.35);
     --shadow-drawer: -8px 0 32px rgba(0, 0, 0, 0.6);
-    --header-bg: rgba(9, 11, 16, 0.88);
+    --header-bg: rgba(18, 17, 16, 0.88);
   }
 
   [data-theme="light"] {
@@ -103,7 +103,7 @@
 
     --pattern-line: rgba(15, 23, 42, 0.04);
     --pattern-dot: rgba(15, 23, 42, 0.07);
-    --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(99, 102, 241, 0.04), transparent 75%);
+    --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(217, 119, 6, 0.05), transparent 75%);
     --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.05);
     --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.08);
     --header-bg: rgba(255, 255, 255, 0.9);
@@ -168,10 +168,10 @@
     justify-content: center;
     width: 28px;
     height: 28px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #d97706, #92400e);
     color: #ffffff;
     border-radius: var(--radius-sm);
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+    box-shadow: 0 2px 8px rgba(217, 119, 6, 0.35);
   }
 
   .brand-title {
@@ -259,6 +259,55 @@
   .th-sort:focus-visible {
     outline: 2px solid var(--color-border-focus);
     outline-offset: 2px;
+  }
+  /* Header layout: title/sort left, filter icon right */
+  .th-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+  }
+  .th-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .col-filter-icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    position: relative;
+  }
+  .col-filter-icon:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-hover);
+  }
+  .col-filter-icon:focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 1px;
+  }
+  .col-filter-icon.active-filter {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  .col-filter-icon.active-filter::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-accent);
   }
   .kpi-card:hover {
     border-color: var(--color-border-hover);
@@ -918,6 +967,14 @@
   }
   .pager-btn:disabled { opacity: 0.4; cursor: default; }
   .pager-btn:not(:disabled):hover { border-color: var(--color-border-hover); }
+  .pager-btn.pager-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+  }
   button.package-name,
   button.commit-tag {
     font: inherit;
@@ -1021,7 +1078,7 @@
   .package-cell-icon.ws {
     background: var(--color-accent-glow);
     color: var(--color-accent);
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(217, 119, 6, 0.3);
   }
 
   .package-name {
@@ -1075,7 +1132,7 @@
   .dep-type-tag.direct {
     background: var(--color-accent-glow);
     color: var(--color-accent);
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(217, 119, 6, 0.3);
   }
 
   .manifest-badge {
@@ -1141,21 +1198,21 @@
     position: absolute;
     inset: 0;
     border-radius: 50%;
-    border: 3px solid rgba(99, 102, 241, 0.16);
-    border-top-color: #6366f1;
-    border-right-color: #8b5cf6;
+    border: 3px solid rgba(217, 119, 6, 0.18);
+    border-top-color: #d97706;
+    border-right-color: #92400e;
     animation: scanSpin 0.9s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite;
   }
   .scan-spinner-glow {
     position: absolute;
     inset: -6px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.35) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(217, 119, 6, 0.35) 0%, transparent 70%);
     filter: blur(6px);
     animation: scanPulse 2s ease-in-out infinite;
   }
   .scan-spinner-icon {
-    color: #818cf8;
+    color: #e8a33d;
     z-index: 2;
   }
   @keyframes scanSpin {
@@ -1173,9 +1230,9 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #818cf8;
-    background: rgba(99, 102, 241, 0.1);
-    border: 1px solid rgba(99, 102, 241, 0.25);
+    color: #e8a33d;
+    background: rgba(217, 119, 6, 0.12);
+    border: 1px solid rgba(217, 119, 6, 0.3);
     padding: 3px 9px;
     border-radius: var(--radius-sm);
     margin-bottom: 10px;
@@ -1184,8 +1241,8 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #6366f1;
-    box-shadow: 0 0 6px #6366f1;
+    background: #d97706;
+    box-shadow: 0 0 6px #d97706;
     animation: scanBlink 1.4s ease-in-out infinite;
   }
   @keyframes scanBlink {
@@ -1213,10 +1270,10 @@
   .scan-bar-fill {
     height: 100%;
     width: 12%;
-    background: linear-gradient(90deg, #6366f1, #a855f7);
+    background: linear-gradient(90deg, #d97706, #a855f7);
     border-radius: 999px;
     transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 0 10px rgba(99, 102, 241, 0.45);
+    box-shadow: 0 0 10px rgba(217, 119, 6, 0.45);
   }
   .scan-stats-row {
     display: flex;
@@ -1277,7 +1334,7 @@
     background: var(--color-accent-glow);
   }
   .scan-step.active .dot {
-    background: #6366f1;
+    background: #d97706;
     opacity: 1;
     animation: pulse-dot 1.1s ease-in-out infinite;
   }
@@ -1553,7 +1610,7 @@
     background: var(--color-accent-glow);
     padding: 1px 5px;
     border-radius: 10px;
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(217, 119, 6, 0.25);
   }
 
   .day-events-stack {
@@ -1785,7 +1842,7 @@
   .drawer-deptype-badge.workspace {
     background: var(--color-accent-glow);
     color: var(--color-accent);
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(217, 119, 6, 0.3);
     font-weight: 600;
   }
 
@@ -1899,7 +1956,7 @@
   .drawer-action-btn.accent {
     background: var(--color-accent-glow);
     color: var(--color-accent);
-    border-color: rgba(99, 102, 241, 0.35);
+    border-color: rgba(217, 119, 6, 0.35);
   }
   .drawer-action-btn.accent:hover {
     border-color: var(--color-accent);
@@ -2237,38 +2294,14 @@
       </colgroup>
       <thead>
       <tr>
-        <th aria-sort="descending"><button class="th-sort" data-sort="date">Date <span id="sort-date-icon">↓</span></button></th>
-        <th>Action</th>
-        <th aria-sort="none"><button class="th-sort" data-sort="package">Dependency <span id="sort-pkg-icon"></span></button></th>
-        <th>Version Diff</th>
-        <th>Type</th>
-        <th>Manifest</th>
-        <th>Author</th>
-        <th>Commit</th>
-      </tr>
-      <tr class="col-filters" aria-label="Column filters">
-        <th><button class="col-filter-btn" data-panel="date" aria-haspopup="dialog" aria-label="Filter by date range"><span data-col-label="date">All dates</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></button></th>
-        <th>
-          <select class="col-filter" data-col="action" aria-label="Filter by action">
-            <option value="all">All</option>
-            <option value="added">Added</option>
-            <option value="updated">Updated</option>
-            <option value="removed">Removed</option>
-          </select>
-        </th>
-        <th><button class="col-filter-btn" data-panel="package" aria-haspopup="dialog" aria-label="Filter by dependencies"><span data-col-label="package">All packages</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></button></th>
-        <th><button class="col-filter-btn" data-panel="change" aria-haspopup="dialog" aria-label="Filter by version changes"><span data-col-label="change">All versions</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></button></th>
-        <th>
-          <select class="col-filter" data-col="type" aria-label="Filter by type">
-            <option value="all">All</option>
-            <option value="direct">direct</option>
-            <option value="dep">dep</option>
-            <option value="resolved">resolved</option>
-          </select>
-        </th>
-        <th><input type="text" class="col-filter" data-col="manifest" placeholder="Filter manifest…" aria-label="Filter by manifest" list="manifest-datalist"><datalist id="manifest-datalist"></datalist></th>
-        <th><button class="col-filter-btn" data-panel="author" aria-haspopup="dialog" aria-label="Filter by authors"><span data-col-label="author">All authors</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></button></th>
-        <th><input type="text" class="col-filter" data-col="commit" placeholder="Filter commit…" aria-label="Filter by commit"></th>
+        <th aria-sort="descending"><span class="th-head"><button class="th-sort" data-sort="date">Date <span id="sort-date-icon">↓</span></button><button class="col-filter-icon" data-panel="date" aria-label="Filter by date range" aria-haspopup="dialog" title="Filter dates"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th><span class="th-head"><span class="th-label">Action</span><button class="col-filter-icon" data-panel="action" aria-label="Filter by action" aria-haspopup="dialog" title="Filter actions"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th aria-sort="none"><span class="th-head"><button class="th-sort" data-sort="package">Dependency <span id="sort-pkg-icon"></span></button><button class="col-filter-icon" data-panel="package" aria-label="Filter by dependencies" aria-haspopup="dialog" title="Filter packages"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th><span class="th-head"><span class="th-label">Version Diff</span><button class="col-filter-icon" data-panel="change" aria-label="Filter by version changes" aria-haspopup="dialog" title="Filter versions"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th><span class="th-head"><span class="th-label">Type</span><button class="col-filter-icon" data-panel="type" aria-label="Filter by type" aria-haspopup="dialog" title="Filter types"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th><span class="th-head"><span class="th-label">Manifest</span><button class="col-filter-icon" data-panel="manifest" aria-label="Filter by manifest" aria-haspopup="dialog" title="Filter manifests"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th><span class="th-head"><span class="th-label">Author</span><button class="col-filter-icon" data-panel="author" aria-label="Filter by authors" aria-haspopup="dialog" title="Filter authors"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th><span class="th-head"><span class="th-label">Commit</span><button class="col-filter-icon" data-panel="commit" aria-label="Filter by commit" aria-haspopup="dialog" title="Filter commits"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
       </tr>
       </thead>
       <tbody id="events-tbody">
@@ -2319,11 +2352,11 @@
             <option value="100" selected>100</option>
           </select>
         </label>
-        <button class="pager-btn" id="pager-first" aria-label="First page">←←</button>
-        <button class="pager-btn" id="pager-prev">← Prev</button>
+        <button class="pager-btn pager-icon" id="pager-first" aria-label="First page" title="First page"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg></button>
+        <button class="pager-btn pager-icon" id="pager-prev" aria-label="Previous page" title="Previous page"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
         <span id="pager-numbers" role="navigation" aria-label="Page numbers"></span>
-        <button class="pager-btn" id="pager-next">Next →</button>
-        <button class="pager-btn" id="pager-last" aria-label="Last page">→→</button>
+        <button class="pager-btn pager-icon" id="pager-next" aria-label="Next page" title="Next page"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+        <button class="pager-btn pager-icon" id="pager-last" aria-label="Last page" title="Last page"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg></button>
       </span>
     </div>
     <div class="filter-panel" id="filter-panel" role="dialog" aria-modal="false" hidden></div>
