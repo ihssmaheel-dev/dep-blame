@@ -60,12 +60,17 @@ export function diffSnapshots(
           type: 'added',
           to: current.version,
           depType: current.depType,
-          isDirect: current.isDirect ?? true
+          isDirect: current.isDirect ?? true,
+          ...(current.resolutions ? { resolutions: [...current.resolutions] } : {}),
+          ...(current.ambiguous ? { ambiguous: true } : {})
         })
       );
     } else {
       const previous = prev.get(name)!;
-      if (previous.version !== current.version || previous.depType !== current.depType) {
+      const resolutionsChanged =
+        JSON.stringify(previous.resolutions || null) !== JSON.stringify(current.resolutions || null) ||
+        (previous.ambiguous || false) !== (current.ambiguous || false);
+      if (previous.version !== current.version || previous.depType !== current.depType || resolutionsChanged) {
         events.push(
           base({
             package: name,
@@ -74,7 +79,9 @@ export function diffSnapshots(
             to: current.version,
             depType: current.depType,
             ...(previous.depType !== current.depType ? { depTypeFrom: previous.depType } : {}),
-            isDirect: current.isDirect ?? true
+            isDirect: current.isDirect ?? true,
+            ...(current.resolutions ? { resolutions: [...current.resolutions] } : {}),
+            ...(current.ambiguous ? { ambiguous: true } : {})
           })
         );
       }

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { SqliteStore } from '../packages/core/dist/cache/sqlite-store.js';
+import { CACHE_SCHEMA_VERSION } from '../packages/core/dist/cache/sqlite-store.js';
 import { JsonStore } from '../packages/core/dist/cache/json-store.js';
 import { openCache, isSqliteAvailable } from '../packages/core/dist/cache/index.js';
 import { getRepoRoot } from '../packages/core/dist/git/repo.js';
@@ -34,10 +35,10 @@ test('SqliteStore migrates a stale schema instead of serving it', async () => {
 
     const store = await openCache({ repoRoot: tmpDir, cacheDir: tmpDir });
     assert.equal(store.queryEvents().length, 0, 'stale v1 history must not be served');
-    assert.equal(store.getMeta('schema_version'), '3');
+    assert.equal(store.getMeta('schema_version'), CACHE_SCHEMA_VERSION);
     store.close();
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows handle race: retry once */ try { await new Promise((r) => setTimeout(r, 100)); fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ } }
   }
 });
 

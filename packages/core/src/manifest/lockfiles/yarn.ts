@@ -43,7 +43,6 @@ export async function parseYarnLockfile(
   content?: string | null
 ): Promise<ParseResult | null> {
   const map = new Map<string, DependencyEntry>();
-  const multiVersion = new Set<string>();
   if (content === null || content === undefined) {
     return { ok: true, entries: map };
   }
@@ -57,31 +56,40 @@ export async function parseYarnLockfile(
     try {
       const parsed = yaml.parse(content);
       if (parsed && typeof parsed === 'object' && parsed.__metadata) {
+        const versionsByName = new Map<string, Set<string>>();
         for (const [descriptor, entry] of Object.entries<any>(parsed)) {
           if (descriptor === '__metadata') continue;
           if (!entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.version !== 'string' || !entry.version) return {ok: false, entries: new Map(), note: 'invalid Yarn Berry entry'};
           if (entry.version) {
-            const nameMatch = descriptor.match(/^"?((?:@[^/]+\/)?[^@\s,:]+)/);
-            if (nameMatch) {
-              const name = nameMatch[1];
-              if (name === '__metadata') continue;
-              if (!map.has(name)) {
-                map.set(name, {
-                  version: String(entry.version),
-                  depType: 'dependencies',
-                  isDirect: false
-                });
-              } else if (map.get(name)!.version !== String(entry.version)) {
-                multiVersion.add(name);
+            // Split comma-joined descriptors ("a@1, a@2:") safely: each
+            // comma part carries its own name.
+            const parts = String(descriptor).split(',');
+            for (const part of parts) {
+              const nameMatch = part.trim().match(/^"?((?:@[^/]+\/)?[^@\s,:]+)/);
+              if (nameMatch) {
+                const name = nameMatch[1].replace(/"$/g, '');
+                if (name === '__metadata' || !name) continue;
+                if (!versionsByName.has(name)) versionsByName.set(name, new Set());
+                versionsByName.get(name)!.add(String(entry.version));
               }
             }
           }
         }
+        for (const [name, versions] of versionsByName) {
+          const sorted = [...versions].sort();
+          map.set(name, {
+            version: sorted[0],
+            depType: 'dependencies',
+            isDirect: false,
+            ...(sorted.length > 1 ? { resolutions: sorted, ambiguous: true as const } : {})
+          });
+        }
+        const multiVersion = new Set([...versionsByName.entries()].filter(([, v]) => v.size > 1).map(([n]) => n));
         return {
           ok: true,
           entries: map,
           ...(multiVersion.size > 0
-            ? { note: `multiple resolved versions for: ${Array.from(multiVersion).sort().join(', ')} (showing first)` }
+            ? { note: `multiple resolved versions for: ${Array.from(multiVersion).sort().join(', ')} (all recorded)` }
             : {})
         };
       }
@@ -93,43 +101,54 @@ export async function parseYarnLockfile(
 
   // 2. Line-based parser for Yarn v1 Classic
   const lines = content.split('\n');
-  let currentPackage: string | null = null;
+  let currentPackages: string[] | null = null;
   let pendingVersion = false;
+  const versionsByName = new Map<string, Set<string>>();
 
   for (const line of lines) {
     if (!line.startsWith(' ') && !line.startsWith('#') && line.includes('@') && line.trim().endsWith(':')) {
       if (pendingVersion) return { ok: false, entries: new Map(), note: 'missing Yarn version' };
       const header = line.trim().slice(0, -1);
-      const match = header.match(/^"?((?:@[^/]+\/)?[^@\s,:]+)/);
-      currentPackage = match ? match[1] : null;
-      pendingVersion = !!currentPackage;
-    } else if (currentPackage && line.trim().startsWith('version')) {
+      // A header may list several descriptors: "a@^1, a@~1:" — split first.
+      const names = new Set<string>();
+      for (const part of header.split(',')) {
+        const match = part.trim().match(/^"?((?:@[^/]+\/)?[^@\s,:]+)/);
+        if (match && match[1]) names.add(match[1].replace(/"$/g, ''));
+      }
+      currentPackages = names.size > 0 ? [...names] : null;
+      pendingVersion = !!currentPackages;
+    } else if (currentPackages && line.trim().startsWith('version')) {
       const versionMatch = line.match(/version\s+"?([^"\s]+)"?/);
       if (versionMatch) {
         pendingVersion = false;
         const version = versionMatch[1];
-        if (!map.has(currentPackage)) {
-          map.set(currentPackage, {
-            version,
-            depType: 'dependencies',
-            isDirect: false
-          });
-        } else if (map.get(currentPackage)!.version !== version) {
-          multiVersion.add(currentPackage);
+        for (const pkg of currentPackages) {
+          if (!versionsByName.has(pkg)) versionsByName.set(pkg, new Set());
+          versionsByName.get(pkg)!.add(version);
         }
       }
-      currentPackage = null;
+      currentPackages = null;
     } else if (line.trim() && !line.startsWith(' ') && !line.startsWith('#')) {
       return { ok: false, entries: new Map(), note: 'invalid Yarn Classic record' };
     }
   }
   if (pendingVersion) return { ok: false, entries: new Map(), note: 'missing Yarn version' };
 
+  for (const [name, versions] of versionsByName) {
+    const sorted = [...versions].sort();
+    map.set(name, {
+      version: sorted[0],
+      depType: 'dependencies',
+      isDirect: false,
+      ...(sorted.length > 1 ? { resolutions: sorted, ambiguous: true as const } : {})
+    });
+  }
+  const multiVersion = new Set([...versionsByName.entries()].filter(([, v]) => v.size > 1).map(([n]) => n));
   return {
     ok: true,
     entries: map,
     ...(multiVersion.size > 0
-      ? { note: `multiple resolved versions for: ${Array.from(multiVersion).sort().join(', ')} (showing first)` }
+      ? { note: `multiple resolved versions for: ${Array.from(multiVersion).sort().join(', ')} (all recorded)` }
       : {})
   };
 }

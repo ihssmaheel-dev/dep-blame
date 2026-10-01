@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { DependencyEvent, FilterOptions, StoreInterface } from '../types.js';
+import type { DependencyEvent, FilterOptions, PagedQuery, PagedResult, MonthBucket, StoreInterface } from '../types.js';
 
-export const JSON_CACHE_SCHEMA_VERSION = '3';
+export const JSON_CACHE_SCHEMA_VERSION = '4';
 
 interface JsonCacheData {
   meta: Record<string, string>;
@@ -126,12 +126,12 @@ export class JsonStore implements StoreInterface {
    * one write at the end instead of O(windows) full-file rewrites.
    */
   transaction(fn: () => void): void {
-    // Snapshot metadata and event references once; rollback matches SQLite semantics.
-    const before = { meta: { ...this.data.meta }, events: this.data.events };
-    const length = before.events.length;
+    // Snapshot a copy so rollback is correct even if fn replaces the array
+    // or mutates nested event objects (previous code kept a live reference).
+    const beforeMeta = { ...this.data.meta };
+    const beforeEvents = this.data.events.map((e) => ({ ...e }));
     const rollback = () => {
-      before.events.length = length;
-      this.data = before;
+      this.data = { meta: beforeMeta, events: beforeEvents };
     };
     this.suppressSave++;
     try { fn(); }
@@ -169,6 +169,30 @@ export class JsonStore implements StoreInterface {
     }
 
     return list;
+  }
+
+  queryPaged(filter: FilterOptions = {}, page: PagedQuery = {}): PagedResult {
+    const all = this.queryEvents(filter);
+    const total = all.length;
+    const limit = Math.max(0, Math.min(1000, Math.floor(page.limit ?? 100)));
+    const offset = Math.max(0, Math.floor(page.offset ?? 0));
+    return { events: all.slice(offset, offset + limit), total, limit, offset };
+  }
+
+  monthAggregates(filter: FilterOptions = {}): MonthBucket[] {
+    const buckets = new Map<string, { total: number; added: number; updated: number; removed: number }>();
+    for (const ev of this.queryEvents(filter)) {
+      const d = new Date(ev.date);
+      if (isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      let b = buckets.get(key);
+      if (!b) { b = { total: 0, added: 0, updated: 0, removed: 0 }; buckets.set(key, b); }
+      b.total++;
+      if (ev.type === 'added') b.added++;
+      else if (ev.type === 'updated') b.updated++;
+      else if (ev.type === 'removed') b.removed++;
+    }
+    return [...buckets.entries()].map(([month, b]) => ({ month, ...b })).sort((a, b) => a.month < b.month ? -1 : 1);
   }
 
   clear(): void {

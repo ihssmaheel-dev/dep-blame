@@ -65,36 +65,55 @@ export function parseNpmLockfile(
     checkRootDeps(rootPkg.peerDependencies);
     checkRootDeps(rootPkg.optionalDependencies);
 
+    // Collect every installed version per package (including nested
+    // node_modules/a/node_modules/b) so multi-version installs are
+    // explicit instead of silently collapsed to the first hit.
+    const versionsByName = new Map<string, Set<string>>();
+    const metaByName = new Map<string, { depType: DepType; isDirect: boolean }>();
     for (const [pkgPath, entry] of Object.entries<any>(parsed.packages)) {
       if (pkgPath === '' || !entry || typeof entry !== 'object') {
         continue;
       }
-
-      // Check if it's a top-level node_modules package
-      const match = pkgPath.match(/^node_modules\/((?:@[^/]+\/)?[^/]+)$/);
-      if (match) {
-        if (entry.version !== undefined && typeof entry.version !== 'string') return { ok: false, entries: new Map(), note: 'invalid resolved version' };
-        const name = match[1];
+      if (entry.version !== undefined && typeof entry.version !== 'string') return { ok: false, entries: new Map(), note: 'invalid resolved version' };
+      // Last node_modules segment is the installed package name.
+      const segs = String(pkgPath).split('node_modules/');
+      const last = segs[segs.length - 1] || '';
+      const name = last.split('/').slice(0, last.startsWith('@') ? 2 : 1).join('/');
+      if (!name || name.includes('/node_modules') || last.includes('/')) {
+        // Skip non-package paths (e.g. node_modules/a/lib deep files are
+        // never keys here, but guard anyway). Valid names have ≤1 slash.
+        const parts = last.split('/');
+        if (parts.length > 2 || (parts.length === 2 && !last.startsWith('@'))) continue;
+      }
+      if (!name) continue;
+      const version = entry.version || '';
+      if (!versionsByName.has(name)) versionsByName.set(name, new Set());
+      if (version) versionsByName.get(name)!.add(version);
+      if (!metaByName.has(name)) {
         const isDirect = directNames.has(name);
-
-        if (directOnly && !isDirect) {
-          continue;
-        }
-
         let depType: DepType = 'dependencies';
         if (entry.dev) depType = 'devDependencies';
         else if (entry.peer) depType = 'peerDependencies';
         else if (entry.optional) depType = 'optionalDependencies';
-
-        map.set(name, {
-          version: entry.version || '',
-          depType,
-          isDirect
-        });
+        metaByName.set(name, { depType, isDirect });
       }
     }
 
-    return { ok: true, entries: map };
+    for (const [name, versions] of versionsByName) {
+      const meta = metaByName.get(name)!;
+      if (directOnly && !meta.isDirect) continue;
+      const sorted = [...versions].sort();
+      const ambiguous = sorted.length > 1;
+      map.set(name, {
+        version: sorted[0] || '',
+        depType: meta.depType,
+        isDirect: meta.isDirect,
+        ...(ambiguous ? { resolutions: sorted, ambiguous: true as const } : {})
+      });
+    }
+    const ambiguousNames = [...versionsByName.entries()].filter(([, v]) => v.size > 1).map(([n]) => n).sort();
+
+    return { ok: true, entries: map, ...(ambiguousNames.length > 0 ? { note: `multiple installed versions for: ${ambiguousNames.join(', ')}` } : {}) };
   }
 
   // Handle v1 (parsed.dependencies)

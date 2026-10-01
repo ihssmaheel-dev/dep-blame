@@ -320,18 +320,24 @@ export async function discoverHistoricManifests(
     );
     const found = new Set<string>();
     let truncated = false;
+    let skippedLong = 0;
     for (const f of stdout.split('\0')) {
       if (!f) continue;
       const base = f.split('/').pop() || '';
       if (!isManifestBasename(base)) continue;
-      // Skip absurd paths (submodule dumps, generated fixtures).
-      if (f.length > 256 || f.includes('node_modules/.')) continue;
+      // Skip absurd paths (submodule dumps, generated fixtures) but record
+      // it so callers surface incompleteness instead of silent partial history.
+      // Match any node_modules segment (not just `node_modules/.`).
+      const segments = f.split('/');
+      if (segments.includes('node_modules')) continue;
+      if (f.length > 256) { skippedLong++; continue; }
       found.add(f);
       if (found.size >= maxPaths) {
         truncated = true;
         break;
       }
     }
+    if (skippedLong > 0) truncated = true;
     return { paths: Array.from(found).sort(), truncated };
   } catch (err: any) {
     return { paths: [], truncated: false, error: err?.message || 'git log failed' };

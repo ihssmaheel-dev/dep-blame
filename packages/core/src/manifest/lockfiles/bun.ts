@@ -122,6 +122,7 @@ export function parseBunLockfiles(content?: string | null): BunParseResult {
     }
 
     const resolved = new Map<string, string>();
+    const versionsByName = new Map<string, Set<string>>();
     const multiVersion = new Set<string>();
     if (parsed.packages && typeof parsed.packages === 'object') {
       for (const [key, entry] of Object.entries<any>(parsed.packages)) {
@@ -133,6 +134,8 @@ export function parseBunLockfiles(content?: string | null): BunParseResult {
         if (entry && typeof entry === 'object' && !Array.isArray(entry) && typeof entry.version === 'string') {
           version = entry.version;
         }
+        if (!versionsByName.has(split.name)) versionsByName.set(split.name, new Set());
+        versionsByName.get(split.name)!.add(version);
         if (!resolved.has(split.name)) {
           resolved.set(split.name, version);
         } else if (resolved.get(split.name) !== version) {
@@ -144,10 +147,12 @@ export function parseBunLockfiles(content?: string | null): BunParseResult {
     for (const [manifest, direct] of directByManifest) {
       const map = new Map<string, DependencyEntry>();
       for (const [name, { spec, depType }] of direct) {
+        const all = versionsByName.has(name) ? [...versionsByName.get(name)!].sort() : null;
         map.set(name, {
           version: resolved.get(name) || spec,
           depType,
-          isDirect: true
+          isDirect: true,
+          ...(all && all.length > 1 ? { resolutions: all, ambiguous: true as const } : {})
         });
       }
       maps.set(manifest, map);
@@ -157,7 +162,7 @@ export function parseBunLockfiles(content?: string | null): BunParseResult {
       ok: true,
       maps,
       ...(multiVersion.size > 0
-        ? { note: `multiple resolved versions for: ${Array.from(multiVersion).sort().join(', ')} (showing first)` }
+        ? { note: `multiple resolved versions for: ${Array.from(multiVersion).sort().join(', ')} (all recorded)` }
         : {})
     };
   }

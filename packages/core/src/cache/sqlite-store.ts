@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import type { DependencyEvent, FilterOptions, StoreInterface } from '../types.js';
 
-export const CACHE_SCHEMA_VERSION = '3';
+export const CACHE_SCHEMA_VERSION = '4';
 
 function loadDatabaseSync(): any {
   try {
@@ -168,7 +168,9 @@ export class SqliteStore implements StoreInterface {
         dep_type_from TEXT,
         source TEXT NOT NULL DEFAULT 'manifest',
         lockfile TEXT,
-        is_direct INTEGER NOT NULL DEFAULT 1
+        is_direct INTEGER NOT NULL DEFAULT 1,
+        resolutions TEXT,
+        ambiguous INTEGER NOT NULL DEFAULT 0
       )
     `);
 
@@ -177,6 +179,9 @@ export class SqliteStore implements StoreInterface {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_manifest ON events(manifest)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_commit ON events(commit_sha)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_source ON events(source)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_type ON events(type)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_direct ON events(is_direct)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_events_ambiguous ON events(ambiguous)`);
 
     // Schema migrations for databases created before these columns existed.
     // Each is idempotent: failure means the column already exists.
@@ -185,7 +190,9 @@ export class SqliteStore implements StoreInterface {
       'ALTER TABLE events ADD COLUMN commit_full TEXT',
       "ALTER TABLE events ADD COLUMN source TEXT NOT NULL DEFAULT 'manifest'",
       'ALTER TABLE events ADD COLUMN dep_type_from TEXT',
-      'ALTER TABLE events ADD COLUMN lockfile TEXT'
+      'ALTER TABLE events ADD COLUMN lockfile TEXT',
+      'ALTER TABLE events ADD COLUMN resolutions TEXT',
+      'ALTER TABLE events ADD COLUMN ambiguous INTEGER NOT NULL DEFAULT 0'
     ];
     for (const sql of additions) {
       try {
@@ -230,8 +237,9 @@ export class SqliteStore implements StoreInterface {
           INSERT INTO events (
             package, type, from_version, to_version,
             date, commit_sha, commit_full, author, message, manifest,
-            dep_type, dep_type_from, source, lockfile, is_direct
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            dep_type, dep_type_from, source, lockfile, is_direct,
+            resolutions, ambiguous
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
       }
       const stmt = this.stmtInsertEvent;
@@ -252,7 +260,9 @@ export class SqliteStore implements StoreInterface {
           ev.depTypeFrom || null,
           ev.source || 'manifest',
           ev.lockfile || null,
-          ev.isDirect === false ? 0 : 1
+          ev.isDirect === false ? 0 : 1,
+          ev.resolutions ? JSON.stringify(ev.resolutions) : null,
+          ev.ambiguous ? 1 : 0
         );
       }
       this.commitTx();
@@ -353,8 +363,81 @@ export class SqliteStore implements StoreInterface {
       if (row.to_version) ev.to = row.to_version;
       if (row.dep_type_from) ev.depTypeFrom = row.dep_type_from;
       if (row.lockfile) ev.lockfile = row.lockfile;
+      if (row.resolutions) {
+        try {
+          const parsed = JSON.parse(row.resolutions);
+          if (Array.isArray(parsed)) ev.resolutions = parsed.filter((v) => typeof v === 'string');
+        } catch { /* ignore corrupt resolutions payload */ }
+      }
+      if (row.ambiguous === 1) ev.ambiguous = true;
       return ev;
     });
+  }
+
+  /**
+   * Bounded paged query: same filters as queryEvents plus stable
+   * id tie-breaker, total count, and limit/offset. Backs the v4
+   * bounded-query contract (CLI --limit/--page, UI /api/events/paged).
+   */
+  queryPaged(filter: FilterOptions = {}, page: { limit?: number; offset?: number } = {}): { events: DependencyEvent[]; total: number; limit: number; offset: number } {
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (filter.package) { conditions.push('package = ?'); params.push(filter.package); }
+    if (filter.type) { conditions.push('type = ?'); params.push(filter.type); }
+    if (filter.since) { conditions.push('datetime(date) >= datetime(?)'); params.push(filter.since); }
+    if (filter.manifest) { conditions.push('manifest = ?'); params.push(filter.manifest); }
+    if (filter.workspace) {
+      const w = String(filter.workspace).replace(/\\/g, '/');
+      const like = (s: string) => s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+      conditions.push("(manifest = ? OR manifest LIKE ? ESCAPE '\\' OR manifest LIKE ? ESCAPE '\\')");
+      params.push(w, `${like(w)}/%`, `%/${like(w)}/%`);
+    }
+    if (filter.source) { conditions.push('source = ?'); params.push(filter.source); }
+    if (filter.directOnly) { conditions.push('is_direct = 1'); }
+    const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+    const countStmt = this.db.prepare('SELECT COUNT(*) as n FROM events' + where);
+    const countRow = countStmt.get(...params) as { n: number };
+    const total = typeof countRow?.n === 'number' ? countRow.n : 0;
+    const limit = Math.max(0, Math.min(1000, Math.floor(page.limit ?? 100)));
+    const offset = Math.max(0, Math.floor(page.offset ?? 0));
+    const stmt = this.db.prepare('SELECT * FROM events' + where + ' ORDER BY id ASC LIMIT ? OFFSET ?');
+    const rows = stmt.all(...params, limit, offset) as any[];
+    const events = rows.map((row) => {
+      const ev: DependencyEvent = {
+        package: row.package, type: row.type, date: row.date, commit: row.commit_sha,
+        author: row.author, message: row.message, manifest: row.manifest,
+        depType: row.dep_type, source: row.source === 'lockfile' ? 'lockfile' : 'manifest',
+        isDirect: row.is_direct === 1,
+      };
+      if (row.commit_full) ev.commitFull = row.commit_full;
+      if (row.from_version) ev.from = row.from_version;
+      if (row.to_version) ev.to = row.to_version;
+      if (row.dep_type_from) ev.depTypeFrom = row.dep_type_from;
+      if (row.lockfile) ev.lockfile = row.lockfile;
+      if (row.ambiguous === 1) ev.ambiguous = true;
+      return ev;
+    });
+    return { events, total, limit, offset };
+  }
+
+  /** Month aggregates for bounded calendar rendering (no full transfer). */
+  monthAggregates(filter: FilterOptions = {}): { month: string; total: number; added: number; updated: number; removed: number }[] {
+    // Dates carry offsets; normalize in JS for correctness instead of
+    // trusting substr on raw ISO strings.
+    const all = this.queryEvents(filter);
+    const buckets = new Map<string, { total: number; added: number; updated: number; removed: number }>();
+    for (const ev of all) {
+      const d = new Date(ev.date);
+      if (isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      let b = buckets.get(key);
+      if (!b) { b = { total: 0, added: 0, updated: 0, removed: 0 }; buckets.set(key, b); }
+      b.total++;
+      if (ev.type === 'added') b.added++;
+      else if (ev.type === 'updated') b.updated++;
+      else if (ev.type === 'removed') b.removed++;
+    }
+    return [...buckets.entries()].map(([month, b]) => ({ month, ...b }));
   }
 
   /**
@@ -401,6 +484,13 @@ export class SqliteStore implements StoreInterface {
   }
 
   close(): void {
+    // Checkpoint WAL so the main DB file is complete even if -wal/-shm
+    // are never promoted alongside it (crash-safe promotion).
+    try {
+      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    } catch {
+      // Ignore checkpoint failures (e.g. read-only cache).
+    }
     try {
       this.db.close();
     } catch {

@@ -17,6 +17,10 @@ export interface DependencyEntry {
   version: string;
   depType: DepType;
   isDirect?: boolean;
+  /** All resolved versions when a lockfile holds several (multi-version). */
+  resolutions?: string[];
+  /** True when `version` is a representative, not the full resolution set. */
+  ambiguous?: boolean;
 }
 
 /**
@@ -52,6 +56,10 @@ export interface DependencyEvent {
   /** Originating lockfile when a lockfile resolves deps for another manifest. */
   lockfile?: string;
   isDirect?: boolean;
+  /** All known resolutions when several versions coexist (never silently collapsed). */
+  resolutions?: string[];
+  /** True when version info is partial/representative — warn, never authoritative. */
+  ambiguous?: boolean;
 }
 
 export interface CommitInfo {
@@ -79,6 +87,26 @@ export interface FilterOptions {
   source?: EventSource;
 }
 
+export interface PagedQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export interface PagedResult {
+  events: DependencyEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface MonthBucket {
+  month: string;
+  total: number;
+  added: number;
+  updated: number;
+  removed: number;
+}
+
 export type ProgressPhase =
   | 'initializing'
   | 'discovering'
@@ -103,6 +131,12 @@ export interface EngineOptions {
   filter?: FilterOptions;
   silent?: boolean;
   onProgress?: (progress: ProgressUpdate) => void;
+  /** Bounded query: max events to return (0-1000, default all). */
+  limit?: number;
+  /** Bounded query: offset into filtered events. */
+  offset?: number;
+  /** Include month aggregates + generation id without extra scan. */
+  includeAggregates?: boolean;
 }
 
 export interface EngineResult {
@@ -121,6 +155,12 @@ export interface EngineResult {
   headState?: HeadEntry[];
   /** False when a declared HEAD manifest could not be decoded or read. */
   headStateComplete?: boolean;
+  /** Total matching events before limit/offset (bounded-query contract). */
+  total?: number;
+  /** Active cache generation id (pin cursors to one generation). */
+  generation?: number | null;
+  /** Month aggregates for bounded calendar rendering. */
+  months?: MonthBucket[];
 }
 
 /** One declared dependency at HEAD. */
@@ -136,6 +176,8 @@ export interface StoreInterface {
   setMeta(key: string, value: string): void;
   insertEvents(events: DependencyEvent[]): void;
   queryEvents(filter?: FilterOptions): DependencyEvent[];
+  queryPaged?(filter?: FilterOptions, page?: PagedQuery): PagedResult;
+  monthAggregates?(filter?: FilterOptions): MonthBucket[];
   /**
    * Runs `fn` with writes coalesced: SQLite wraps in a transaction,
    * the JSON store persists once at the end.

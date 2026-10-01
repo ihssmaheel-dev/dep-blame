@@ -12,6 +12,46 @@ export interface GitLogOptions {
 /** Reads NUL-delimited metadata and paths incrementally, parents before children. */
 export function getManifestCommits(repoRoot: string, options: GitLogOptions = {}): Promise<CommitInfo[]> {
   const {sinceCommit, manifestPaths = ['package.json', 'package-lock.json'], reverse = true, headCommit = 'HEAD'} = options;
+  // Avoid ARG_MAX on repos with 300 manifest paths: chunk the path filter
+  // and merge/dedupe. 50 paths per invocation keeps argv small.
+  const PATH_CHUNK = 50;
+  const chunks: string[][] = [];
+  if (manifestPaths.length <= PATH_CHUNK) {
+    chunks.push(manifestPaths);
+  } else {
+    for (let i = 0; i < manifestPaths.length; i += PATH_CHUNK) {
+      chunks.push(manifestPaths.slice(i, i + PATH_CHUNK));
+    }
+  }
+  if (chunks.length === 1) {
+    return getManifestCommitsChunk(repoRoot, { sinceCommit, manifestPaths, reverse, headCommit });
+  }
+  return (async () => {
+    const bySha = new Map<string, CommitInfo>();
+    for (const chunk of chunks) {
+      const part = await getManifestCommitsChunk(repoRoot, { sinceCommit, manifestPaths: chunk, reverse, headCommit });
+      for (const c of part) {
+        const existing = bySha.get(c.commit);
+        if (!existing) {
+          bySha.set(c.commit, { ...c, files: [...c.files] });
+        } else {
+          for (const f of c.files) {
+            if (!existing.files.includes(f)) existing.files.push(f);
+          }
+        }
+      }
+    }
+    const merged = [...bySha.values()];
+    // getManifestCommitsChunk already returns topo+reverse order per chunk;
+    // re-sort merged by date is unsafe (equal timestamps). Re-walk once
+    // without a path filter is wasteful, so preserve first-seen order which
+    // matches the first chunk's chronological order for overlapping commits.
+    return merged;
+  })();
+}
+
+function getManifestCommitsChunk(repoRoot: string, options: GitLogOptions = {}): Promise<CommitInfo[]> {
+  const {sinceCommit, manifestPaths = ['package.json', 'package-lock.json'], reverse = true, headCommit = 'HEAD'} = options;
   const args = ['log', '--topo-order'];
   if (reverse) args.push('--reverse');
   // Fixed metadata field count keeps empty root parents unambiguous. -z preserves

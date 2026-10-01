@@ -1,4 +1,4 @@
-import type { DependencyEvent, HeadEntry } from '../types.js';
+import type { DependencyEvent, HeadEntry, MonthBucket } from '../types.js';
 
 export interface RenderJsonData {
   repository?: string;
@@ -10,6 +10,9 @@ export interface RenderJsonData {
   truncated?: boolean;
   headState?: HeadEntry[];
   headStateComplete?: boolean;
+  total?: number;
+  generation?: number | null;
+  months?: MonthBucket[];
 }
 
 /**
@@ -27,6 +30,9 @@ export function renderJson(data: RenderJsonData): string {
     command: data.command || 'list',
     events: data.events || [],
     warnings: data.warnings || [],
+    ...(typeof data.total === 'number' ? { total: data.total } : {}),
+    ...(typeof data.generation === 'number' ? { generation: data.generation } : {}),
+    ...(data.months ? { months: data.months } : {}),
     ...(data.truncated ? { truncated: true } : {}),
     ...(data.headState ? { headState: data.headState } : {}),
     ...(data.headStateComplete === false ? { headStateComplete: false } : {})

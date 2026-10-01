@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 export interface ScanLock { release(): void; }
 const STALE_MS = 60_000;
-const WAIT_MS = 15_000;
+const WAIT_MS = 60_000;
 const POLL_MS = 100;
 
 /** Age alone never permits stealing a live process's scan lock. */

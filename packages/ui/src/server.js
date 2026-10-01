@@ -386,6 +386,76 @@ export async function startServer(options = {}) {
         return;
       }
 
+      // Bounded queries: paged events, month aggregates, and facets.
+      // Same filter contract as the engine, served from the single-flight
+      // scan without re-walking history per request.
+      if (req.method === 'GET' && (url.pathname === '/api/events/paged' || url.pathname === '/api/months' || url.pathname === '/api/facets')) {
+        try {
+          const data = await scanOnce();
+          const q = url.searchParams;
+          const f = {
+            package: q.get('package') || undefined,
+            type: q.get('type') || undefined,
+            manifest: q.get('manifest') || undefined,
+            workspace: q.get('workspace') || undefined,
+            source: q.get('source') || undefined,
+          };
+          let list = data.events || [];
+          if (f.package) list = list.filter((e) => e.package === f.package);
+          if (f.type) list = list.filter((e) => e.type === f.type);
+          if (f.manifest) list = list.filter((e) => e.manifest === f.manifest);
+          if (f.workspace) list = list.filter((e) => String(e.manifest || '').split('/').includes(String(f.workspace)));
+          if (f.source) list = list.filter((e) => (e.source || 'manifest') === f.source);
+          if (url.pathname === '/api/events/paged') {
+            const limit = Math.max(1, Math.min(1000, Number.parseInt(q.get('limit') || '100', 10) || 100));
+            const offset = Math.max(0, Number.parseInt(q.get('offset') || '0', 10) || 0);
+            const payload = JSON.stringify({ schemaVersion: 1, total: list.length, limit, offset, events: list.slice(offset, offset + limit) });
+            const { body, headers } = gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
+            res.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(body) });
+            res.end(body);
+            return;
+          }
+          if (url.pathname === '/api/months') {
+            const buckets = new Map();
+            for (const ev of list) {
+              const d = new Date(ev.date);
+              if (isNaN(d.getTime())) continue;
+              const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+              let b = buckets.get(key);
+              if (!b) { b = { month: key, total: 0, added: 0, updated: 0, removed: 0 }; buckets.set(key, b); }
+              b.total++;
+              if (ev.type === 'added') b.added++;
+              else if (ev.type === 'updated') b.updated++;
+              else if (ev.type === 'removed') b.removed++;
+            }
+            const payload = JSON.stringify({ schemaVersion: 1, months: [...buckets.values()].sort((a, b) => a.month < b.month ? -1 : 1) });
+            const { body, headers } = gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
+            res.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(body) });
+            res.end(body);
+            return;
+          }
+          // /api/facets
+          const countBy = (fn) => {
+            const m = new Map();
+            for (const ev of list) { const k = fn(ev); if (k) m.set(k, (m.get(k) || 0) + 1); }
+            return [...m.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count).slice(0, 200);
+          };
+          const payload = JSON.stringify({
+            schemaVersion: 1,
+            packages: countBy((e) => e.package),
+            authors: countBy((e) => e.author),
+            manifests: countBy((e) => e.manifest),
+          });
+          const { body, headers } = gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
+          res.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(body) });
+          res.end(body);
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
+          res.end(JSON.stringify({ error: err && err.message ? err.message : 'Analysis failed' }));
+        }
+        return;
+      }
+
     res.writeHead(404, { 'Content-Type': 'text/plain', 'X-Content-Type-Options': 'nosniff' });
     res.end('Not Found');
     } catch {

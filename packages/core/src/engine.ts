@@ -59,6 +59,11 @@ function readCachedManifestPaths(cache: { getMeta(k: string): string | null }): 
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
     const cleaned = parsed.filter((p) => typeof p === 'string' && p.length > 0 && p.length <= 256);
+    if (cleaned.length !== parsed.length) {
+      // Long-path entries were dropped by an older version: treat history
+      // as potentially incomplete rather than silently partial.
+      try { (cache as { setMeta?: (k: string, v: string) => void }).setMeta?.('history_truncated', 'true'); } catch { /* ignore */ }
+    }
     return cleaned.length > 0 ? cleaned : null;
   } catch {
     return null;
@@ -170,7 +175,7 @@ function lockStateKey(lockPath: string, manifest: string): string {
  */
 export async function runDepBlame(options: EngineOptions = {}): Promise<EngineResult> {
   const startTime = Date.now();
-  const { cwd = process.cwd(), noCache = false, clearCache = false, cacheDir, filter = {}, onProgress } = options;
+  const { cwd = process.cwd(), noCache = false, clearCache = false, cacheDir, filter = {}, onProgress, limit, offset, includeAggregates } = options;
 
   onProgress?.({
     phase: 'initializing',
@@ -239,7 +244,10 @@ export async function runDepBlame(options: EngineOptions = {}): Promise<EngineRe
       filter,
       silent: options.silent,
       onProgress,
-      startTime
+      startTime,
+      limit,
+      offset,
+      includeAggregates
     });
   } finally {
     lock.release();
@@ -259,11 +267,16 @@ interface LockedScanArgs {
   silent?: boolean;
   onProgress: EngineOptions['onProgress'];
   startTime: number;
+  /** Guard against infinite InvalidBaselineError -> rescan loops. */
+  _retryCount?: number;
+  limit?: number;
+  offset?: number;
+  includeAggregates?: boolean;
 }
 
 async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
   const { repoRoot, repoName, branch, isShallow, currentHead, baseDir } = args;
-  const { noCache, clearCache, filter = {}, silent, onProgress, startTime } = args;
+  const { noCache, clearCache, filter = {}, silent, onProgress, startTime, limit, offset, includeAggregates } = args;
 
   // Step 2: Cheap HEAD detection (sync fs, no git history walk)
   const detected = detectPackageManager(repoRoot);
@@ -286,18 +299,22 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
           onProgress
         });
         const events = tempStore.queryEvents(filter);
+        const bounded = applyBounds(tempStore, filter, events, { limit, offset, includeAggregates, baseDir });
         return {
           repository: repoName,
           branch,
           packageManager: detected.packageManager,
-          events,
+          events: bounded.events,
           isShallow,
           cached: false,
           durationMs: Date.now() - startTime,
           warnings: scanned.warnings,
           truncated: scanned.truncated,
           headState: scanned.headState,
-          headStateComplete: scanned.headStateComplete
+          headStateComplete: scanned.headStateComplete,
+          total: bounded.total,
+          generation: bounded.generation,
+          ...(bounded.months ? { months: bounded.months } : {})
         };
       } finally {
         try {
@@ -336,7 +353,12 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
         total: 100,
         message: 'Cache hit — dependency history up to date'
       });
+      // Ensure a generation pointer exists even for long-lived caches
+      // created before generation tracking (write before bounding so
+      // the current result already carries it).
+      if (!readGeneration(baseDir)) writeGenerationPointer(baseDir, currentHead);
       const events = cache.queryEvents(filter);
+      const bounded = applyBounds(cache, filter, events, { limit, offset, includeAggregates, baseDir });
       const headState = await readHeadState(repoRoot, mergeManifestPaths(
         detected.manifestPaths,
         readCachedManifestPaths(cache) || []
@@ -349,14 +371,17 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
         repository: repoName,
         branch,
         packageManager: detected.packageManager,
-        events,
+        events: bounded.events,
         isShallow,
         cached: true,
         durationMs: Date.now() - startTime,
         warnings,
         truncated,
         headState: headState.entries,
-        headStateComplete: headState.complete
+        headStateComplete: headState.complete,
+        total: bounded.total,
+        generation: bounded.generation,
+        ...(bounded.months ? { months: bounded.months } : {})
       };
     }
 
@@ -408,20 +433,24 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
       const fresh = await openCache({ repoRoot, cacheDir: baseDir });
       try {
         const events = fresh.queryEvents(filter);
+        const bounded = applyBounds(fresh, filter, events, { limit, offset, includeAggregates, baseDir });
         const warnings = [...scanned.warnings];
         if (isShallow) warnings.push('Shallow clone: history may be incomplete.');
         return {
           repository: repoName,
           branch,
           packageManager: detected.packageManager,
-          events,
+          events: bounded.events,
           isShallow,
           cached: false,
           durationMs: Date.now() - startTime,
           warnings,
           truncated: scanned.truncated,
           headState: scanned.headState,
-          headStateComplete: scanned.headStateComplete
+          headStateComplete: scanned.headStateComplete,
+          total: bounded.total,
+          generation: bounded.generation,
+          ...(bounded.months ? { months: bounded.months } : {})
         };
       } finally {
         try {
@@ -451,26 +480,33 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
       silent,
       onProgress
     });
+    writeGenerationPointer(baseDir, currentHead);
     const events = cache.queryEvents(filter);
+    const bounded = applyBounds(cache, filter, events, { limit, offset, includeAggregates, baseDir });
     const warnings = [...scanned.warnings];
     if (isShallow) warnings.push('Shallow clone: history may be incomplete.');
     return {
       repository: repoName,
       branch,
       packageManager: detected.packageManager,
-      events,
+      events: bounded.events,
       isShallow,
       cached: false,
       durationMs: Date.now() - startTime,
       warnings,
       truncated: scanned.truncated,
       headState: scanned.headState,
-          headStateComplete: scanned.headStateComplete
+          headStateComplete: scanned.headStateComplete,
+      total: bounded.total,
+      generation: bounded.generation,
+      ...(bounded.months ? { months: bounded.months } : {})
     };
   } catch (err) {
     if (!(err instanceof InvalidBaselineError)) throw err;
+    // A persistently corrupt baseline must not recurse forever.
+    if ((args._retryCount || 0) >= 1) throw new Error('Cached history baseline is unusable and a fresh rescan also failed. Try --clear-cache.');
     cache.close();
-    return await runScanLocked({...args, clearCache: true});
+    return await runScanLocked({...args, clearCache: true, _retryCount: (args._retryCount || 0) + 1});
   } finally {
     try {
       cache.close();
@@ -480,20 +516,120 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
   }
 }
 
+/** Bounded-query helper: prefers store-native paging/aggregates, falls back to memory. */
+function applyBounds(
+  store: StoreInterface,
+  filter: NonNullable<LockedScanArgs['filter']>,
+  all: DependencyEvent[],
+  opts: { limit?: number; offset?: number; includeAggregates?: boolean; baseDir?: string }
+): { events: DependencyEvent[]; total: number; generation: number | null; months?: { month: string; total: number; added: number; updated: number; removed: number }[] } {
+  const generation = readGeneration(opts.baseDir);
+  const hasPaging = opts.limit !== undefined || opts.offset !== undefined;
+  if (hasPaging && typeof (store as { queryPaged?: unknown }).queryPaged === 'function') {
+    try {
+      const paged = (store as unknown as { queryPaged: (f: typeof filter, p: { limit?: number; offset?: number }) => { events: DependencyEvent[]; total: number } }).queryPaged(filter, { limit: opts.limit ?? 100, offset: opts.offset ?? 0 });
+      const months = opts.includeAggregates ? readMonths(store, filter, paged.events) : undefined;
+      return { events: paged.events, total: paged.total, generation, ...(months ? { months } : {}) };
+    } catch { /* fall through to memory slicing */ }
+  }
+  const total = all.length;
+  let events = all;
+  if (hasPaging) {
+    const lim = Math.max(0, Math.min(1000, Math.floor(opts.limit ?? total)));
+    const off = Math.max(0, Math.floor(opts.offset ?? 0));
+    events = all.slice(off, off + lim);
+  }
+  const months = opts.includeAggregates ? readMonths(store, filter, all) : undefined;
+  return { events, total, generation, ...(months ? { months } : {}) };
+}
+
+function readGeneration(baseDir?: string): number | null {
+  if (!baseDir) return null;
+  try {
+    const raw = fs.readFileSync(path.join(baseDir, 'active.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.generation === 'number' ? parsed.generation : null;
+  } catch { return null; }
+}
+
+function writeGenerationPointer(baseDir: string, head: string): void {
+  try {
+    const active = { generation: Date.now(), head, schema: 4, updatedAt: new Date().toISOString() };
+    const tmp = path.join(baseDir, `.active-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
+    fs.writeFileSync(tmp, JSON.stringify(active), 'utf8');
+    fs.renameSync(tmp, path.join(baseDir, 'active.json'));
+  } catch { /* advisory */ }
+}
+
+function readMonths(store: StoreInterface, filter: NonNullable<LockedScanArgs['filter']>, fallback: DependencyEvent[]) {
+  try {
+    const fn = (store as { monthAggregates?: (f: typeof filter) => { month: string; total: number; added: number; updated: number; removed: number }[] }).monthAggregates;
+    if (typeof fn === 'function') return fn.call(store, filter);
+  } catch { /* ignore */ }
+  const buckets = new Map<string, { total: number; added: number; updated: number; removed: number }>();
+  for (const ev of fallback) {
+    const d = new Date(ev.date);
+    if (isNaN(d.getTime())) continue;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    let b = buckets.get(key);
+    if (!b) { b = { total: 0, added: 0, updated: 0, removed: 0 }; buckets.set(key, b); }
+    b.total++;
+    if (ev.type === 'added') b.added++;
+    else if (ev.type === 'updated') b.updated++;
+    else if (ev.type === 'removed') b.removed++;
+  }
+  return [...buckets.entries()].map(([month, b]) => ({ month, ...b })).sort((a, b) => a.month < b.month ? -1 : 1);
+}
+
 /** Moves a temp scan's store files over the live cache atomically. */
 function promoteTempStore(baseDir: string, tempDir: string): void {
+  // Temp stores are already closed at this point, and SqliteStore.close()
+  // checkpoints WAL -> main DB, so cache.db is complete on its own.
+  // Renames below only move complete files; stale opposite-backend files
+  // are removed so readers never mix generations.
   for (const name of ['cache.db', 'cache.db-wal', 'cache.db-shm', 'cache.db-journal', 'cache.json']) {
     const src = path.join(tempDir, name);
     if (!fs.existsSync(src)) continue;
     const dst = path.join(baseDir, name);
-    // rename replaces the destination atomically; deleting first loses the last good cache.
-    fs.renameSync(src, dst);
+    try {
+      if (name === 'cache.db') {
+        try { fs.rmSync(path.join(baseDir, 'cache.json'), { force: true }); } catch { /* ignore */ }
+      }
+      if (name === 'cache.json') {
+        for (const stale of ['cache.db', 'cache.db-wal', 'cache.db-shm', 'cache.db-journal']) {
+          try { fs.rmSync(path.join(baseDir, stale), { force: true }); } catch { /* ignore */ }
+        }
+      }
+      // rename replaces the destination atomically; deleting first loses the last good cache.
+      fs.renameSync(src, dst);
+    } catch {
+      // Cross-device rename (tmp on another volume): copy + unlink fallback.
+      fs.copyFileSync(src, dst);
+      try { fs.rmSync(src, { force: true }); } catch { /* ignore */ }
+    }
   }
+  // Write an atomic generation pointer so readers can pin one generation.
+  try {
+    const head = tryReadJsonMeta(path.join(baseDir, 'cache.json'), 'cached_head') ?? '';
+    const active = { generation: Date.now(), head, schema: 4, updatedAt: new Date().toISOString() };
+    const tmp = path.join(baseDir, `.active-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
+    fs.writeFileSync(tmp, JSON.stringify(active), 'utf8');
+    fs.renameSync(tmp, path.join(baseDir, 'active.json'));
+  } catch { /* generation pointer is advisory */ }
   try {
     fs.rmSync(tempDir, { recursive: true, force: true });
   } catch {
     // Ignore cleanup failures (stale-temp reaper handles leftovers).
   }
+}
+
+function tryReadJsonMeta(jsonPath: string, key: string): string | null {
+  try {
+    const raw = fs.readFileSync(jsonPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const v = parsed?.meta?.[key];
+    return typeof v === 'string' ? v : null;
+  } catch { return null; }
 }
 
 function readCachedWarnings(store: StoreInterface): string[] {
@@ -881,7 +1017,11 @@ async function seedMissingParents(
   for (const [parent, files] of needed) {
     for (const f of files) requests.push({ commit: parent, path: f });
   }
+  // Bound recovery walks: a corrupt parent with hundreds of files must not
+  // fan out into unbounded `git log` history walks below.
+  const MAX_RECOVERY_COMMITS = 50;
   const blobs = await batchReadBlobs(repoRoot, requests);
+  let recoveryWalks = 0;
   for (const [parent, files] of needed) {
     const state: StateMap = new Map();
     for (const f of files) {
@@ -893,7 +1033,11 @@ async function seedMissingParents(
           if (!(err instanceof InvalidBaselineError)) throw err;
           // A non-manifest commit may sit between a corrupt blob and its repair.
           // Recover the last readable version along this parent's first-parent history.
-          const { stdout } = await execGit(['log', '--first-parent', '--format=%H', parent, '--', f], repoRoot);
+          if (++recoveryWalks > MAX_RECOVERY_COMMITS) {
+            warnOnce(`parent-corrupt:${f}`, `Too many corrupt baselines; skipping recovery for ${f} at parent ${parent.slice(0, 7)}.`);
+            continue;
+          }
+          const { stdout } = await execGit(['log', '--first-parent', '--format=%H', '-n', '50', parent, '--', f], repoRoot);
           let restored = false;
           for (const sha of stdout.trim().split('\n').filter(Boolean)) {
             const prior = (await batchReadBlobs(repoRoot, [{commit: sha, path: f}])).get(`${sha}:${f}`);

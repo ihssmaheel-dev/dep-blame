@@ -62,6 +62,8 @@ export interface RepoState {
  */
 export async function getRepoState(cwd: string = process.cwd()): Promise<RepoState> {
   try {
+    // Use NUL separators where possible is overkill here; instead validate
+    // the 4-line shape so a newline in a path can't silently shift fields.
     const { stdout } = await execGit([
       'rev-parse',
       '--show-toplevel',
@@ -72,14 +74,19 @@ export async function getRepoState(cwd: string = process.cwd()): Promise<RepoSta
     ], cwd);
 
     const lines = stdout.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-    const repoRoot = path.resolve(lines[0]);
-    const isShallow = lines[1] === 'true';
-    const currentHead = lines[2] || null;
-    let branch = lines[3] || 'main';
-    if (branch === 'HEAD' && currentHead) {
-      branch = currentHead.slice(0, 7);
+    // Expected: [toplevel, is-shallow, head-sha, branch]. Anything else
+    // (e.g. newline in path, unborn HEAD) falls through to the safe path.
+    if (lines.length >= 4 && (lines[1] === 'true' || lines[1] === 'false') && /^[0-9a-f]{4,64}$/i.test(lines[2])) {
+      const repoRoot = path.resolve(lines[0]);
+      const isShallow = lines[1] === 'true';
+      const currentHead = lines[2] || null;
+      let branch = lines[3] || 'main';
+      if (branch === 'HEAD' && currentHead) {
+        branch = currentHead.slice(0, 7);
+      }
+      return { repoRoot, isShallow, currentHead, branch };
     }
-    return { repoRoot, isShallow, currentHead, branch };
+    throw new Error('Unexpected rev-parse output shape');
   } catch (err: any) {
     if (err instanceof GitError && err.isMissingGit) {
       throw err;

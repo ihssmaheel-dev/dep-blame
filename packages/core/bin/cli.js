@@ -151,6 +151,9 @@ ${c.bold('OPTIONS:')}
   ${c.yellow('--workspace <name>')}       Filter events to a specific workspace/manifest path
   ${c.yellow('--direct-only')}            Restrict events to direct dependencies (ignore transitives)
   ${c.yellow('--source <kind>')}          Filter by event source: manifest (declared) or lockfile (resolved)
+  ${c.yellow('--limit <n>')}              Bounded query: return at most n events (0-1000)
+  ${c.yellow('--page <n>')}               Bounded query: page number (uses --limit as page size, default 100)
+  ${c.yellow('--months')}                 Include month aggregates in JSON (bounded calendar)
   ${c.yellow('--fail-on-removal')}        (CI only) Exit non-zero if any dependency was removed
   ${c.yellow('--verbose')}                Expand collapsed bulk updates across manifests
   ${c.yellow('--json')}                   Output raw JSON matching v1 schema contract
@@ -186,7 +189,10 @@ async function main() {
     'fail-on-removal': { type: 'boolean' },
     'clear-cache': { type: 'boolean' },
     'no-cache': { type: 'boolean' },
-    'cache-dir': { type: 'string' }
+    'cache-dir': { type: 'string' },
+    limit: { type: 'string' },
+    page: { type: 'string' },
+    months: { type: 'boolean' }
   };
 
   let values;
@@ -240,6 +246,26 @@ async function main() {
     process.exit(1);
   }
 
+  let limit;
+  let offset;
+  if (values.limit !== undefined) {
+    limit = Number.parseInt(String(values.limit), 10);
+    if (!Number.isInteger(limit) || limit < 0 || limit > 1000) {
+      console.error(c.red(`Invalid --limit value: "${values.limit}". Use 0-1000.`));
+      process.exit(1);
+    }
+  }
+  if (values.page !== undefined) {
+    const page = Number.parseInt(String(values.page), 10);
+    if (!Number.isInteger(page) || page < 1) {
+      console.error(c.red(`Invalid --page value: "${values.page}". Use >= 1.`));
+      process.exit(1);
+    }
+    const pageSize = limit ?? 100;
+    limit = pageSize;
+    offset = (page - 1) * pageSize;
+  }
+
   function printWarnings(result) {
     if (!result || !result.warnings || result.warnings.length === 0) return;
     if (values.json || values.csv) return; // machine output stays clean
@@ -274,6 +300,47 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
       process.exit(1);
     }
 
+    // `ci --since 7d` is a time window, not a git ref. Filter by date
+    // instead of silently falling back to the default branch.
+    const sinceRaw = values.since ? String(values.since).trim() : '';
+    const isTimeWindow = sinceRaw !== '' && parseSinceOption(sinceRaw) !== undefined &&
+      (/^(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks|mo|mos|month|months|y|yr|yrs|year|years)$/i.test(sinceRaw) || !isNaN(new Date(sinceRaw).getTime()));
+    if (isTimeWindow) {
+      const sinceDate = parseSinceOption(sinceRaw);
+      const progress = createCliProgress({ json: values.json || values.csv });
+      try {
+        const result = await runDepBlame({
+          noCache: values['no-cache'] || false,
+          clearCache: values['clear-cache'] || false,
+          cacheDir: values['cache-dir'],
+          filter: { ...filter, since: sinceDate },
+          limit, offset,
+          includeAggregates: values.months || undefined,
+          onProgress: progress.onProgress
+        });
+        progress.done();
+        let ciEvents = result.events;
+        if (values.json) {
+          console.log(renderJson({ repository: result.repository, branch: result.branch, packageManager: result.packageManager, command: 'ci', events: ciEvents, warnings: result.warnings, truncated: result.truncated, total: result.total, generation: result.generation, months: result.months }));
+        } else if (values.csv) {
+          console.log(renderCsv(ciEvents));
+        } else {
+          printWarnings(result);
+          console.log(renderCiSummary(ciEvents, `last ${sinceRaw}`));
+        }
+        const removals = ciEvents.filter((e) => e.type === 'removed');
+        if (values['fail-on-removal'] && removals.length > 0) {
+          console.error(c.red(`\nCI Check Failed: ${removals.length} dependency removal(s) detected with --fail-on-removal enabled.`));
+          process.exit(1);
+        }
+        process.exit(0);
+      } catch (err) {
+        progress.done();
+        console.error(c.red(stripControl(err.message) || 'An error occurred during CI analysis.'));
+        process.exit(1);
+      }
+    }
+
     const { baseRef, baseSha } = await resolveBaseRef(values.since, repoRoot);
 
     const progress = createCliProgress({ json: values.json || values.csv });
@@ -285,6 +352,8 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
         clearCache: values['clear-cache'] || false,
         cacheDir: values['cache-dir'],
         filter,
+        limit, offset,
+        includeAggregates: values.months || undefined,
         onProgress: progress.onProgress
       });
       progress.done();
@@ -329,7 +398,8 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
             command: 'ci',
             events: ciEvents,
             warnings: result.warnings,
-            truncated: result.truncated
+            truncated: result.truncated,
+            total: result.total, generation: result.generation, months: result.months
           })
         );
       } else if (values.csv) {
@@ -390,6 +460,8 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
       clearCache: values['clear-cache'],
       cacheDir: values['cache-dir'],
       filter,
+      limit, offset,
+      includeAggregates: values.months || undefined,
       onProgress: progress.onProgress
     });
     progress.done();
@@ -405,7 +477,8 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
           warnings: result.warnings,
           truncated: result.truncated,
           headState: result.headState,
-          headStateComplete: result.headStateComplete
+          headStateComplete: result.headStateComplete,
+          total: result.total, generation: result.generation, months: result.months
         })
       );
       return;

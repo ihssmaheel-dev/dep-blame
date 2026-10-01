@@ -1,4 +1,5 @@
 import { c, stripControl } from './ansi.js';
+import { eventDayKey } from './calendar.js';
 import type { DependencyEvent } from '../types.js';
 
 interface PackageStat {
@@ -55,9 +56,9 @@ export function renderStatsView(events: DependencyEvent[]): string {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  const dates = events.map((e) => e.date).filter(d => Number.isFinite(Date.parse(d))).sort((a, b) => Date.parse(a) - Date.parse(b));
-  const firstDate = dates[0] ? dates[0].slice(0, 10) : 'N/A';
-  const lastDate = dates[dates.length - 1] ? dates[dates.length - 1].slice(0, 10) : 'N/A';
+  const dates = events.map((e) => eventDayKey(e.date)).filter((d): d is string => !!d).sort();
+  const firstDate = dates[0] || 'N/A';
+  const lastDate = dates[dates.length - 1] || 'N/A';
 
   const lines = [
     c.bold('Dependency Churn & History Statistics'),
