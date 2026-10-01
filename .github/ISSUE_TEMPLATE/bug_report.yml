@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in dep-blame behaves incorrectly
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What you saw vs. what you expected.
+      placeholder: Short, factual description.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: e.g. dep-blame 0.1.0 (`npx dep-blame --version`)
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node (`node --version`), git (`git --version`), package manager + lockfile(s)
+      placeholder: Windows 11, Node 22.5, git 2.45, npm + package-lock.json
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: Exact command, flags, and full output including warnings.
+      render: shell
+      placeholder: npx dep-blame list --limit 20
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Smallest commit sequence or fixture repo that triggers it. Reduce private repos to synthetic fixtures.
+      placeholder: git init + 2 commits … / link to fixture
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-checks
+      options:
+        - label: Retried with `fetch-depth: 0` (rules out shallow clones)
+        - label: Retried with `--no-cache` or `--clear-cache` (rules out stale cache)
+        - label: No secrets, tokens, or private emails included above

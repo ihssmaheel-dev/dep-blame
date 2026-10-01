@@ -1,95 +1,60 @@
 # @dep-blame/ui
 
-Lightweight, local visual dashboard for `dep-blame` — no build step, no
-framework. History analysis works offline; hosting avatars are optional.
+> Local visual dashboard for [`dep-blame`](https://github.com/ihssmaheel-dev/dep-blame#readme) — no framework, no bundler, sub-40KB gzipped.
+
+[![npm version](https://img.shields.io/npm/v/@dep-blame/ui)](https://www.npmjs.com/package/@dep-blame/ui)
+[![node](https://img.shields.io/node/v/@dep-blame/ui)](https://nodejs.org)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 ```bash
 npx @dep-blame/ui
-npx @dep-blame/ui --port 4321 --no-open
+npx @dep-blame/ui --port 4321 --host 127.0.0.1 --no-open
 ```
+
+| Flag | Description |
+|---|---|
+| `--port, -p <n>` | Port (`0` = OS-assigned) |
+| `--host <addr>` | Bind address (loopback by default; LAN needs `DEP_BLAME_ALLOW_LAN=1`) |
+| `--no-open` | Don't auto-open the browser |
 
 ## What it does
 
-Serves a single-page dashboard on loopback (`127.0.0.1` by default):
+Timeline table (25/50/100 rows, sticky header, pinned pagination footer on every screen size), calendar with month picker and day drill-down, per-package archaeology drawer with HEAD status and commit evidence, global search, action/manifest/source filters with visible chips, dark/light themes, keyboard navigation (`/` search, `1`/`2` views, `Esc` closes), and JSON export of **all matching events** (not just the visible page).
 
-- `GET /` — the dashboard (timeline table, calendar, per-package
-  archaeology drawer; the table offers 25/50/100 rows per page)
-- `GET /app.js` — client script (no inline scripts, strict CSP)
-- `GET /fonts/*.woff2` — bundled Manrope variable font (same-origin, immutable)
-- `GET /api/events` — the `dep-blame` engine result as JSON
-- `GET /api/events/stream` — same, with SSE scan progress
-- `GET /api/authors?commits=...` — lazy hosting accounts for up to 20 indexed commits
-- `GET /api/avatars/<opaque-id>` — cached same-origin raster images
+## Endpoints
 
-Responses are gzip-compressed when the client accepts it.
+| Endpoint | Description |
+|---|---|
+| `GET /` | Dashboard |
+| `GET /app.js` | Client script (strict CSP, no inline handlers) |
+| `GET /fonts/*.woff2` | Bundled Manrope font (same-origin, `immutable`) |
+| `GET /api/events` | Full engine result (`schemaVersion: 1`) |
+| `GET /api/events/stream` | SSE scan progress + `complete` / `error` |
+| `GET /api/events/paged?limit=&offset=&package=&type=&manifest=&workspace=&source=` | Bounded page + `total` |
+| `GET /api/months?...` | Month aggregates for bounded calendars |
+| `GET /api/facets?...` | Top packages / authors / manifests (200-cap) |
+| `GET /api/authors?commits=<sha,…>` | Lazy host-linked accounts (≤ 20 commits, ≤ 6 concurrent) |
+| `GET /api/avatars/<64-hex>` | Cached same-origin raster proxy |
 
 ## Security model
 
-- **Loopback by default.** Binding a non-loopback host requires
-  `DEP_BLAME_ALLOW_LAN=1`; without it the server refuses to start.
-- **Spoofed `Host` headers get 403**, and cross-site `Origin` values are
-  rejected, as a DNS-rebinding barrier.
-- **No inline event handlers** anywhere; repository data (package names,
-  authors, messages) is rendered via `textContent`/escaped HTML plus
-  delegated listeners, under a CSP without inline-script allowance.
-- **No emails or tokens** in browser responses. Pictures and profile links
-  come from host-linked commit accounts; Git names are never guessed as
-  usernames. Avatar URLs are local proxy paths, with initials as fallback.
-- **Offline history:** no remote fonts or analytics. Manrope ships as
-  subsetted woff2. Set `DEP_BLAME_AVATARS=0` to disable hosting requests.
-- Outbound requests validate and pin DNS addresses; private destinations
-  need an explicit setting and must match the configured forge origin.
-  Redirects are revalidated, credentials stay on their original origin,
-  tokens require HTTPS, and SVG avatars are rejected.
-- Concurrent dashboard loads share one in-flight scan instead of
-  trampling the cache.
+- **Loopback by default.** Non-loopback binds require `DEP_BLAME_ALLOW_LAN=1` — history ships with no auth.
+- **DNS-rebinding barrier:** spoofed `Host` → `403`, cross-site `Origin` rejected.
+- **No inline scripts/handlers**; repo text rendered escaped; CSP enforced.
+- **No emails or tokens** in browser payloads. Avatars are local proxy URLs with initials fallback; Git names are never guessed as usernames.
+- **Offline history:** no CDN fonts/analytics. `DEP_BLAME_AVATARS=0` disables all hosting requests.
+- Outbound forge traffic is DNS-pinned; private destinations need `DEP_BLAME_ALLOW_PRIVATE_FORGE=1` and must match the configured origin. Tokens require HTTPS. SVG avatars rejected.
 
-## Requirements
-
-Node.js ≥ 20. Depends on `dep-blame` for the analysis engine.
-
-## Controls
-
-- Neutral black dark mode and a light theme, with bundled fonts.
-- Compact desktop toolbar with search, action tabs, manifests, and view
-  controls on one row; controls wrap on smaller screens.
-- Shared scan progress across views. Switching views during a scan keeps
-  the loading state until history arrives; scan failures remain visible.
-- Manifest filtering lists actual paths with search and exact selection.
-  Timeline uses column filters; Calendar also exposes the Filters menu.
-- Shared filter panels, visible applied-filter chips, and custom date
-  range and page-size controls. No native date picker or select menu.
-- Calendar previous/next skips months without matching changes. A searchable
-  month picker jumps directly to activity, and Latest returns to the newest
-  matching month. Empty results hide the grid; table pagination is hidden
-  in Calendar. Select an active day to inspect its events in the table.
-- JSON export contains all matching events, scan warnings, and the
-  incomplete-history flag, independently of the visible table page.
-- Dates in the UI use the viewer's local calendar day.
-
-The API currently transfers the full indexed history to the browser.
-Table pagination bounds rendered rows, not total browser memory.
-
-## Hosting profiles and self-hosted services
-
-The footer identifies the service and host. Public GitHub, GitLab, Gitea,
-Codeberg/Forgejo and Bitbucket Cloud have known adapters. Other hosts are
-probed through bounded service APIs; inconclusive detection says “Git host”
-and shows the actual hostname. No remote says “Local Git”.
-
-GitHub Enterprise, GitLab, Gitea/Forgejo and Bitbucket Server/Data Center
-can also be configured explicitly. Environment settings:
+## Hosting configuration
 
 | Setting | Purpose |
-| --- | --- |
-| DEP_BLAME_FORGE_PROVIDER | github, gitlab, gitea, forgejo, bitbucket, or bitbucket-server |
-| DEP_BLAME_FORGE_WEB_URL | Full repository web URL, useful when SSH ports differ from web ports |
-| DEP_BLAME_FORGE_BASE_URL | Installation base URL, e.g. https://code.example/gitlab for a subpath install |
-| DEP_BLAME_ALLOW_PRIVATE_FORGE=1 | Permit requests to the configured forge origin on loopback or a private network |
-| DEP_BLAME_FORGE_TOKEN | Optional read-only API token, kept server-side; use only with a trusted HTTPS forge |
-| DEP_BLAME_AVATARS=0 | Disable all hosting API/image requests |
-
-For a local GitLab instance (PowerShell):
+|---|---|
+| `DEP_BLAME_FORGE_PROVIDER` | `github` \| `gitlab` \| `gitea` \| `forgejo` \| `bitbucket` \| `bitbucket-server` |
+| `DEP_BLAME_FORGE_WEB_URL` | Full repo web URL (fixes SSH/web port mismatches) |
+| `DEP_BLAME_FORGE_BASE_URL` | Installation base URL (e.g. `https://code.example/gitlab`) |
+| `DEP_BLAME_ALLOW_PRIVATE_FORGE=1` | Allow the configured forge origin on private networks |
+| `DEP_BLAME_FORGE_TOKEN` | Read-only API token — server-side only, HTTPS only |
+| `DEP_BLAME_AVATARS=0` | Fully offline mode |
 
 ```powershell
 $env:DEP_BLAME_FORGE_PROVIDER = 'gitlab'
@@ -98,28 +63,10 @@ $env:DEP_BLAME_ALLOW_PRIVATE_FORGE = '1'
 npx @dep-blame/ui
 ```
 
-For an installation under /gitlab, set the base to the /gitlab URL and
-include /gitlab in the repository web URL. Tokens require HTTPS; local
-HTTP instances can resolve publicly readable accounts without a token.
-Private API access, custom certificate authorities, SSH host aliases and
-nonstandard web URLs may require configuration. Certificate verification
-is never disabled (Node's NODE_EXTRA_CA_CERTS supports a trusted local CA).
+Account lookups run after history renders, share work per Git name/email identity (512-entry cache), and never block the timeline on rate limits or private repos — unmatched authors keep initials.
 
-Author names in both the table and package history drawer link to the
-account returned by the hosting service. Unmatched authors remain plain
-Git names; display names are never used to invent profile URLs. Configured
-installation subpaths are preserved in self-hosted profile links.
+Full documentation: [dep-blame on GitHub](https://github.com/ihssmaheel-dev/dep-blame#readme).
 
-Account lookups run after history is displayed. They share work per Git
-name/email identity, keep emails on the server, limit concurrency to three,
-and cache positive/negative results. The directory holds up to 512 identity
-entries; images are limited to 128 entries / 16 MiB, with a 512 KiB limit
-per image and five-second HTTP request deadlines. Repeated commits by the
-same identity reuse the host's account mapping.
+## Requirements
 
-An unpushed commit, an account the API cannot identify, a private repository
-without credentials, a rate limit, or an unsupported avatar CDN retains
-initials. A repository owner's picture is never assigned to every author.
-Bitbucket Server Git-only Person records without an account ID also retain
-initials. Adapter tests use fixtures; only GitHub was exercised against a
-live public service during this audit.
+Node.js ≥ 20. Depends on `dep-blame` for the analysis engine.

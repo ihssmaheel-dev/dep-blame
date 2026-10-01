@@ -1,0 +1,48 @@
+# Changelog
+
+All notable changes to `dep-blame` and `@dep-blame/ui` are documented here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Pre-1.0 minors may carry breaking cache-schema or JSON additions; additive
+JSON fields (`total`, `generation`, `months`, `headState`) never break
+`schemaVersion: 1` consumers.
+
+## [Unreleased]
+
+### Added
+
+- Bounded queries end to end: CLI `--limit` / `--page` / `--months` with `total` in JSON, engine `queryPaged` / `monthAggregates`, and dashboard endpoints `GET /api/events/paged`, `/api/months`, `/api/facets`.
+- Multi-version honesty: `resolutions[]` + `ambiguous: true` on entries and events (npm nested installs, yarn multi-descriptor entries, bun multi-version packages) instead of silently collapsing to the first version.
+- Atomic cache generations: WAL-checkpointed promotion, opposite-backend cleanup, and an `active.json` generation pointer (`generation`, `head`, `schema: 4`) read back as `generation` in results.
+- `ci --since 7d`-style time windows filter by date instead of silently falling back to the default branch.
+- Production docs: `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, issue/PR templates, and a rewritten official-grade `README.md`.
+
+### Fixed
+
+- Guarded `InvalidBaselineError` retry (single rescan, then a clear `--clear-cache` error) instead of unbounded recursion.
+- Historic discovery: any `node_modules` segment filtered (was only `node_modules/.`); over-long paths mark history `truncated` instead of silently partial.
+- `JsonStore.transaction` deep-copy rollback (was live-reference truncation).
+- Stats timeframe uses viewer-local `eventDayKey`, consistent with calendar grouping and SQLite instant comparison.
+- `getRepoState` validates `rev-parse` shape with a safe fallback; `getManifestCommits` chunks path filters (50 per invocation) against `ARG_MAX`.
+- `seedMissingParents` recovery walks bounded (50); scan lock wait extended to 60s for long scans.
+- Yarn Classic/Berry descriptor parsing: comma-joined descriptors split per name; quoted names handled.
+- Dashboard pager: flex-column card pins the pagination footer on every viewport with safe-area padding; table height is viewport-bound (`clamp(240px, 100dvh − 360px, 560px)`) with compact mobile controls.
+
+### Changed
+
+- Cache schema **v3 → v4** (`resolutions`, `ambiguous` columns, new indexes on `type` / `is_direct` / `ambiguous`). Stale caches migrate by rescan.
+- CSV gains `resolutions` and `ambiguous` columns (spreadsheet-safe quoting retained).
+- `test/cache.test.js` asserts the current `CACHE_SCHEMA_VERSION` instead of a hardcoded `'3'`, with a Windows handle-race-tolerant cleanup.
+
+## [0.1.0] — 2026-09-28
+
+Initial public scaffold:
+
+- `dep-blame` CLI (`list`, `pkg`, `calendar`, `stats`, `ci`, `added`/`updated`/`removed`, `--json`/`--csv`) with zero required runtime dependencies.
+- `@dep-blame/ui` loopback dashboard (vanilla HTML/JS, SSE progress, archaeology drawer, calendar, filters, JSON export).
+- Engine: path-filtered `git log`, single-process `cat-file --batch` with OID skip, incremental SQLite/JSON cache, monorepo workspace tracking, npm/pnpm/yarn/bun parsers with declared-vs-resolved sources.
+- 81 real-git-fixture tests across engine, cache, manifest, CLI, views, UI, forge, and review suites; CI matrix (Ubuntu/Windows/macOS × Node 20/22) plus JSON-fallback and tarball smoke jobs.
+
+[Unreleased]: https://github.com/ihssmaheel-dev/dep-blame/compare/dep-blame-v0.1.0...HEAD
+[0.1.0]: https://github.com/ihssmaheel-dev/dep-blame/releases/tag/dep-blame-v0.1.0
