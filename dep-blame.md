@@ -1187,3 +1187,38 @@ tests passed, syntax/whitespace checks passed, and the updated UI tarball
 passed the isolated install smoke check. Current HTML + JavaScript gzip size:
 **37,447 bytes**, within the 40 KiB budget. The earlier full-suite result remains
 an audit snapshot; this follow-up changed only popup UI behavior and styling.
+
+
+## 14. Scan state, toolbar, and calendar follow-up — 2026-10-01
+
+- Fixed the reported premature empty-repository message: loading, ready,
+  and error states are explicit and shared by Timeline and Calendar. One
+  persistent progress card survives switching views; retries and the fetch
+  fallback keep Sync disabled until the request finishes.
+- Desktop controls occupy one row with a bounded search field and SVG
+  chevrons. Narrow screens wrap without page overflow. The general Filters
+  menu is visible only in Calendar; Timeline keeps its column controls.
+  Clear filters now sits with the applied-filter chips.
+- Manifest selection lists real paths and counts, with search in the list.
+  Selection matches the full, case-sensitive path, avoiding accidental
+  inclusion of nested manifests or differently cased workspace paths.
+- Calendar navigation skips empty months and offers a searchable activity
+  month picker. Filters with no results hide the grid and navigation. Days
+  without events do not open an empty day history. Month/day buckets are
+  cached per filtered result, avoiding a full-history pass on each move.
+- Table and archaeology author names link to host-matched accounts. Missing
+  matches remain plain names. Fixed Gitea fallback and Bitbucket Server
+  profile/repository links for configured installation subpaths.
+- Added four client behavior regressions using the actual script with a
+  controlled stream/DOM adapter, plus a self-hosted subpath adapter test.
+  The adapter tests verify behavior and do not measure browser layout.
+- Browser verification used the actual HTML/JS with a controlled 3,554-event
+  fixture: switching while scanning, completion in Calendar, skipping month
+  gaps, direct month search, hiding empty results, exact manifest lists,
+  linked authors in the table/drawer, 1280px desktop alignment, and 375px
+  mobile controls/popovers. Hosting fixture profiles are simulated accounts;
+  no new live-provider identity guarantee is implied.
+- Verification: 81/81 full tests pass; syntax and whitespace checks pass;
+  UI HTML+JS gzip transfer is 38,897 bytes (under 40 KiB). Installed tarball
+  CLI, engine, API, font, CSP, and LICENSE smoke checks pass. No new runtime
+  dependencies were added.

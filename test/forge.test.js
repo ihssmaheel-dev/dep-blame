@@ -64,6 +64,33 @@ test('forge: all supported providers resolve host-linked authors and proxy raste
   } finally { repo.cleanup(); }
 });
 
+test('forge: self-hosted profile and repository links preserve installation subpaths', async () => {
+  const repo = await createTestRepo();
+  try {
+    await repo.commitFile('package.json', {dependencies:{alpha:'1'}}, 'add');
+    const sha = (await repo.runGit(['rev-parse','HEAD'])).stdout.trim();
+    for (const provider of ['gitea', 'bitbucket-server']) {
+      const base = 'https://forge.example/git';
+      const env = {DEP_BLAME_FORGE_PROVIDER:provider, DEP_BLAME_FORGE_BASE_URL:base,
+        DEP_BLAME_FORGE_WEB_URL:base + (provider === 'gitea' ? '/team/project' : '/projects/TEAM/repos/project')};
+      const calls = [];
+      const directory = createForgeDirectory(repo.repoDir, {env, request:async url => {
+        calls.push(url);
+        if (url.includes('/avatar.png')) return {status:200, headers:{}, bytes:PNG};
+        return json({author:provider === 'gitea' ? {id:42,login:'account'} : {id:42,slug:'account',name:'Account'}});
+      }});
+      const remote = configureRemote({remoteUrl:base + '/team/project'}, env);
+      directory.setRepository(remote, [{commitFull:sha}]);
+      const value = await directory.resolve([sha]);
+      assert.equal(value.profiles[sha].profileUrl, base + (provider === 'gitea' ? '/account' : '/users/account'));
+      assert.ok(calls.every(url => url.startsWith(base + '/')));
+      assert.equal(value.hosting.url, env.DEP_BLAME_FORGE_WEB_URL);
+    }
+    assert.equal(hostingInfo({remoteUrl:'https://forge.example/git/scm/TEAM/project',baseUrl:'https://forge.example/git'}, 'bitbucket-server').url,
+      'https://forge.example/git/projects/TEAM/repos/project');
+  } finally { repo.cleanup(); }
+});
+
 test('forge: names are not account IDs; identical names with different emails stay distinct', async () => {
   const repo = await createTestRepo();
   try {

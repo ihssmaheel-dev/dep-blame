@@ -51,10 +51,18 @@ Node.js ≥ 20. Depends on `dep-blame` for the analysis engine.
 ## Controls
 
 - Neutral black dark mode and a light theme, with bundled fonts.
+- Compact desktop toolbar with search, action tabs, manifests, and view
+  controls on one row; controls wrap on smaller screens.
+- Shared scan progress across views. Switching views during a scan keeps
+  the loading state until history arrives; scan failures remain visible.
+- Manifest filtering lists actual paths with search and exact selection.
+  Timeline uses column filters; Calendar also exposes the Filters menu.
 - Shared filter panels, visible applied-filter chips, and custom date
   range and page-size controls. No native date picker or select menu.
-- Calendar navigation uses months; table pagination is hidden in calendar
-  view. Select a day to inspect its events in the table.
+- Calendar previous/next skips months without matching changes. A searchable
+  month picker jumps directly to activity, and Latest returns to the newest
+  matching month. Empty results hide the grid; table pagination is hidden
+  in Calendar. Select an active day to inspect its events in the table.
 - JSON export contains all matching events, scan warnings, and the
   incomplete-history flag, independently of the visible table page.
 - Dates in the UI use the viewer's local calendar day.
@@ -96,6 +104,11 @@ HTTP instances can resolve publicly readable accounts without a token.
 Private API access, custom certificate authorities, SSH host aliases and
 nonstandard web URLs may require configuration. Certificate verification
 is never disabled (Node's NODE_EXTRA_CA_CERTS supports a trusted local CA).
+
+Author names in both the table and package history drawer link to the
+account returned by the hosting service. Unmatched authors remain plain
+Git names; display names are never used to invent profile URLs. Configured
+installation subpaths are preserved in self-hosted profile links.
 
 Account lookups run after history is displayed. They share work per Git
 name/email identity, keep emails on the server, limit concurrency to three,

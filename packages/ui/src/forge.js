@@ -86,7 +86,12 @@ export function hostingInfo(remote, providerOverride = '') {
   const url = new URL(remote.remoteUrl);
   const publicHosts = {'github.com': 'github', 'gitlab.com': 'gitlab', 'bitbucket.org': 'bitbucket', 'codeberg.org': 'forgejo', 'gitea.com': 'gitea'};
   const provider = Object.hasOwn(LABELS, providerOverride) && !['local','unknown'].includes(providerOverride) ? providerOverride : publicHosts[url.hostname] || 'unknown';
-  if (provider === 'bitbucket-server') url.pathname = url.pathname.replace(/^\/scm\/([^/]+)\/([^/]+)$/i, '/projects/$1/repos/$2');
+  if (provider === 'bitbucket-server') {
+    const prefix = remote.baseUrl ? new URL(remote.baseUrl).pathname.replace(/\/+$/, '') : '';
+    const relative = url.pathname.slice(prefix.length);
+    const match = relative.match(/^\/(?:scm\/)?([^/]+)\/([^/]+)$/i);
+    if (match) url.pathname = prefix + '/projects/' + match[1] + '/repos/' + match[2];
+  }
   return {provider, label: LABELS[provider], host: url.host, url: url.href.replace(/\/$/, '')};
 }
 
@@ -178,19 +183,19 @@ export function createForgeDirectory(cwd, options = {}) {
       const base = hosting.provider === 'github' ? (new URL(origin).hostname === 'github.com' ? 'https://api.github.com' : baseUrl() + '/api/v3') : baseUrl() + '/api/v1';
       const value = await json(`${base}/repos/${parts}/commits/${sha}`); user = value.author;
       if (!user?.login || user.id == null) return null;
-      return {username: user.login, profileUrl: safeProfile(user.html_url || origin + '/' + encodeURIComponent(user.login), origin), avatar: user.avatar_url};
+      return {username: user.login, profileUrl: safeProfile(user.html_url || (hosting.provider === 'github' ? origin : baseUrl()) + '/' + encodeURIComponent(user.login), origin), avatar: user.avatar_url};
     }
     if (hosting.provider === 'bitbucket') {
       const value = await json(`https://api.bitbucket.org/2.0/repositories/${parts}/commit/${sha}`); user = value.author?.user;
       return user?.account_id ? {username: user.nickname || user.display_name, profileUrl: safeProfile(user.links?.html?.href, origin), avatar: user.links?.avatar?.href} : null;
     }
     if (hosting.provider === 'bitbucket-server') {
-      const match = projectPath().match(/^(?:scm\/)?([^/]+)\/([^/]+)$/);
+      const match = projectPath().match(/^(?:scm\/)?([^/]+)\/([^/]+)$/) || projectPath().match(/^projects\/([^/]+)\/repos\/([^/]+)$/);
       if (!match) return null;
       const value = await json(`${baseUrl()}/rest/api/latest/projects/${encodeURIComponent(match[1])}/repos/${encodeURIComponent(match[2])}/commits/${sha}`);
       user = value.author;
       // Git-only Person objects have no ID/slug and must remain unmatched.
-      return user?.id != null && user.slug ? {username: user.name || user.slug, profileUrl: origin + '/users/' + encodeURIComponent(user.slug), avatar: origin + '/users/' + encodeURIComponent(user.slug) + '/avatar.png?size=64'} : null;
+      return user?.id != null && user.slug ? {username: user.name || user.slug, profileUrl: baseUrl() + '/users/' + encodeURIComponent(user.slug), avatar: baseUrl() + '/users/' + encodeURIComponent(user.slug) + '/avatar.png?size=64'} : null;
     }
     return null;
   }

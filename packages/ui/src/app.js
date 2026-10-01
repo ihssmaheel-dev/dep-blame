@@ -1,4 +1,7 @@
   let allEvents = [];
+  let historyState = 'loading';
+  let historyError = '';
+  const DOWN_CHEVRON = '<svg class="control-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>';
   let currentFilter = 'all';
   let currentSearch = '';
   let currentView = 'timeline';
@@ -67,7 +70,15 @@
 
   function getAuthorDetails(author, commit) {
     const profile = authorProfiles.get(commit)?.profile;
-    return {name: author || 'Unknown', username: profile?.username || '', profileUrl: safeExternalUrl(profile?.profileUrl) || '#'};
+    return {name: author || 'Unknown', username: profile?.username || '', profileUrl: safeExternalUrl(profile?.profileUrl)};
+  }
+
+  function renderAuthorName(author, commit) {
+    const details = getAuthorDetails(author, commit);
+    const name = escapeHtml(details.name);
+    return details.profileUrl
+      ? `<a class="author-name" href="${escapeHtml(details.profileUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml('Hosting account: ' + details.username)}">${name}</a>`
+      : `<span class="author-name" title="Git author; no linked hosting account available yet">${name}</span>`;
   }
 
   function updateHosting(value) {
@@ -110,7 +121,7 @@
         img.src = imageUrl; wrapper.appendChild(img);
       }
       wrapper.title = 'Hosting account: ' + (profile.username || 'author');
-      const name = wrapper.closest('td')?.querySelector('.author-name');
+      const name = wrapper.closest('[data-author-entry]')?.querySelector('.author-name');
       const profileUrl = safeExternalUrl(profile.profileUrl);
       if (name && profileUrl && name.tagName !== 'A') {
         const link = document.createElement('a'); link.className = name.className;
@@ -150,44 +161,8 @@
   }
 
   function renderScanningState() {
-    const tbody = document.getElementById('events-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = `
-    <tr>
-      <td colspan="8" style="padding: 0; border: none;">
-      <div class="scan-progress-container" id="scan-progress-box" role="status" aria-live="polite" aria-label="Repository scan progress">
-        <div class="scan-spinner-wrap">
-        <div class="scan-spinner-glow"></div>
-        <div class="scan-spinner-ring"></div>
-        <svg class="scan-spinner-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-        </div>
-        <div class="scan-badge">
-        <span class="scan-badge-dot"></span>
-        <span id="scan-stage-badge">Connecting</span>
-        </div>
-        <div class="scan-title" id="scan-title-text">Connecting to analysis stream...</div>
-        <div class="scan-steps" id="scan-steps" aria-hidden="true">
-          <span class="scan-step" data-phase="initializing"><span class="dot"></span>Init</span>
-          <span class="scan-step" data-phase="discovering"><span class="dot"></span>Manifests</span>
-          <span class="scan-step" data-phase="reading_commits"><span class="dot"></span>Commits</span>
-          <span class="scan-step" data-phase="analyzing"><span class="dot"></span>Analyzing</span>
-          <span class="scan-step" data-phase="saving"><span class="dot"></span>Saving</span>
-          <span class="scan-step" data-phase="complete"><span class="dot"></span>Ready</span>
-        </div>
-        <div class="scan-bar-track" id="scan-bar-track">
-        <div class="scan-bar-fill" id="scan-bar-fill" style="width: 4%;"></div>
-        </div>
-        <div class="scan-stats-row">
-        <span id="scan-commits-count">Connecting to analysis stream...</span>
-        <span id="scan-percent-label" style="font-weight: 700; color: var(--color-text);">…</span>
-        </div>
-        <div class="scan-detail-ticker" id="scan-detail-ticker"></div>
-      </div>
-      </td>
-    </tr>
-    `;
+    updateScanProgress({phase: 'initializing', message: 'Connecting to analysis stream…'});
+    renderView();
   }
 
   // Exact pipeline stages in order. Percent is derived from the real
@@ -263,6 +238,9 @@
   function applyLoadedData(data) {
     if (data.schemaVersion !== 1 || !Array.isArray(data.events)) throw new Error('Unsupported history response.');
     allEvents = data.events;
+    historyState = 'ready';
+    historyError = '';
+    calendarCache = null;
     sortedCache = null;
     facetCache.clear();
     repoOwner = data.repoOwner || null;
@@ -296,7 +274,6 @@
   // Only one analysis stream at a time: a refresh during a scan joins
   // the in-flight server scan instead of stacking another one.
   let activeStream = null;
-  let streamAttempts = 0;
 
   function closeActiveStream() {
     if (activeStream) {
@@ -306,53 +283,37 @@
   }
 
   async function loadData() {
+    if (activeStream || (historyState === 'loading' && document.getElementById('refresh-btn').disabled)) return false;
     const syncIcon = document.getElementById('sync-icon');
     const syncButton = document.getElementById('refresh-btn');
-    if (syncButton) syncButton.disabled = true;
+    syncButton.disabled = true;
+    syncIcon.style.animation = 'spin 1s linear infinite';
+    historyState = 'loading';
+    historyError = '';
     closeFilterPanel();
-    if (syncIcon) syncIcon.style.animation = 'spin 1s linear infinite';
     renderScanningState();
     closeActiveStream();
-
-    if (typeof window.EventSource !== 'undefined' && streamAttempts < 2) {
     try {
-      await openAnalysisStream();
-      streamAttempts = 0;
+      if (typeof window.EventSource !== 'undefined') {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try { await openAnalysisStream(); return true; }
+          catch { /* Retry once, then use the same server scan through fetch. */ }
+        }
+      }
+      const res = await fetch('/api/events');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'History request failed (' + res.status + ').');
+      applyLoadedData(data);
       return true;
     } catch (err) {
-      streamAttempts++;
-      // Fall through to plain fetch on the last attempt.
-      if (streamAttempts < 2) {
-        return loadData();
-      }
-      // Final fallback below.
+      historyState = 'error';
+      historyError = err.message || 'Failed to load dependency history. Try Sync again.';
+      document.getElementById('index-time').textContent = 'Sync failed';
+      renderView();
+      return false;
     } finally {
-      if (syncIcon) syncIcon.style.animation = '';
-      if (syncButton) syncButton.disabled = false;
-    }
-    }
-    streamAttempts = 0;
-
-    try {
-    const res = await fetch('/api/events');
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'History request failed (' + res.status + ').');
-    applyLoadedData(data);
-    return true;
-    } catch (err) {
-    document.getElementById('events-tbody').innerHTML = `
-      <tr><td colspan="8" class="empty-state" style="color: var(--color-removed)">
-      ${escapeHtml(err.message || "Failed to load dependency history. Try Sync again.")}
-      </td></tr>
-    `;
-    const notices = document.getElementById('history-notices');
-    notices.hidden = false;
-    notices.textContent = err.message || 'Could not load history. Try Sync again.';
-    document.getElementById('pager').hidden = true;
-    return false;
-    } finally {
-    if (syncIcon) syncIcon.style.animation = '';
-    if (syncButton) syncButton.disabled = false;
+      syncIcon.style.animation = '';
+      syncButton.disabled = false;
     }
   }
 
@@ -491,7 +452,7 @@
     if (f.packages.length > 0 && !selectedFilterSets.packages.has(ev.package || '')) return false;
     if (f.changes.length > 0 && !selectedFilterSets.changes.has(changeKeyOf(ev))) return false;
     if (f.type !== 'all' && typeTagOf(ev) !== f.type) return false;
-    if (f.manifest && !(ev.manifest || '').toLowerCase().includes(f.manifest)) return false;
+    if (f.manifest && ev.manifest !== f.manifest) return false;
     if (f.authors.length > 0 && !selectedFilterSets.authors.has(ev.author || '')) return false;
     if (f.commit && !`${ev.commit || ''} ${ev.commitFull || ''}`.toLowerCase().includes(f.commit)) return false;
     return true;
@@ -550,10 +511,10 @@
     }
     if (chips) {
       chips.hidden = !values.length;
-      chips.innerHTML = values.map(([key, label]) => `<button class="filter-chip" data-clear-filter="${key}" aria-label="Clear ${escapeHtml(label)}"><span>${escapeHtml(label)}</span><span aria-hidden="true">×</span></button>`).join('');
+      document.getElementById('filter-chip-list').innerHTML = values.map(([key, label]) => `<button class="filter-chip" data-clear-filter="${key}" aria-label="Clear ${escapeHtml(label)}"><span>${escapeHtml(label)}</span><span aria-hidden="true">×</span></button>`).join('');
     }
     const manifestLabel = document.getElementById('manifest-selected-label');
-    if (manifestLabel) manifestLabel.textContent = f.manifest ? 'Manifest filtered' : 'All manifests';
+    if (manifestLabel) { manifestLabel.textContent = f.manifest || 'All manifests'; manifestLabel.title = manifestLabel.textContent; }
     const clearBtn = document.getElementById('col-filter-clear');
     if (clearBtn) clearBtn.style.display = colFiltersActive() ? 'inline-block' : 'none';
     document.querySelectorAll('.col-filter').forEach(el => {
@@ -653,6 +614,7 @@
       if (kind === 'package') key = ev.package || '(unknown)';
       else if (kind === 'author') key = ev.author || 'Unknown';
       else if (kind === 'change') key = changeKeyOf(ev);
+      else if (kind === 'manifest') key = ev.manifest || '(unknown)';
       if (key === null) continue;
       counts.set(key, (counts.get(key) || 0) + 1);
     }
@@ -673,9 +635,11 @@
     panelAnchor = anchor;
     anchor.setAttribute('aria-expanded', 'true');
     anchor.setAttribute('aria-controls', 'filter-panel');
-    panel.setAttribute('aria-label', kind === 'page-size' ? 'Rows per page' : kind === 'filters' ? 'Filter history' : `${kind} filters`);
+    panel.setAttribute('aria-label', kind === 'page-size' ? 'Rows per page' : kind === 'filters' ? 'Filter history' : kind === 'calendar-month' ? 'Choose month with changes' : `${kind} filters`);
     if (kind === 'date') renderDatePanel(panel);
-    else if (kind === 'manifest' || kind === 'commit') renderTextPanel(panel, kind);
+    else if (kind === 'manifest') renderManifestPanel(panel);
+    else if (kind === 'commit') renderTextPanel(panel, kind);
+    else if (kind === 'calendar-month') renderCalendarMonthPanel(panel);
     else if (kind === 'action' || kind === 'type') renderOptionsPanel(panel, kind);
     else if (kind === 'page-size') renderPageSizePanel(panel);
     else if (kind === 'filters') renderFilterMenu(panel);
@@ -760,7 +724,7 @@
 
   function renderFilterMenu(panel) {
     const fields = [['date', 'Date range'], ['action', 'Action'], ['package', 'Dependency'], ['change', 'Version change'], ['type', 'Source'], ['manifest', 'Manifest'], ['author', 'Author'], ['commit', 'Commit']];
-    panel.innerHTML = `<div class="filter-panel-head">Filter history</div><div class="filter-panel-list">${fields.map(([kind, label]) => `<button class="filter-check" data-field="${kind}"><span class="lbl">${label}</span>${colFiltersActiveFor(kind) ? '●' : '›'}</button>`).join('')}</div>`;
+    panel.innerHTML = `<div class="filter-panel-head">Filter history</div><div class="filter-panel-list">${fields.map(([kind, label]) => `<button class="filter-check" data-field="${kind}"><span class="lbl">${label}</span><svg class="menu-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></button>`).join('')}</div>`;
     panel.querySelectorAll('[data-field]').forEach(btn => btn.addEventListener('click', () => openFilterPanel(btn.dataset.field, panelAnchor)));
   }
 
@@ -904,9 +868,35 @@
     draw();
   }
 
-  // Single-value text panel (manifest substring, commit SHA/prefix).
+  // A manifest is an exact path selection; typing only searches the list.
+  function renderManifestPanel(panel) {
+    const items = facetValues('manifest');
+    panel.innerHTML = `<div class="filter-panel-head">Manifests (${items.length})</div>
+      <input class="filter-panel-search" type="text" placeholder="Search manifest paths…" aria-label="Search manifests">
+      <div class="filter-panel-list" role="group" aria-label="Manifests"></div>`;
+    const list = panel.querySelector('.filter-panel-list');
+    const search = panel.querySelector('input');
+    const draw = () => {
+      const query = search.value.trim().toLowerCase();
+      const shown = items.filter(([path]) => path.toLowerCase().includes(query));
+      const row = (path, label, count) => `<button class="filter-check" data-manifest="${escapeHtml(path)}" aria-pressed="${colFilters.manifest === path}"><span class="box">✓</span><span class="lbl" title="${escapeHtml(label)}">${escapeHtml(label)}</span><span class="cnt">${count}</span></button>`;
+      list.innerHTML = row('', 'All manifests', allEvents.length) + shown.slice(0, 200).map(([path, count]) => row(path, path, count)).join('') +
+        (shown.length > 200 ? '<div class="filter-panel-empty">Showing 200 paths. Refine your search.</div>' : shown.length ? '' : '<div class="filter-panel-empty">No matching manifests.</div>');
+    };
+    search.addEventListener('input', draw);
+    list.addEventListener('click', e => {
+      const row = e.target.closest('[data-manifest]');
+      if (!row) return;
+      setColFilter('manifest', row.dataset.manifest);
+      closeFilterPanel(true);
+      renderView();
+    });
+    draw();
+  }
+
+  // Single-value text panel for commit SHA/prefix.
   function renderTextPanel(panel, kind) {
-    const titles = { manifest: 'Manifest path', commit: 'Commit SHA' };
+    const titles = { commit: 'Commit SHA' };
     const current = colFilters[kind] || '';
     panel.innerHTML = `
       <div class="filter-panel-head">${titles[kind]}</div>
@@ -1063,27 +1053,38 @@
     renderView();
   }
 
+  function emptyHistoryMarkup() {
+    const emptyRepo = allEvents.length === 0;
+    return `<svg class="empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+      <div class="empty-title">${emptyRepo ? 'This repository has no dependency events yet' : 'No events matching your filter or search query'}</div>
+      <div class="empty-subtitle">${emptyRepo ? 'Commit a package.json change and rescan to start the timeline.' : 'Try adjusting your filters or clearing your search query.'}</div>
+      ${emptyRepo ? '' : '<button class="btn-action" data-action="reset-filters">Reset filters</button>'}`;
+  }
+
   function renderView() {
     refreshColFilterState();
-    document.getElementById('pager').hidden = currentView !== 'timeline';
+    const ready = historyState === 'ready';
+    document.querySelector('.content-card').setAttribute('aria-busy', String(historyState === 'loading'));
+    document.getElementById('calendar-filters-btn').hidden = currentView !== 'calendar';
+    document.getElementById('history-status').hidden = ready;
+    document.getElementById('scan-progress-box').hidden = historyState !== 'loading';
+    document.getElementById('history-load-error').hidden = historyState !== 'error';
+    document.getElementById('history-error-message').textContent = historyError;
+    document.getElementById('timeline-view').style.display = ready && currentView === 'timeline' ? 'block' : 'none';
+    document.getElementById('calendar-view').classList.toggle('active', ready && currentView === 'calendar');
+    document.getElementById('pager').hidden = !ready || currentView !== 'timeline';
+    if (!ready) return;
     if (currentView === 'timeline') renderTable();
-    else if (currentView === 'calendar') renderCalendar();
+    else renderCalendar();
   }
 
   function renderTable() {
+    if (historyState !== 'ready') { renderView(); return; }
     const tbody = document.getElementById('events-tbody');
     const filtered = getSortedEvents();
 
     if (filtered.length === 0) {
-    const isEmptyRepo = allEvents.length === 0;
-    tbody.innerHTML = `
-      <tr><td colspan="8" class="empty-state">
-      <svg class="empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-      <div class="empty-title">${isEmptyRepo ? 'This repository has no dependency events yet' : 'No events matching your filter or search query'}</div>
-      <div class="empty-subtitle">${isEmptyRepo ? 'Commit a package.json change and rescan to start the timeline.' : 'Try adjusting your filters, clearing your search query, or switching tabs.'}</div>
-      ${isEmptyRepo ? '' : '<button class="btn-action" style="margin-top: 6px;" data-action="reset-filters">Reset Filters</button>'}
-      </td></tr>
-    `;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">${emptyHistoryMarkup()}</td></tr>`;
     renderPager(0, 0, 0);
     return;
     }
@@ -1149,12 +1150,12 @@
       <td>${typeBadge}</td>
       <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
       <td>
-        <div class="author-cell-link" title="Git author: ${escapeHtml(authorInfo.name)}">
+        <div class="author-cell-link" data-author-entry title="Git author: ${escapeHtml(authorInfo.name)}">
         <div class="author-avatar-wrapper" data-author-commit="${escapeHtml(ev.commitFull || ev.commit)}">
           <div class="author-avatar-fallback" style="display: flex;">${escapeHtml(authorInitial)}</div>
         </div>
         <div class="author-meta">
-          <span class="author-name">${escapeHtml(authorInfo.name)}</span>
+          ${renderAuthorName(ev.author, ev.commitFull || ev.commit)}
 
         </div>
         </div>
@@ -1182,7 +1183,7 @@
     const numbers = document.getElementById('pager-numbers');
     const sizeSel = document.getElementById('pager-size');
     if (!pager) return;
-    if (sizeSel) sizeSel.textContent = pageSize + ' ▾';
+    if (sizeSel) sizeSel.innerHTML = '<span>' + pageSize + '</span>' + DOWN_CHEVRON;
     if (total <= pageSize) {
       pager.hidden = currentView !== 'timeline' || total === 0;
       if (info) info.textContent = total === 0 ? 'Showing 0 events' : `Showing all ${total} events`;
@@ -1261,56 +1262,93 @@
   let calendarYear = new Date().getFullYear();
   let calendarMonth = new Date().getMonth();
   let calendarInitialized = false;
+  let calendarCache = null;
+
+  // Build month/day buckets once for each filtered result, then reuse them
+  // while navigating. No full-history scan on each previous/next click.
+  function calendarActivity() {
+    const events = getSortedEvents();
+    if (calendarCache?.source === events) return calendarCache;
+    const buckets = new Map();
+    for (const ev of events) {
+      const dayKey = eventDateKey(ev);
+      if (!dayKey) continue;
+      const key = dayKey.slice(0, 7);
+      if (!buckets.has(key)) buckets.set(key, {days: new Map(), count: 0, added: 0, updated: 0, removed: 0});
+      const bucket = buckets.get(key), day = Number(dayKey.slice(8));
+      if (!bucket.days.has(day)) bucket.days.set(day, []);
+      bucket.days.get(day).push(ev);
+      bucket.count++;
+      bucket[ev.type] = (bucket[ev.type] || 0) + 1;
+    }
+    calendarCache = {source: events, buckets, months: [...buckets.keys()].sort()};
+    return calendarCache;
+  }
+
+  function calendarKey() { return calendarYear + '-' + String(calendarMonth + 1).padStart(2, '0'); }
+  function monthLabel(key) { return MONTHS[Number(key.slice(5)) - 1] + ' ' + key.slice(0, 4); }
+  function selectCalendarMonth(key) {
+    calendarYear = Number(key.slice(0,4)); calendarMonth = Number(key.slice(5)) - 1;
+    calendarInitialized = true;
+    renderCalendar();
+  }
+  function moveCalendar(offset) {
+    if (historyState !== 'ready') return;
+    const months = calendarActivity().months;
+    const next = months[months.indexOf(calendarKey()) + offset];
+    if (next) selectCalendarMonth(next);
+  }
+  function renderCalendarMonthPanel(panel) {
+    const activity = calendarActivity();
+    const months = [...activity.months].reverse();
+    panel.innerHTML = '<div class="filter-panel-head">Months with changes</div><input class="filter-panel-search" type="text" aria-label="Search months" placeholder="Search month or year…"><div class="filter-panel-list" role="group" aria-label="Months with changes"></div>';
+    const input = panel.querySelector('input'), list = panel.querySelector('.filter-panel-list');
+    const draw = () => {
+      const query = input.value.trim().toLowerCase();
+      const shown = months.filter(key => (monthLabel(key) + ' ' + key).toLowerCase().includes(query));
+      list.innerHTML = shown.slice(0,200).map(key => `<button class="filter-check" data-calendar-month="${key}" aria-pressed="${key === calendarKey()}"><span class="box">✓</span><span class="lbl">${monthLabel(key)}</span><span class="cnt">${activity.buckets.get(key).count}</span></button>`).join('') +
+        (shown.length > 200 ? '<div class="filter-panel-empty">Showing 200 months. Refine your search.</div>' : shown.length ? '' : '<div class="filter-panel-empty">No matching months.</div>');
+    };
+    input.addEventListener('input', draw);
+    list.addEventListener('click', e => {
+      const row = e.target.closest('[data-calendar-month]');
+      if (!row) return;
+      closeFilterPanel(true);
+      selectCalendarMonth(row.dataset.calendarMonth);
+    });
+    draw();
+  }
 
   function renderCalendar() {
+    if (historyState !== 'ready') { renderView(); return; }
     const grid = document.getElementById('calendar-days-grid');
     const titleElem = document.getElementById('calendar-month-title');
     const statsElem = document.getElementById('calendar-month-stats');
-    if (!grid || !titleElem) return;
-
-    const filtered = getSortedEvents();
-
-    // If opening calendar for first time, center on latest event's month
-    if (!calendarInitialized && filtered.length > 0) {
-    for (const ev of [latestEvent(filtered)].filter(Boolean)) {
-      if (ev.date) {
-      const d = new Date(ev.date);
-      if (!isNaN(d.getTime())) {
-        calendarYear = d.getFullYear();
-        calendarMonth = d.getMonth();
-        break;
-      }
-      }
+    const activity = calendarActivity();
+    const empty = activity.months.length === 0;
+    document.querySelector('.calendar-topbar').hidden = empty;
+    document.querySelector('.calendar-frame').hidden = empty;
+    document.getElementById('calendar-empty').hidden = !empty;
+    if (empty) {
+      grid.innerHTML = '';
+      document.getElementById('calendar-empty').innerHTML = emptyHistoryMarkup();
+      return;
     }
-    calendarInitialized = true;
+    if (!calendarInitialized || !activity.buckets.has(calendarKey())) {
+      const latest = activity.months.at(-1);
+      calendarYear = Number(latest.slice(0,4)); calendarMonth = Number(latest.slice(5)) - 1;
+      calendarInitialized = true;
     }
-
-    titleElem.textContent = `${MONTHS[calendarMonth]} ${calendarYear}`;
-
-    const ymPrefix = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}`;
-    // Viewer-local basis (same helper as grouping): boundary events
-    // can't select one month but render in another.
-    const monthEvents = filtered.filter(e => {
-      const k = dayKeyLocal(e.date);
-      return k !== null && k.startsWith(ymPrefix);
-    });
-
-    const dayEventMap = new Map();
-    let monthAdded = 0, monthUpdated = 0, monthRemoved = 0;
-    for (const ev of monthEvents) {
-    const k = dayKeyLocal(ev.date);
-    if (k === null) continue;
-    const day = parseInt(k.slice(8, 10), 10);
-    if (!dayEventMap.has(day)) dayEventMap.set(day, []);
-    dayEventMap.get(day).push(ev);
-    if (ev.type === 'added') monthAdded++;
-    else if (ev.type === 'removed') monthRemoved++;
-    else monthUpdated++;
-    }
-
-    if (statsElem) {
-    statsElem.textContent = `${monthEvents.length} change${monthEvents.length === 1 ? '' : 's'} (${monthAdded} added, ${monthUpdated} updated, ${monthRemoved} removed)`;
-    }
+    const ymPrefix = calendarKey();
+    titleElem.textContent = monthLabel(ymPrefix);
+    const index = activity.months.indexOf(ymPrefix);
+    const prev = document.getElementById('cal-prev-btn'), next = document.getElementById('cal-next-btn');
+    prev.disabled = index === 0; next.disabled = index === activity.months.length - 1;
+    prev.title = prev.disabled ? 'No earlier changes' : 'Previous changes: ' + monthLabel(activity.months[index - 1]);
+    next.title = next.disabled ? 'No later changes' : 'Next changes: ' + monthLabel(activity.months[index + 1]);
+    document.getElementById('cal-today-btn').disabled = next.disabled;
+    const bucket = activity.buckets.get(ymPrefix), dayEventMap = bucket.days;
+    statsElem.textContent = bucket.count + (bucket.count === 1 ? ' change · ' : ' changes · ') + bucket.added + ' added, ' + bucket.updated + ' updated, ' + bucket.removed + ' removed';
 
     const firstDayOfWeek = new Date(calendarYear, calendarMonth, 1).getDay(); // 0 = Sun
     const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
@@ -1409,7 +1447,7 @@
         return;
       }
       const day = e.target.closest('[data-day]');
-      if (day && grid.contains(day)) filterByDay(day.getAttribute('data-day') || '');
+      if (day && day.classList.contains('has-events') && grid.contains(day)) filterByDay(day.getAttribute('data-day') || '');
     });
 
   }
@@ -1610,11 +1648,11 @@
         </div>
         <div class="node-version">${actionText}</div>
         <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
-        <div style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 7px;">
+        <div data-author-entry style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 7px;">
         <div class="author-avatar-wrapper" data-author-commit="${escapeHtml(ev.commitFull || ev.commit)}" style="width: 18px; height: 18px;">
           <div class="author-avatar-fallback" style="font-size: 9px; display: flex;">${escapeHtml(authorInitial)}</div>
         </div>
-        <span>by ${escapeHtml(authorInfo.name)} · ${ev.source === 'lockfile' ? 'Resolved' : 'Declared'} in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span></span>
+        <span>by ${renderAuthorName(ev.author, ev.commitFull || ev.commit)} · ${ev.source === 'lockfile' ? 'Resolved' : 'Declared'} in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span></span>
         </div>
       </div>
       </div>
@@ -1721,7 +1759,7 @@
     document.getElementById('view-calendar-btn').classList.remove('active');
     document.getElementById('timeline-view').style.display = 'block';
     document.getElementById('calendar-view').classList.remove('active');
-    renderTable();
+    renderView();
   }
 
   function switchToCalendar() {
@@ -1735,61 +1773,28 @@
     document.getElementById('view-timeline-btn').classList.remove('active');
     document.getElementById('timeline-view').style.display = 'none';
     document.getElementById('calendar-view').classList.add('active');
-    renderCalendar();
+    renderView();
   }
 
   // View toggles
   document.getElementById('view-timeline-btn').addEventListener('click', switchToTimeline);
   document.getElementById('view-calendar-btn').addEventListener('click', switchToCalendar);
 
-  // Calendar navigation
-  const calPrev = document.getElementById('cal-prev-btn');
-  if (calPrev) {
-    calPrev.addEventListener('click', () => {
-    calendarMonth--;
-    if (calendarMonth < 0) {
-      calendarMonth = 11;
-      calendarYear--;
+  // Skip months without matching events; the month picker jumps directly.
+  document.getElementById('cal-prev-btn').addEventListener('click', () => moveCalendar(-1));
+  document.getElementById('cal-next-btn').addEventListener('click', () => moveCalendar(1));
+  document.getElementById('cal-today-btn').addEventListener('click', () => {
+    const latest = calendarActivity().months.at(-1);
+    if (latest) selectCalendarMonth(latest);
+  });
+  document.querySelector('.calendar-nav-group').addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault(); moveCalendar(e.key === 'ArrowLeft' ? -1 : 1);
     }
-    renderCalendar();
-    });
-  }
-
-  const calNext = document.getElementById('cal-next-btn');
-  if (calNext) {
-    calNext.addEventListener('click', () => {
-    calendarMonth++;
-    if (calendarMonth > 11) {
-      calendarMonth = 0;
-      calendarYear++;
-    }
-    renderCalendar();
-    });
-  }
-
-  const calToday = document.getElementById('cal-today-btn');
-  if (calToday) {
-    calToday.addEventListener('click', () => {
-    const filtered = getSortedEvents();
-    if (filtered.length > 0) {
-      for (const ev of [latestEvent(filtered)].filter(Boolean)) {
-      if (ev.date) {
-        const d = new Date(ev.date);
-        if (!isNaN(d.getTime())) {
-        calendarYear = d.getFullYear();
-        calendarMonth = d.getMonth();
-        renderCalendar();
-        return;
-        }
-      }
-      }
-    }
-    const now = new Date();
-    calendarYear = now.getFullYear();
-    calendarMonth = now.getMonth();
-    renderCalendar();
-    });
-  }
+  });
+  document.getElementById('calendar-empty').addEventListener('click', e => {
+    if (e.target.closest('[data-action="reset-filters"]')) resetFilters();
+  });
 
   // Filter pills
   document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -1887,7 +1892,7 @@
     clearColFilters();
     refreshColFilterState();
     renderView();
-    document.querySelector('button[data-panel="filters"]').focus({preventScroll: true});
+    document.getElementById(currentView === 'calendar' ? 'calendar-filters-btn' : 'manifest-dropdown-btn').focus({preventScroll: true});
   });
 
   document.getElementById('active-filters').addEventListener('click', e => {
@@ -1899,7 +1904,7 @@
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === currentFilter));
     currentPage = 1;
     renderView();
-    (document.querySelector('#active-filters button') || document.querySelector('button[data-panel="filters"]')).focus({preventScroll: true});
+    (document.querySelector('#active-filters button') || document.getElementById(currentView === 'calendar' ? 'calendar-filters-btn' : 'manifest-dropdown-btn')).focus({preventScroll: true});
   });
 
   // Live search (debounced so large histories don't re-render per keystroke)
