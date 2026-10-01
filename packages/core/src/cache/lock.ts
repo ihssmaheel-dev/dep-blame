@@ -6,7 +6,7 @@ export interface ScanLock {
 }
 
 const LOCK_DIR = 'scan.lock';
-const STALE_MS = 5 * 60 * 1000;
+const STALE_MS = 60 * 1000;
 const WAIT_MS = 15000;
 const POLL_MS = 100;
 

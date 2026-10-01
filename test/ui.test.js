@@ -85,10 +85,14 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     assert.ok(htmlBody.includes('dep-blame'));
     assert.ok(htmlBody.includes('drawer-overlay'));
 
-    // Proper datatable: per-column filter row covering every column.
-    for (const col of ['date', 'action', 'package', 'change', 'type', 'manifest', 'author', 'commit']) {
+    // Proper datatable: rich per-column filters (panels + inputs/selects).
+    for (const panel of ['date', 'package', 'change', 'author']) {
+      assert.ok(htmlBody.includes(`data-panel="${panel}"`), `missing column filter panel: ${panel}`);
+    }
+    for (const col of ['action', 'type', 'manifest', 'commit']) {
       assert.ok(htmlBody.includes(`data-col="${col}"`), `missing column filter: ${col}`);
     }
+    assert.ok(htmlBody.includes('id="filter-panel"'), 'missing shared filter panel container');
 
     // Proper pagination: first/numbered/last + page-size selector.
     for (const id of ['pager-first', 'pager-prev', 'pager-numbers', 'pager-next', 'pager-last', 'pager-size']) {

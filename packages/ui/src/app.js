@@ -11,8 +11,12 @@
   const PAGE_SIZES = [25, 50, 100];
   let searchTimer = null;
   let colFilterTimer = null;
-  // Per-column datatable filters; reset on Reset Filters.
-  let colFilters = { date: '', action: 'all', package: '', change: '', type: 'all', manifest: '', author: '', commit: '' };
+  // Per-column datatable filters. Sets (packages/changes/authors) and the
+  // date range are empty/off when inactive; selects use 'all'.
+  let colFilters = freshColFilters();
+  function freshColFilters() {
+    return { dateFrom: '', dateTo: '', datePreset: '', action: 'all', packages: [], changes: [], type: 'all', manifest: '', authors: [], commit: '' };
+  }
 
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -227,50 +231,41 @@
     renderView();
   }
 
+  // Only one analysis stream at a time: a refresh during a scan joins
+  // the in-flight server scan instead of stacking another one.
+  let activeStream = null;
+  let streamAttempts = 0;
+
+  function closeActiveStream() {
+    if (activeStream) {
+      try { activeStream.close(); } catch {}
+      activeStream = null;
+    }
+  }
+
   async function loadData() {
     const syncIcon = document.getElementById('sync-icon');
     if (syncIcon) syncIcon.style.animation = 'spin 1s linear infinite';
     renderScanningState();
+    closeActiveStream();
 
-    if (typeof window.EventSource !== 'undefined') {
+    if (typeof window.EventSource !== 'undefined' && streamAttempts < 2) {
     try {
-      await new Promise((resolve, reject) => {
-      const es = new EventSource('/api/events/stream');
-      let settled = false;
-
-      es.addEventListener('progress', (e) => {
-        try {
-        updateScanProgress(JSON.parse(e.data));
-        } catch {}
-      });
-
-      es.addEventListener('complete', (e) => {
-        if (settled) return;
-        settled = true;
-        try {
-        applyLoadedData(JSON.parse(e.data));
-        es.close();
-        resolve();
-        } catch (err) {
-        es.close();
-        reject(err);
-        }
-      });
-
-      es.addEventListener('error', (err) => {
-        if (settled) return;
-        settled = true;
-        es.close();
-        reject(err);
-      });
-      });
+      await openAnalysisStream();
+      streamAttempts = 0;
       return;
-    } catch {
-      // Fall through to regular fetch fallback
+    } catch (err) {
+      streamAttempts++;
+      // Fall through to plain fetch on the last attempt.
+      if (streamAttempts < 2) {
+        return loadData();
+      }
+      // Final fallback below.
     } finally {
       if (syncIcon) syncIcon.style.animation = '';
     }
     }
+    streamAttempts = 0;
 
     try {
     const res = await fetch('/api/events');
@@ -285,6 +280,53 @@
     } finally {
     if (syncIcon) syncIcon.style.animation = '';
     }
+  }
+
+  // Opens the SSE stream with a stall watchdog: if the server accepts
+  // the connection but yields no progress (e.g. it is still acquiring
+  // the scan lock), the ticker says so instead of hanging silently.
+  function openAnalysisStream() {
+    return new Promise((resolve, reject) => {
+    const es = new EventSource('/api/events/stream');
+    activeStream = es;
+    let settled = false;
+    let gotProgress = false;
+
+    const stallTimer = setTimeout(() => {
+      if (settled || gotProgress) return;
+      const ticker = document.getElementById('scan-detail-ticker');
+      if (ticker) ticker.textContent = 'Still connecting — server may be finishing another scan…';
+    }, 6000);
+
+    const done = (fn) => (arg) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(stallTimer);
+      if (activeStream === es) activeStream = null;
+      try { es.close(); } catch {}
+      fn(arg);
+    };
+
+    es.addEventListener('progress', (e) => {
+      gotProgress = true;
+      try {
+      updateScanProgress(JSON.parse(e.data));
+      } catch {}
+    });
+
+    es.addEventListener('complete', done((e) => {
+      try {
+      applyLoadedData(JSON.parse(e.data));
+      resolve();
+      } catch (err) {
+      reject(err);
+      }
+    }));
+
+    es.addEventListener('error', done((err) => {
+      reject(err instanceof Error ? err : new Error('Stream failed'));
+    }));
+    });
   }
 
   // Custom Dropdown Populator (No native select)
@@ -375,8 +417,19 @@
     });
   }
 
-  // Per-column datatable filters. Text matches case-insensitively;
-  // selects match exactly. Returns true when the event passes all set columns.
+  // Per-column datatable filters. Sets (packages/changes/authors) and the
+  // date range are empty/off when inactive; selects match exactly.
+  // Returns true when the event passes all set columns.
+  function eventDateKey(ev) {
+    return (ev.date || '').slice(0, 10);
+  }
+
+  function changeKeyOf(ev) {
+    if (ev.type === 'added') return `+ ${ev.to || ''}`;
+    if (ev.type === 'removed') return `− ${ev.from || ''}`;
+    return `${ev.from || '?'} → ${ev.to || '?'}`;
+  }
+
   function changeTextOf(ev) {
     if (ev.type === 'added') return ev.to || '';
     if (ev.type === 'removed') return ev.from || '';
@@ -391,13 +444,18 @@
 
   function matchesColFilters(ev) {
     const f = colFilters;
-    if (f.date && !(ev.date || '').toLowerCase().includes(f.date)) return false;
+    if ((f.dateFrom || f.dateTo)) {
+      const d = eventDateKey(ev);
+      if (!d) return false;
+      if (f.dateFrom && d < f.dateFrom) return false;
+      if (f.dateTo && d > f.dateTo) return false;
+    }
     if (f.action !== 'all' && ev.type !== f.action) return false;
-    if (f.package && !(ev.package || '').toLowerCase().includes(f.package)) return false;
-    if (f.change && !changeTextOf(ev).toLowerCase().includes(f.change)) return false;
+    if (f.packages.length > 0 && !f.packages.includes(ev.package || '')) return false;
+    if (f.changes.length > 0 && !f.changes.includes(changeKeyOf(ev))) return false;
     if (f.type !== 'all' && typeTagOf(ev) !== f.type) return false;
     if (f.manifest && !(ev.manifest || '').toLowerCase().includes(f.manifest)) return false;
-    if (f.author && !`${ev.author || ''} ${authorUsername(ev) || ''}`.toLowerCase().includes(f.author)) return false;
+    if (f.authors.length > 0 && !f.authors.includes(ev.author || '')) return false;
     if (f.commit && !`${ev.commit || ''} ${ev.commitFull || ''}`.toLowerCase().includes(f.commit)) return false;
     return true;
   }
@@ -418,24 +476,242 @@
   }
 
   function clearColFilters() {
-    colFilters = { date: '', action: 'all', package: '', change: '', type: 'all', manifest: '', author: '', commit: '' };
+    colFilters = freshColFilters();
     document.querySelectorAll('.col-filter').forEach(el => {
       el.value = el.tagName === 'SELECT' ? 'all' : '';
       el.classList.remove('active-filter');
     });
-    const clearBtn = document.getElementById('col-filter-clear');
-    if (clearBtn) clearBtn.style.display = 'none';
+    refreshColFilterState();
     currentPage = 1;
   }
 
+  function colFiltersActive() {
+    const f = colFilters;
+    return !!(f.dateFrom || f.dateTo || f.action !== 'all' || f.packages.length > 0 ||
+      f.changes.length > 0 || f.type !== 'all' || f.manifest || f.authors.length > 0 || f.commit);
+  }
+
+  function shortDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso + 'T00:00:00');
+    return isNaN(d.getTime()) ? iso : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
   function refreshColFilterState() {
-    const anySet = Object.entries(colFilters).some(([k, v]) => (k === 'action' || k === 'type' ? v !== 'all' : v !== ''));
+    const f = colFilters;
     const clearBtn = document.getElementById('col-filter-clear');
-    if (clearBtn) clearBtn.style.display = anySet ? 'inline-block' : 'none';
+    if (clearBtn) clearBtn.style.display = colFiltersActive() ? 'inline-block' : 'none';
     document.querySelectorAll('.col-filter').forEach(el => {
       const col = el.dataset.col;
       const v = colFilters[col];
       el.classList.toggle('active-filter', col === 'action' || col === 'type' ? v !== 'all' : v !== '');
+    });
+    const labels = {
+      date: f.dateFrom || f.dateTo
+        ? (f.datePreset && !f.datePreset.startsWith('custom')
+          ? f.datePreset
+          : `${shortDate(f.dateFrom) || '…'} – ${shortDate(f.dateTo) || '…'}`)
+        : 'All dates',
+      package: f.packages.length === 0 ? 'All packages' : `${f.packages.length} selected`,
+      change: f.changes.length === 0 ? 'All versions' : `${f.changes.length} selected`,
+      author: f.authors.length === 0 ? 'All authors' : `${f.authors.length} selected`
+    };
+    document.querySelectorAll('[data-col-label]').forEach(el => {
+      const col = el.dataset.colLabel;
+      if (labels[col] !== undefined) el.textContent = labels[col];
+      const btn = el.closest('.col-filter-btn');
+      if (btn) btn.classList.toggle('active-filter', colFiltersActiveFor(col));
+    });
+  }
+
+  function colFiltersActiveFor(col) {
+    const f = colFilters;
+    if (col === 'date') return !!(f.dateFrom || f.dateTo);
+    if (col === 'package') return f.packages.length > 0;
+    if (col === 'change') return f.changes.length > 0;
+    if (col === 'author') return f.authors.length > 0;
+    return false;
+  }
+
+  // Rich floating panels for date + multi-select columns. One shared
+  // container positioned under the trigger button; closes on outside
+  // click, Escape, scroll, or resize. Selections apply explicitly.
+  let openPanelKind = null;
+
+  function closeFilterPanel() {
+    const panel = document.getElementById('filter-panel');
+    if (panel) panel.hidden = true;
+    openPanelKind = null;
+  }
+
+  function isoDay(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function datePresets() {
+    const now = new Date();
+    const today = isoDay(now);
+    const yesterday = isoDay(new Date(now.getTime() - 86400000));
+    const last7 = isoDay(new Date(now.getTime() - 6 * 86400000));
+    const last30 = isoDay(new Date(now.getTime() - 29 * 86400000));
+    const firstOfMonth = `${today.slice(0, 7)}-01`;
+    return [
+      { name: 'Today', from: today, to: today },
+      { name: 'Yesterday', from: yesterday, to: yesterday },
+      { name: 'Last 7 days', from: last7, to: today },
+      { name: 'Last 30 days', from: last30, to: today },
+      { name: 'This month', from: firstOfMonth, to: today }
+    ];
+  }
+
+  function facetValues(kind) {
+    const counts = new Map();
+    for (const ev of allEvents) {
+      let key = null;
+      if (kind === 'package') key = ev.package || '(unknown)';
+      else if (kind === 'author') key = ev.author || 'Unknown';
+      else if (kind === 'change') key = changeKeyOf(ev);
+      if (key === null) continue;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  }
+
+  function openFilterPanel(kind, anchor) {
+    const panel = document.getElementById('filter-panel');
+    if (!panel) return;
+    if (openPanelKind === kind) {
+      closeFilterPanel();
+      return;
+    }
+    openPanelKind = kind;
+    if (kind === 'date') renderDatePanel(panel);
+    else renderMultiPanel(panel, kind);
+    panel.hidden = false;
+    const rect = anchor.getBoundingClientRect();
+    const width = Math.min(280, window.innerWidth - 16);
+    let left = Math.min(rect.left, window.innerWidth - width - 8);
+    left = Math.max(8, left);
+    panel.style.left = left + 'px';
+    panel.style.top = Math.min(rect.bottom + 6, window.innerHeight - 40) + 'px';
+    const focusTarget = panel.querySelector('.filter-panel-search, input[type="date"], .filter-preset');
+    if (focusTarget) focusTarget.focus();
+  }
+
+  function renderDatePanel(panel) {
+    const f = colFilters;
+    const presets = datePresets();
+    panel.innerHTML = `
+      <div class="filter-panel-head">Date range</div>
+      <div class="filter-presets">
+        ${presets.map(p => `<button class="filter-preset${f.datePreset === p.name ? ' current' : ''}" data-preset="${p.name}">${p.name}</button>`).join('')}
+      </div>
+      <div class="filter-range">
+        <input type="date" id="filter-date-from" value="${escapeHtml(f.dateFrom)}" aria-label="From date" max="${isoDay(new Date())}">
+        <span>–</span>
+        <input type="date" id="filter-date-to" value="${escapeHtml(f.dateTo)}" aria-label="To date" max="${isoDay(new Date())}">
+      </div>
+      <div class="filter-panel-foot">
+        <button class="pager-btn" data-panel-act="clear">Clear</button>
+        <button class="pager-btn apply" data-panel-act="apply">Apply</button>
+      </div>`;
+    panel.querySelectorAll('[data-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = presets.find(x => x.name === btn.dataset.preset);
+        if (!p) return;
+        panel.querySelector('#filter-date-from').value = p.from;
+        panel.querySelector('#filter-date-to').value = p.to;
+        panel.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('current', b === btn));
+        colFilters.datePreset = p.name;
+      });
+    });
+    const markCustom = () => {
+      colFilters.datePreset = 'custom';
+      panel.querySelectorAll('[data-preset]').forEach(b => b.classList.remove('current'));
+    };
+    panel.querySelector('#filter-date-from').addEventListener('change', markCustom);
+    panel.querySelector('#filter-date-to').addEventListener('change', markCustom);
+    panel.querySelector('[data-panel-act="clear"]').addEventListener('click', () => {
+      colFilters.dateFrom = '';
+      colFilters.dateTo = '';
+      colFilters.datePreset = '';
+      currentPage = 1;
+      refreshColFilterState();
+      closeFilterPanel();
+      renderView();
+    });
+    panel.querySelector('[data-panel-act="apply"]').addEventListener('click', () => {
+      let from = panel.querySelector('#filter-date-from').value;
+      let to = panel.querySelector('#filter-date-to').value;
+      if (from && to && from > to) { const t = from; from = to; to = t; }
+      colFilters.dateFrom = from;
+      colFilters.dateTo = to;
+      if (!from && !to) colFilters.datePreset = '';
+      else if (!colFilters.datePreset) colFilters.datePreset = 'custom';
+      currentPage = 1;
+      refreshColFilterState();
+      closeFilterPanel();
+      renderView();
+    });
+  }
+
+  function renderMultiPanel(panel, kind) {
+    const titles = { package: 'Dependencies', change: 'Version changes', author: 'Authors' };
+    const stateKey = kind === 'package' ? 'packages' : kind === 'change' ? 'changes' : 'authors';
+    const selected = new Set(colFilters[stateKey]);
+    const items = facetValues(kind);
+    panel.innerHTML = `
+      <div class="filter-panel-head">${titles[kind]} (${items.length})</div>
+      <input type="text" class="filter-panel-search" placeholder="Search ${titles[kind].toLowerCase()}…" aria-label="Search ${titles[kind].toLowerCase()}">
+      <div class="filter-panel-list" role="group" aria-label="${titles[kind]}"></div>
+      <div class="filter-panel-foot">
+        <button class="pager-btn" data-panel-act="clear">Clear</button>
+        <button class="pager-btn" data-panel-act="all">All</button>
+        <button class="pager-btn apply" data-panel-act="apply">Apply</button>
+      </div>`;
+    const list = panel.querySelector('.filter-panel-list');
+    const search = panel.querySelector('.filter-panel-search');
+    const draw = (query) => {
+      const q = (query || '').toLowerCase();
+      const shown = items.filter(([name]) => !q || name.toLowerCase().includes(q));
+      if (shown.length === 0) {
+        list.innerHTML = '<div class="filter-panel-empty">No matches.</div>';
+        return;
+      }
+      list.innerHTML = shown.map(([name, count]) => `
+        <button class="filter-check" data-name="${escapeHtml(name)}" aria-checked="${selected.has(name)}" role="checkbox">
+          <span class="box">✓</span>
+          <span class="lbl" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+          <span class="cnt">${count}</span>
+        </button>`).join('');
+    };
+    draw('');
+    search.addEventListener('input', () => draw(search.value.trim()));
+    list.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-name]');
+      if (!row) return;
+      const name = row.getAttribute('data-name') || '';
+      if (selected.has(name)) selected.delete(name);
+      else selected.add(name);
+      row.setAttribute('aria-checked', String(selected.has(name)));
+    });
+    panel.querySelector('[data-panel-act="clear"]').addEventListener('click', () => {
+      selected.clear();
+      list.querySelectorAll('[aria-checked="true"]').forEach(el => el.setAttribute('aria-checked', 'false'));
+    });
+    panel.querySelector('[data-panel-act="all"]').addEventListener('click', () => {
+      for (const [name] of items) selected.add(name);
+      list.querySelectorAll('.filter-check').forEach(el => el.setAttribute('aria-checked', 'true'));
+    });
+    panel.querySelector('[data-panel-act="apply"]').addEventListener('click', () => {
+      colFilters[stateKey] = items.map(([name]) => name).filter(name => selected.has(name));
+      currentPage = 1;
+      refreshColFilterState();
+      closeFilterPanel();
+      renderView();
     });
   }
 
@@ -854,6 +1130,7 @@
     currentFilter = 'all';
     currentSearch = '';
     currentManifest = 'all';
+    closeFilterPanel();
     clearColFilters();
     currentPage = 1;
     document.getElementById('search-input').value = '';
@@ -1228,6 +1505,8 @@
     return Math.max(1, Math.ceil(total / pageSize));
   }
   const pagerFirst = document.getElementById('pager-first');
+  const pagerPrev = document.getElementById('pager-prev');
+  const pagerNext = document.getElementById('pager-next');
   const pagerLast = document.getElementById('pager-last');
   const pagerNumbers = document.getElementById('pager-numbers');
   const pagerSize = document.getElementById('pager-size');
@@ -1258,6 +1537,25 @@
   });
 
   // Per-column datatable filters (debounced text, immediate selects).
+  // Date/package/change/author columns open rich floating panels instead.
+  document.querySelectorAll('.col-filter-btn[data-panel]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openFilterPanel(btn.dataset.panel, btn);
+    });
+  });
+  document.addEventListener('click', (e) => {
+    const panel = document.getElementById('filter-panel');
+    if (panel && !panel.hidden && !panel.contains(e.target) && !e.target.closest('.col-filter-btn')) {
+      closeFilterPanel();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && openPanelKind) closeFilterPanel();
+  });
+  window.addEventListener('resize', closeFilterPanel);
+  const tableScroll = document.querySelector('.table-responsive');
+  if (tableScroll) tableScroll.addEventListener('scroll', closeFilterPanel, { passive: true });
   document.querySelectorAll('.col-filter').forEach(el => {
     const col = el.dataset.col;
     if (!col) return;

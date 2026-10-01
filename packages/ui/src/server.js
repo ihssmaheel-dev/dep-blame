@@ -167,7 +167,7 @@ async function loadFullData(cwd, onProgress) {
  * @param {string} [options.cwd=process.cwd()]
  * @returns {Promise<{ server: http.Server, url: string, close: () => Promise<void> }>}
  */
-export function startServer(options = {}) {
+export async function startServer(options = {}) {
   const { port = 4321, host = '127.0.0.1', cwd = process.cwd() } = options;
 
   const safePort = Number(port);
@@ -212,6 +212,24 @@ export function startServer(options = {}) {
       });
     }
     return inflightScan;
+  }
+
+  // Drop stale scan locks left by killed processes at startup: no scan
+  // is running yet, so anything present is debris — never wait on it.
+  try {
+    const { getGitCommonDir } = await import('dep-blame');
+    const common = await getGitCommonDir(cwd).catch(() => cwd);
+    const dir = path.join(common, 'dep-blame', 'scan.lock');
+    try {
+      const st = fs.statSync(dir);
+      if (Date.now() - st.mtimeMs > 10 * 1000) {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    } catch {
+      // No lock present.
+    }
+  } catch {
+    // Best-effort only.
   }
 
   const server = http.createServer(async (req, res) => {
@@ -322,6 +340,11 @@ export function startServer(options = {}) {
         });
 
         res.write(': connected\n\n');
+        // Immediate stage event so the UI leaves "Connecting" before
+        // the scan produces its first real progress update.
+        res.write(
+          `event: progress\ndata: ${JSON.stringify({ phase: 'initializing', current: 0, total: 100, message: 'Starting scan…' })}\n\n`
+        );
 
         try {
           const data = await scanOnce((p) => {

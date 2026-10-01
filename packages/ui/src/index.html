@@ -659,8 +659,183 @@
     padding-right: 4px;
   }
   select.col-filter.active-filter,
-  input.col-filter.active-filter {
+  input.col-filter.active-filter,
+  button.col-filter-btn.active-filter {
     border-color: var(--color-accent);
+  }
+  /* Column filter trigger buttons (open rich panels) */
+  .col-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-sm);
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .col-filter-btn:hover { border-color: var(--color-border-hover); color: var(--color-text); }
+  .col-filter-btn:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
+  .col-filter-btn > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .col-filter-btn > svg { flex: 0 0 auto; opacity: 0.6; }
+  /* Floating rich-filter panel */
+  .filter-panel {
+    position: fixed;
+    z-index: 200;
+    width: 280px;
+    max-height: 340px;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-hover);
+    border-radius: var(--radius-md, 6px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+  }
+  .filter-panel[hidden] { display: none; }
+  .filter-panel-head {
+    padding: 10px 12px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+  }
+  .filter-panel-search {
+    margin: 0 12px 8px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    border-radius: var(--radius-sm);
+    padding: 6px 9px;
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+    width: calc(100% - 24px);
+  }
+  .filter-panel-search:focus { border-color: var(--color-border-focus); }
+  .filter-panel-list {
+    overflow-y: auto;
+    padding: 0 6px 6px;
+    flex: 1 1 auto;
+    min-height: 60px;
+  }
+  .filter-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 12px;
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .filter-check:hover { background: var(--color-surface-hover); }
+  .filter-check .box {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--color-border-hover);
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: transparent;
+  }
+  .filter-check[aria-checked="true"] .box {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+  }
+  .filter-check .lbl {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .filter-check .cnt {
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .filter-panel-empty {
+    padding: 12px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .filter-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 12px 8px;
+  }
+  .filter-preset {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .filter-preset:hover { color: var(--color-text); border-color: var(--color-border-hover); }
+  .filter-preset.current {
+    background: var(--color-text);
+    border-color: var(--color-text);
+    color: var(--color-bg);
+  }
+  .filter-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px 8px;
+    font-size: 11.5px;
+    color: var(--color-text-secondary);
+  }
+  .filter-range input[type="date"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    border-radius: var(--radius-sm);
+    padding: 5px 6px;
+    font-family: inherit;
+    font-size: 11.5px;
+    color-scheme: dark light;
+  }
+  .filter-panel-foot {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--color-border);
+  }
+  .filter-panel-foot .pager-btn { flex: 1 1 auto; }
+  .filter-panel-foot .apply {
+    background: var(--color-text);
+    border-color: var(--color-text);
+    color: var(--color-bg);
   }
   .col-filter-clear {
     display: none;
@@ -2072,7 +2247,7 @@
         <th>Commit</th>
       </tr>
       <tr class="col-filters" aria-label="Column filters">
-        <th><input type="text" class="col-filter" data-col="date" placeholder="Filter date…" aria-label="Filter by date"></th>
+        <th><button class="col-filter-btn" data-panel="date" aria-haspopup="dialog" aria-label="Filter by date range"><span data-col-label="date">All dates</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></button></th>
         <th>
           <select class="col-filter" data-col="action" aria-label="Filter by action">
             <option value="all">All</option>
@@ -2081,8 +2256,8 @@
             <option value="removed">Removed</option>
           </select>
         </th>
-        <th><input type="text" class="col-filter" data-col="package" placeholder="Filter package…" aria-label="Filter by dependency"></th>
-        <th><input type="text" class="col-filter" data-col="change" placeholder="Filter version…" aria-label="Filter by version diff"></th>
+        <th><button class="col-filter-btn" data-panel="package" aria-haspopup="dialog" aria-label="Filter by dependencies"><span data-col-label="package">All packages</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></button></th>
+        <th><button class="col-filter-btn" data-panel="change" aria-haspopup="dialog" aria-label="Filter by version changes"><span data-col-label="change">All versions</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></button></th>
         <th>
           <select class="col-filter" data-col="type" aria-label="Filter by type">
             <option value="all">All</option>
@@ -2092,7 +2267,7 @@
           </select>
         </th>
         <th><input type="text" class="col-filter" data-col="manifest" placeholder="Filter manifest…" aria-label="Filter by manifest" list="manifest-datalist"><datalist id="manifest-datalist"></datalist></th>
-        <th><input type="text" class="col-filter" data-col="author" placeholder="Filter author…" aria-label="Filter by author"></th>
+        <th><button class="col-filter-btn" data-panel="author" aria-haspopup="dialog" aria-label="Filter by authors"><span data-col-label="author">All authors</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></button></th>
         <th><input type="text" class="col-filter" data-col="commit" placeholder="Filter commit…" aria-label="Filter by commit"></th>
       </tr>
       </thead>
@@ -2151,6 +2326,7 @@
         <button class="pager-btn" id="pager-last" aria-label="Last page">→→</button>
       </span>
     </div>
+    <div class="filter-panel" id="filter-panel" role="dialog" aria-modal="false" hidden></div>
 
     <!-- Calendar View -->
     <div class="calendar-container" id="calendar-view">
