@@ -7,8 +7,12 @@
   let sortAsc = false;
   let selectedPkgName = null;
   let currentPage = 1;
-  const PAGE_SIZE = 100;
+  let pageSize = 100;
+  const PAGE_SIZES = [25, 50, 100];
   let searchTimer = null;
+  let colFilterTimer = null;
+  // Per-column datatable filters; reset on Reset Filters.
+  let colFilters = { date: '', action: 'all', package: '', change: '', type: 'all', manifest: '', author: '', commit: '' };
 
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -95,7 +99,7 @@
     tbody.innerHTML = `
     <tr>
       <td colspan="8" style="padding: 0; border: none;">
-      <div class="scan-progress-container" id="scan-progress-box">
+      <div class="scan-progress-container" id="scan-progress-box" role="status" aria-live="polite" aria-label="Repository scan progress">
         <div class="scan-spinner-wrap">
         <div class="scan-spinner-glow"></div>
         <div class="scan-spinner-ring"></div>
@@ -105,71 +109,99 @@
         </div>
         <div class="scan-badge">
         <span class="scan-badge-dot"></span>
-        <span id="scan-stage-badge">Analyzing Repository</span>
+        <span id="scan-stage-badge">Connecting</span>
         </div>
-        <div class="scan-title" id="scan-title-text">Scanning commit history & manifests...</div>
-        <div class="scan-bar-track">
-        <div class="scan-bar-fill" id="scan-bar-fill" style="width: 15%;"></div>
+        <div class="scan-title" id="scan-title-text">Connecting to analysis stream...</div>
+        <div class="scan-steps" id="scan-steps" aria-hidden="true">
+          <span class="scan-step" data-phase="initializing"><span class="dot"></span>Init</span>
+          <span class="scan-step" data-phase="discovering"><span class="dot"></span>Manifests</span>
+          <span class="scan-step" data-phase="reading_commits"><span class="dot"></span>Commits</span>
+          <span class="scan-step" data-phase="analyzing"><span class="dot"></span>Analyzing</span>
+          <span class="scan-step" data-phase="saving"><span class="dot"></span>Saving</span>
+          <span class="scan-step" data-phase="complete"><span class="dot"></span>Ready</span>
+        </div>
+        <div class="scan-bar-track" id="scan-bar-track">
+        <div class="scan-bar-fill" id="scan-bar-fill" style="width: 4%;"></div>
         </div>
         <div class="scan-stats-row">
-        <span id="scan-commits-count">Reading history...</span>
-        <span id="scan-percent-label" style="font-weight: 700; color: var(--color-text);">15%</span>
+        <span id="scan-commits-count">Connecting to analysis stream...</span>
+        <span id="scan-percent-label" style="font-weight: 700; color: var(--color-text);">…</span>
         </div>
-        <div class="scan-detail-ticker" id="scan-detail-ticker">Connecting to analysis stream...</div>
+        <div class="scan-detail-ticker" id="scan-detail-ticker"></div>
       </div>
       </td>
     </tr>
     `;
   }
 
+  // Exact pipeline stages in order. Percent is derived from the real
+  // phase position; the analyzing phase interpolates commit progress.
+  // When a total is unknown the bar switches to indeterminate shimmer.
+  const SCAN_PHASES = ['initializing', 'discovering', 'reading_commits', 'analyzing', 'saving', 'complete'];
+  const SCAN_PHASE_LABEL = {
+    initializing: 'Initializing',
+    discovering: 'Manifests',
+    reading_commits: 'Commits',
+    analyzing: 'Analyzing',
+    saving: 'Saving',
+    complete: 'Ready'
+  };
+  const SCAN_PHASE_BASE_PCT = {
+    initializing: 4,
+    discovering: 18,
+    reading_commits: 34,
+    analyzing: 46,
+    saving: 97,
+    complete: 100
+  };
+
   function updateScanProgress(p) {
     if (!p) return;
     const badge = document.getElementById('scan-stage-badge');
     const title = document.getElementById('scan-title-text');
+    const track = document.getElementById('scan-bar-track');
     const bar = document.getElementById('scan-bar-fill');
     const count = document.getElementById('scan-commits-count');
     const pctLabel = document.getElementById('scan-percent-label');
     const ticker = document.getElementById('scan-detail-ticker');
     const indexTime = document.getElementById('index-time');
 
-    let pct = 15;
-    let stageName = 'Scanning';
+    const phase = SCAN_PHASES.includes(p.phase) ? p.phase : 'initializing';
+    const stageName = SCAN_PHASE_LABEL[phase];
+    let pct = SCAN_PHASE_BASE_PCT[phase];
+    let determinate = true;
 
-    if (p.phase === 'initializing') {
-    pct = 15;
-    stageName = 'Initializing';
-    } else if (p.phase === 'discovering') {
-    pct = 30;
-    stageName = 'Manifests';
-    } else if (p.phase === 'reading_commits') {
-    pct = 45;
-    stageName = 'Commits';
-    } else if (p.phase === 'analyzing') {
-    stageName = 'Analyzing';
-    if (p.total > 0) {
-      pct = Math.min(95, Math.max(45, Math.round(45 + (p.current / p.total) * 50)));
+    if (phase === 'analyzing') {
+      if (p.total > 0) {
+        pct = Math.min(95, Math.max(46, Math.round(46 + (p.current / p.total) * 49)));
+      } else {
+        determinate = false;
+      }
     }
-    } else if (p.phase === 'saving') {
-    pct = 97;
-    stageName = 'Saving';
-    } else if (p.phase === 'complete') {
-    pct = 100;
-    stageName = 'Ready';
-    }
+
+    const steps = document.querySelectorAll('#scan-steps .scan-step');
+    const activeIdx = SCAN_PHASES.indexOf(phase);
+    steps.forEach((el, i) => {
+      el.classList.toggle('done', i < activeIdx);
+      el.classList.toggle('active', i === activeIdx);
+    });
 
     if (badge) badge.textContent = stageName;
-    if (title && p.message) title.textContent = p.message;
-    if (bar) bar.style.width = pct + '%';
-    if (pctLabel) pctLabel.textContent = pct + '%';
+    if (title) title.textContent = p.message || `${stageName}…`;
+    if (track) track.classList.toggle('indeterminate', !determinate);
+    if (bar && determinate) bar.style.width = pct + '%';
+    if (pctLabel) pctLabel.textContent = determinate ? pct + '%' : '…';
     if (count) {
-    if (p.phase === 'analyzing' && p.total > 0) {
+    if (phase === 'analyzing' && p.total > 0) {
       count.textContent = `Commit ${p.current} of ${p.total}`;
+    } else if (phase === 'analyzing') {
+      count.textContent = p.current > 0 ? `Commit ${p.current}…` : 'Analyzing commits…';
     } else {
       count.textContent = p.message || 'Scanning...';
     }
     }
     if (ticker) ticker.textContent = p.detail || '';
-    if (indexTime) indexTime.textContent = `Scanning ${pct}%`;
+    if (indexTime) indexTime.textContent = determinate ? `Scanning ${pct}% · ${stageName}` : `Scanning · ${stageName}…`;
   }
 
   function applyLoadedData(data) {
@@ -190,6 +222,7 @@
     document.getElementById('index-time').textContent = 'Indexed ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     populateManifestDropdown();
+    populateManifestDatalist();
     updateStats();
     renderView();
   }
@@ -322,6 +355,7 @@
     return allEvents.filter(ev => {
     if (currentFilter !== 'all' && ev.type !== currentFilter) return false;
     if (currentManifest !== 'all' && ev.manifest !== currentManifest) return false;
+    if (!matchesColFilters(ev)) return false;
     if (currentSearch) {
       const q = currentSearch.toLowerCase();
       const matchDate = (ev.date || '').toLowerCase().includes(q);
@@ -339,6 +373,77 @@
     }
     return true;
     });
+  }
+
+  // Per-column datatable filters. Text matches case-insensitively;
+  // selects match exactly. Returns true when the event passes all set columns.
+  function changeTextOf(ev) {
+    if (ev.type === 'added') return ev.to || '';
+    if (ev.type === 'removed') return ev.from || '';
+    return `${ev.from || ''} ${ev.to || ''}`;
+  }
+
+  function typeTagOf(ev) {
+    if (ev.source === 'lockfile') return 'resolved';
+    if (ev.isDirect === false || ev.is_direct === false) return 'dep';
+    return 'direct';
+  }
+
+  function matchesColFilters(ev) {
+    const f = colFilters;
+    if (f.date && !(ev.date || '').toLowerCase().includes(f.date)) return false;
+    if (f.action !== 'all' && ev.type !== f.action) return false;
+    if (f.package && !(ev.package || '').toLowerCase().includes(f.package)) return false;
+    if (f.change && !changeTextOf(ev).toLowerCase().includes(f.change)) return false;
+    if (f.type !== 'all' && typeTagOf(ev) !== f.type) return false;
+    if (f.manifest && !(ev.manifest || '').toLowerCase().includes(f.manifest)) return false;
+    if (f.author && !`${ev.author || ''} ${authorUsername(ev) || ''}`.toLowerCase().includes(f.author)) return false;
+    if (f.commit && !`${ev.commit || ''} ${ev.commitFull || ''}`.toLowerCase().includes(f.commit)) return false;
+    return true;
+  }
+
+  function authorUsername(author) {
+    try {
+      const info = getAuthorDetails(author);
+      return (info && info.username) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function setColFilter(col, value) {
+    colFilters[col] = value;
+    currentPage = 1;
+    renderView();
+  }
+
+  function clearColFilters() {
+    colFilters = { date: '', action: 'all', package: '', change: '', type: 'all', manifest: '', author: '', commit: '' };
+    document.querySelectorAll('.col-filter').forEach(el => {
+      el.value = el.tagName === 'SELECT' ? 'all' : '';
+      el.classList.remove('active-filter');
+    });
+    const clearBtn = document.getElementById('col-filter-clear');
+    if (clearBtn) clearBtn.style.display = 'none';
+    currentPage = 1;
+  }
+
+  function refreshColFilterState() {
+    const anySet = Object.entries(colFilters).some(([k, v]) => (k === 'action' || k === 'type' ? v !== 'all' : v !== ''));
+    const clearBtn = document.getElementById('col-filter-clear');
+    if (clearBtn) clearBtn.style.display = anySet ? 'inline-block' : 'none';
+    document.querySelectorAll('.col-filter').forEach(el => {
+      const col = el.dataset.col;
+      const v = colFilters[col];
+      el.classList.toggle('active-filter', col === 'action' || col === 'type' ? v !== 'all' : v !== '');
+    });
+  }
+
+  function populateManifestDatalist() {
+    const dl = document.getElementById('manifest-datalist');
+    if (!dl) return;
+    const manifests = Array.from(new Set(allEvents.map(e => e.manifest).filter(Boolean))).sort();
+    dl.innerHTML = manifests.map(m => `<option value="${escapeHtml(m)}"></option>`).join('');
   }
 
   function getSortedEvents() {
@@ -396,10 +501,10 @@
     return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     if (currentPage > totalPages) currentPage = totalPages;
-    const start = (currentPage - 1) * PAGE_SIZE;
-    const page = filtered.slice(start, start + PAGE_SIZE);
+    const start = (currentPage - 1) * pageSize;
+    const page = filtered.slice(start, start + pageSize);
 
     tbody.innerHTML = page.map(ev => {
     const dateStr = (ev.date || '').slice(0, 10);
@@ -486,17 +591,60 @@
   function renderPager(total, start, totalPages) {
     const pager = document.getElementById('pager');
     const info = document.getElementById('pager-info');
+    const first = document.getElementById('pager-first');
     const prev = document.getElementById('pager-prev');
     const next = document.getElementById('pager-next');
+    const last = document.getElementById('pager-last');
+    const numbers = document.getElementById('pager-numbers');
+    const sizeSel = document.getElementById('pager-size');
     if (!pager) return;
-    if (total <= PAGE_SIZE) {
-      pager.hidden = true;
+    if (sizeSel && String(pageSize) !== sizeSel.value) sizeSel.value = String(pageSize);
+    if (total <= pageSize) {
+      pager.hidden = total === 0 ? false : true;
+      if (info) info.textContent = total === 0 ? 'Showing 0 events' : `Showing all ${total} events`;
+      if (numbers) numbers.innerHTML = '';
+      if (first) first.disabled = true;
+      if (prev) prev.disabled = true;
+      if (next) next.disabled = true;
+      if (last) last.disabled = true;
       return;
     }
     pager.hidden = false;
-    if (info) info.textContent = `Showing ${total === 0 ? 0 : start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total} events · page ${currentPage}/${totalPages}`;
+    if (info) info.textContent = `Showing ${total === 0 ? 0 : start + 1}–${Math.min(start + pageSize, total)} of ${total} events · page ${currentPage}/${totalPages}`;
+    if (first) first.disabled = currentPage <= 1;
     if (prev) prev.disabled = currentPage <= 1;
     if (next) next.disabled = currentPage >= totalPages;
+    if (last) last.disabled = currentPage >= totalPages;
+    if (numbers) {
+      numbers.innerHTML = pageNumberWindow(currentPage, totalPages).map(n =>
+        n === '…'
+          ? '<span class="pager-ellipsis">…</span>'
+          : `<button class="pager-btn pager-num${n === currentPage ? ' current' : ''}" data-page="${n}" aria-label="Page ${n}"${n === currentPage ? ' aria-current="page"' : ''}>${n}</button>`
+      ).join('');
+    }
+  }
+
+  // Windowed page numbers: 1 … c-1 c c+1 … N (at most 7 slots).
+  function pageNumberWindow(current, total) {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    const set = new Set([1, 2, current - 1, current, current + 1, total - 1, total].filter(n => n >= 1 && n <= total));
+    const sorted = Array.from(set).sort((a, b) => a - b);
+    const out = [];
+    let prevN = 0;
+    for (const n of sorted) {
+      if (n - prevN > 1) out.push('…');
+      out.push(n);
+      prevN = n;
+    }
+    return out;
+  }
+
+  function gotoPage(n, totalPages) {
+    const clamped = Math.min(Math.max(1, n), totalPages);
+    if (clamped !== currentPage) {
+      currentPage = clamped;
+      renderTable();
+    }
   }
 
   // Single delegated click handler for the events table: package
@@ -706,6 +854,7 @@
     currentFilter = 'all';
     currentSearch = '';
     currentManifest = 'all';
+    clearColFilters();
     currentPage = 1;
     document.getElementById('search-input').value = '';
     document.getElementById('search-clear').style.display = 'none';
@@ -1072,9 +1221,17 @@
     });
   }
 
-  // Pager
-  const pagerPrev = document.getElementById('pager-prev');
-  const pagerNext = document.getElementById('pager-next');
+  // Pager: full controls — first/prev/numbered/next/last + page size.
+  // The footer is fixed below the rows-only scroll region.
+  function pagerTotalPages() {
+    const total = getFilteredEvents().length;
+    return Math.max(1, Math.ceil(total / pageSize));
+  }
+  const pagerFirst = document.getElementById('pager-first');
+  const pagerLast = document.getElementById('pager-last');
+  const pagerNumbers = document.getElementById('pager-numbers');
+  const pagerSize = document.getElementById('pager-size');
+  if (pagerFirst) pagerFirst.addEventListener('click', () => gotoPage(1, pagerTotalPages()));
   if (pagerPrev) pagerPrev.addEventListener('click', () => {
     if (currentPage > 1) {
     currentPage--;
@@ -1082,8 +1239,62 @@
     }
   });
   if (pagerNext) pagerNext.addEventListener('click', () => {
+    const totalPages = pagerTotalPages();
+    if (currentPage < totalPages) {
     currentPage++;
     renderTable();
+    }
+  });
+  if (pagerLast) pagerLast.addEventListener('click', () => gotoPage(pagerTotalPages(), pagerTotalPages()));
+  if (pagerNumbers) pagerNumbers.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-page]');
+    if (btn) gotoPage(parseInt(btn.dataset.page, 10) || 1, pagerTotalPages());
+  });
+  if (pagerSize) pagerSize.addEventListener('change', (e) => {
+    const next = parseInt(e.target.value, 10);
+    pageSize = [25, 50, 100].includes(next) ? next : 100;
+    currentPage = 1;
+    renderTable();
+  });
+
+  // Per-column datatable filters (debounced text, immediate selects).
+  document.querySelectorAll('.col-filter').forEach(el => {
+    const col = el.dataset.col;
+    if (!col) return;
+    if (el.tagName === 'SELECT') {
+      el.addEventListener('change', () => {
+        setColFilter(col, el.value);
+        refreshColFilterState();
+      });
+    } else {
+      el.addEventListener('input', () => {
+        if (colFilterTimer) clearTimeout(colFilterTimer);
+        const value = el.value;
+        colFilterTimer = setTimeout(() => {
+          setColFilter(col, value.trim().toLowerCase());
+          refreshColFilterState();
+        }, 150);
+      });
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          if (colFilterTimer) clearTimeout(colFilterTimer);
+          setColFilter(col, el.value.trim().toLowerCase());
+          refreshColFilterState();
+        } else if (e.key === 'Escape') {
+          el.value = '';
+          if (colFilterTimer) clearTimeout(colFilterTimer);
+          setColFilter(col, col === 'action' || col === 'type' ? 'all' : '');
+          refreshColFilterState();
+        }
+        e.stopPropagation();
+      });
+    }
+  });
+  const colClearBtn = document.getElementById('col-filter-clear');
+  if (colClearBtn) colClearBtn.addEventListener('click', () => {
+    clearColFilters();
+    refreshColFilterState();
+    renderView();
   });
 
   // Live search (debounced so large histories don't re-render per keystroke)
@@ -1107,9 +1318,12 @@
     searchInput.focus();
   });
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts (ignored while typing in any field)
+  function isTypingTarget(el) {
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+  }
   window.addEventListener('keydown', (e) => {
-    if ((e.key === '/' || (e.ctrlKey && e.key === 'k') || (e.metaKey && e.key === 'k')) && document.activeElement !== searchInput) {
+    if ((e.key === '/' || (e.ctrlKey && e.key === 'k') || (e.metaKey && e.key === 'k')) && !isTypingTarget(document.activeElement)) {
     e.preventDefault();
     searchInput.focus();
     } else if (e.key === 'Escape') {
@@ -1118,9 +1332,9 @@
     } else if (document.activeElement === searchInput) {
       searchInput.blur();
     }
-    } else if (e.key === '1' && document.activeElement !== searchInput) {
+    } else if (e.key === '1' && !isTypingTarget(document.activeElement)) {
     switchToTimeline();
-    } else if (e.key === '2' && document.activeElement !== searchInput) {
+    } else if (e.key === '2' && !isTypingTarget(document.activeElement)) {
     document.getElementById('view-calendar-btn').click();
     }
   });

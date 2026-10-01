@@ -85,6 +85,21 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     assert.ok(htmlBody.includes('dep-blame'));
     assert.ok(htmlBody.includes('drawer-overlay'));
 
+    // Proper datatable: per-column filter row covering every column.
+    for (const col of ['date', 'action', 'package', 'change', 'type', 'manifest', 'author', 'commit']) {
+      assert.ok(htmlBody.includes(`data-col="${col}"`), `missing column filter: ${col}`);
+    }
+
+    // Proper pagination: first/numbered/last + page-size selector.
+    for (const id of ['pager-first', 'pager-prev', 'pager-numbers', 'pager-next', 'pager-last', 'pager-size']) {
+      assert.ok(htmlBody.includes(`id="${id}"`), `missing pager control: ${id}`);
+    }
+
+    // Exact-stage progress stepper with all pipeline phases.
+    for (const phase of ['initializing', 'discovering', 'reading_commits', 'analyzing', 'saving', 'complete']) {
+      assert.ok(htmlBody.includes(`data-phase="${phase}"`), `missing progress phase: ${phase}`);
+    }
+
     // 2. Test GET /api/events
     const apiRes = await fetch(`${url}/api/events`);
     assert.equal(apiRes.status, 200);
