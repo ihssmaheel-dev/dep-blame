@@ -4,10 +4,42 @@ import type { DependencyEntry, DepType } from '../../types.js';
  * Strips comments and trailing commas from JSONC-style strings.
  */
 function cleanJsonc(text: string): string {
-  let cleaned = text.replace(/\/\/.*$/gm, '');
-  cleaned = cleaned.replace(/\/\*[\s\S]*?\*\//g, '');
-  cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
-  return cleaned;
+  let cleaned = '';
+  let quoted = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      cleaned += ch;
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') quoted = false;
+    } else if (ch === '"') { quoted = true; cleaned += ch; }
+    else if (ch === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      cleaned += '\n';
+    } else if (ch === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      if (end < 0) throw new Error('Unclosed JSONC comment');
+      cleaned += ' ';
+      i = end + 1;
+    } else cleaned += ch;
+  }
+  let result = '';
+  quoted = false; escaped = false;
+  for (let i = 0; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (!quoted && ch === ',') {
+      let next = i + 1;
+      while (/\s/.test(cleaned[next] || '') && next < cleaned.length) next++;
+      if (cleaned[next] === '}' || cleaned[next] === ']') continue;
+    }
+    result += ch;
+    if (escaped) escaped = false;
+    else if (quoted && ch === '\\') escaped = true;
+    else if (ch === '"') quoted = !quoted;
+  }
+  return result;
 }
 
 export interface BunParseResult {
@@ -40,9 +72,11 @@ function splitNameVersion(key: string): { name: string; version: string } | null
  */
 export function parseBunLockfiles(content?: string | null): BunParseResult {
   const maps = new Map<string, Map<string, DependencyEntry>>();
-  if (!content || typeof content !== 'string') {
+  if (content === null || content === undefined) {
     return { ok: true, maps };
   }
+
+  if (typeof content !== 'string' || !content.trim()) return {ok: false, maps, note: 'empty or invalid lockfile'};
   if (content.includes('\0')) {
     return {
       ok: false,
@@ -58,19 +92,24 @@ export function parseBunLockfiles(content?: string | null): BunParseResult {
     return { ok: false, maps, note: 'invalid JSON' };
   }
 
-  if (!parsed || typeof parsed !== 'object') {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return { ok: false, maps, note: 'not a JSON object' };
+  }
+
+  for (const field of ['workspaces', 'packages', 'dependencies']) {
+    if (parsed[field] !== undefined && (!parsed[field] || typeof parsed[field] !== 'object' || Array.isArray(parsed[field]))) return {ok: false, maps, note: 'invalid Bun lockfile section'};
   }
 
   // Preferred: workspaces + packages tables.
   if (parsed.workspaces && typeof parsed.workspaces === 'object') {
     const directByManifest = new Map<string, Map<string, { spec: string; depType: DepType }>>();
     for (const [wsPath, ws] of Object.entries<any>(parsed.workspaces)) {
-      if (!ws || typeof ws !== 'object') continue;
+      if (!ws || typeof ws !== 'object' || Array.isArray(ws)) return {ok: false, maps: new Map(), note: 'invalid Bun workspace'};
       const manifest = wsPath === '' ? 'package.json' : `${String(wsPath).replace(/\/$/, '')}/package.json`;
       const direct = new Map<string, { spec: string; depType: DepType }>();
       for (const depType of DEP_SECTIONS) {
         const section = ws[depType];
+        if (section !== undefined && (!section || typeof section !== 'object' || Array.isArray(section) || Object.values(section).some(v => typeof v !== 'string'))) return {ok: false, maps: new Map(), note: 'invalid Bun dependency'};
         if (section && typeof section === 'object') {
           for (const [name, spec] of Object.entries(section)) {
             if (typeof spec === 'string' && !direct.has(name)) {
@@ -87,7 +126,8 @@ export function parseBunLockfiles(content?: string | null): BunParseResult {
     if (parsed.packages && typeof parsed.packages === 'object') {
       for (const [key, entry] of Object.entries<any>(parsed.packages)) {
         if (key === '') continue;
-        const split = splitNameVersion(key);
+        const descriptor = Array.isArray(entry) && typeof entry[0] === 'string' ? entry[0] : key;
+        const split = splitNameVersion(descriptor);
         if (!split) continue;
         let version = split.version;
         if (entry && typeof entry === 'object' && !Array.isArray(entry) && typeof entry.version === 'string') {

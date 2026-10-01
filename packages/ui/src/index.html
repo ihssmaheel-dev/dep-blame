@@ -27,24 +27,25 @@
     --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
     
-    --radius: 0px;
-    --radius-sm: 2px;
-    --radius-md: 4px;
+    --radius: 6px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
 
-    /* Dark Theme (Default) */
-    --color-bg: #11110f;
-    --color-bg-secondary: #151513;
-    --color-surface: #181816;
-    --color-surface-hover: #22221f;
-    --color-surface-card: rgba(24, 24, 22, 0.85);
+    /* Neutral black surfaces. Color is reserved for status and focus. */
+    color-scheme: dark;
+    --color-bg: #000000;
+    --color-bg-secondary: #0a0a0a;
+    --color-surface: #101010;
+    --color-surface-hover: #1a1a1a;
+    --color-surface-card: #0d0d0d;
 
-    --color-border: #30302c;
-    --color-border-hover: #43433d;
+    --color-border: #262626;
+    --color-border-hover: #404040;
     --color-border-focus: #18a875;
 
-    --color-text: #f2f1ee;
-    --color-text-secondary: #999992;
-    --color-text-muted: #6f6f68;
+    --color-text: #f5f5f5;
+    --color-text-secondary: #a3a3a3;
+    --color-text-muted: #858585;
 
     --color-primary: #18a875;
     --color-accent: #18a875;
@@ -70,10 +71,11 @@
     --pattern-radial: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(var(--color-accent-rgb), 0.10), transparent 75%);
     --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.35);
     --shadow-drawer: -8px 0 32px rgba(0, 0, 0, 0.6);
-    --header-bg: rgba(17, 17, 15, 0.88);
+    --header-bg: rgba(0, 0, 0, 0.96);
   }
 
   [data-theme="light"] {
+    color-scheme: light;
     --color-bg: #f6f4f1;
     --color-bg-secondary: #fbfaf8;
     --color-surface: #ffffff;
@@ -659,7 +661,7 @@
 
   table.events-table {
     width: 100%;
-    min-width: 980px;
+    min-width: 1300px;
     table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
@@ -1387,8 +1389,8 @@
     flex-shrink: 0;
   }
   .author-avatar-img {
-    width: 26px;
-    height: 26px;
+    width: 100%;
+    height: 100%;
     border-radius: 50%;
     object-fit: cover;
     border: 1px solid var(--color-border);
@@ -1408,6 +1410,10 @@
     justify-content: center;
     text-transform: uppercase;
   }
+  a.author-name { text-decoration: none; }
+  a.author-name:hover { text-decoration: underline; }
+  #forge-host { color: var(--color-text-secondary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; max-width: 230px; }
+  #forge-host:hover { color: var(--color-text); }
   .author-meta {
     display: flex;
     flex-direction: column;
@@ -2146,6 +2152,91 @@
     transform: translateY(0);
     opacity: 1;
   }
+  /* Shared controls and the black dashboard shell */
+  [hidden] { display: none !important; }
+  .content-card { min-height: 0; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .controls-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .left-controls { min-width: 0; }
+  .search-wrapper { flex-basis: 100%; max-width: none; }
+  .right-controls { align-self: end; }
+  .search-clear { z-index: 1; }
+  body { background-image: none; }
+  button, input { font: inherit; }
+  button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--color-text); outline-offset: 3px; }
+  .filter-panel { max-height: min(580px, calc(100dvh - 24px)); overflow: hidden; }
+  .filter-panel-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+  .filter-panel-head, .filter-panel-foot { background: var(--color-bg-secondary); }
+  .filter-panel-search { flex-shrink: 0; }
+  .filter-panel-head, .filter-panel-foot, .filter-presets, .filter-range, .date-calendar { flex-shrink: 0; }
+  .filter-panel-head { color: var(--color-text); font-size: 12px; text-transform: none; letter-spacing: 0; padding: 14px 14px 10px; }
+  .filter-panel-foot { padding: 12px; border-top: 1px solid var(--color-border); }
+  .filter-check { min-height: 36px; }
+  .filter-check[aria-pressed="true"] { background: var(--color-surface-hover); }
+  .filter-range { padding: 6px 12px 10px; align-items: end; }
+  .filter-range label { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; font-size: 11px; color: var(--color-text-secondary); }
+  .filter-range input { width: 100%; min-width: 0; background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px; font-family: var(--font-mono); font-size: 11px; }
+  .filter-range > span { padding-bottom: 8px; }
+  .date-calendar { padding: 0 12px 12px; }
+  .date-calendar-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .date-calendar-nav strong { font-size: 12px; font-weight: 600; }
+  .date-weekdays, .date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+  .date-weekdays { text-align: center; font-size: 10px; color: var(--color-text-secondary); margin-bottom: 5px; }
+  .date-day { border: 1px solid transparent; border-radius: var(--radius-sm); height: 32px; background: none; color: var(--color-text); cursor: pointer; font-size: 12px; }
+  .date-day:hover, .date-day.in-range { background: var(--color-surface-hover); }
+  .date-day.outside { color: var(--color-text-muted); }
+  .date-day.selected { background: var(--color-text); color: var(--color-bg); }
+  .date-day[aria-current="date"] { border-color: var(--color-border-hover); }
+  .date-hint { font-size: 10px; line-height: 1.6; color: var(--color-text-secondary); margin-top: 10px; }
+  .date-error { color: var(--color-removed); font-size: 11px; }
+  .active-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--color-border); }
+  .active-filters[hidden], .history-notices[hidden] { display: none; }
+  .filter-chip { max-width: 100%; display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); border-radius: var(--radius-sm); font-size: 11px; cursor: pointer; }
+  .filter-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-notices { padding: 10px 12px; color: var(--color-updated); border-bottom: 1px solid var(--color-border); font-size: 11px; max-height: 90px; overflow-y: auto; }
+  .pager { gap: 10px; }
+  .pager-size { white-space: nowrap; }
+  #pager-size { min-width: 60px; }
+  table.events-table thead th { background: var(--color-bg-secondary); }
+  table.events-table tbody tr:hover { background: var(--color-surface-hover); }
+  .calendar-day-box { background: var(--color-surface); }
+  .calendar-days-grid, .calendar-weekdays { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .calendar-day-box { min-width: 0; }
+  .day-open-btn { width: 100%; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; }
+  .day-open-btn:disabled { cursor: default; }
+  .author-cell-link:hover .author-name { color: var(--color-text); text-decoration: none; }
+  .author-avatar-fallback { background: var(--color-surface-hover); color: var(--color-text); }
+  @media (max-width: 600px) {
+    .controls-panel { grid-template-columns: minmax(0, 1fr); }
+    .right-controls { justify-content: flex-end; }
+    .search-wrapper { min-width: 0; }
+    .calendar-container { padding: 12px; }
+    .calendar-title-wrap { flex-wrap: wrap; gap: 10px; }
+    .pager { flex-direction: column; align-items: stretch; }
+    .pager-controls { justify-content: flex-end; flex-wrap: wrap; }
+    .calendar-legend { flex-wrap: wrap; }
+    .calendar-topbar { gap: 12px; flex-wrap: wrap; }
+    .filter-pills { flex-shrink: 1; flex-wrap: wrap; max-width: 100%; }
+    .filter-btn { flex: 1; justify-content: center; }
+    .calendar-day-box { padding: 6px 3px; min-height: 72px; }
+    .calendar-weekday { font-size: 9px; padding: 8px 2px; }
+    .day-open-btn { flex-direction: column; gap: 4px; }
+    .day-badge-count { max-width: 100%; padding: 1px 3px; font-size: 9px; }
+    .day-events-stack { display: none; }
+    .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi-card { padding: 10px; }
+    .kpi-subtitle, .kpi-badge-icon { display: none; }
+    .bottom-status-bar { padding: 0 10px; gap: 8px; font-size: 9px; }
+    .status-left { min-width: 0; flex: 1; gap: 8px; }
+    .status-left > .bold-text, .status-divider, #pm-pill { display: none; }
+    .status-item { min-width: 0; white-space: nowrap; }
+    .status-item[title="Repository"] { min-width: 0; flex: 1; }
+    #repo-name, #branch-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status-item[title="Git Branch"] { display: none; }
+    #forge-host { max-width: 120px; }
+    .status-right { flex-shrink: 0; }
+    #index-time { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
   </style>
 </head>
 <body>
@@ -2169,7 +2260,7 @@
     <svg id="theme-icon-light" style="display: none;" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
     </button>
 
-    <button class="btn-action" id="export-json-btn" title="Export events JSON">
+    <button class="btn-action" id="export-json-btn" title="Export matching history as JSON">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
     Export
     </button>
@@ -2187,7 +2278,7 @@
   <div class="kpi-grid">
     <button class="kpi-card" data-kpi-filter="all" aria-label="Show all events">
     <div class="kpi-content">
-      <span class="kpi-title">Total Modifications</span>
+      <span class="kpi-title">History events</span>
       <div class="kpi-value-row">
       <span class="kpi-value" id="kpi-total">0</span>
       <span class="kpi-subtitle" id="kpi-distinct">Across 0 distinct packages</span>
@@ -2200,10 +2291,10 @@
 
     <button class="kpi-card added" data-kpi-filter="added" aria-label="Show added events">
     <div class="kpi-content">
-      <span class="kpi-title">Packages Added</span>
+      <span class="kpi-title">Added events</span>
       <div class="kpi-value-row">
       <span class="kpi-value" id="kpi-added">0</span>
-      <span class="kpi-subtitle">New introduced</span>
+      <span class="kpi-subtitle">Additions recorded</span>
       </div>
     </div>
     <div class="kpi-badge-icon">
@@ -2213,10 +2304,10 @@
 
     <button class="kpi-card updated" data-kpi-filter="updated" aria-label="Show updated events">
     <div class="kpi-content">
-      <span class="kpi-title">Version Upgrades</span>
+      <span class="kpi-title">Updated events</span>
       <div class="kpi-value-row">
       <span class="kpi-value" id="kpi-updated">0</span>
-      <span class="kpi-subtitle">Bumps tracked</span>
+      <span class="kpi-subtitle">Version and type changes</span>
       </div>
     </div>
     <div class="kpi-badge-icon">
@@ -2226,10 +2317,10 @@
 
     <button class="kpi-card removed" data-kpi-filter="removed" aria-label="Show removed events">
     <div class="kpi-content">
-      <span class="kpi-title">Packages Removed</span>
+      <span class="kpi-title">Removed events</span>
       <div class="kpi-value-row">
       <span class="kpi-value" id="kpi-removed">0</span>
-      <span class="kpi-subtitle">Deprecations</span>
+      <span class="kpi-subtitle">Removals recorded</span>
       </div>
     </div>
     <div class="kpi-badge-icon">
@@ -2253,28 +2344,21 @@
       <button class="filter-btn" data-filter="added">+ Added <span class="filter-count" id="count-added">0</span></button>
       <button class="filter-btn" data-filter="updated">↑ Updated <span class="filter-count" id="count-updated">0</span></button>
       <button class="filter-btn" data-filter="removed">- Removed <span class="filter-count" id="count-removed">0</span></button>
-      <button class="col-filter-clear" id="col-filter-clear" style="display: none;" title="Clear column filters">✕ Columns</button>
+      <button class="col-filter-clear" id="col-filter-clear" style="display: none;" title="Clear filters">Clear filters</button>
     </div>
 
     <!-- Custom Styled Dropdown (No native select!) -->
-    <div class="custom-dropdown" id="manifest-dropdown">
-      <button type="button" class="custom-dropdown-btn" id="manifest-dropdown-btn">
-      <span id="manifest-selected-label">All Manifests</span>
-      <svg class="dropdown-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-      </button>
-      <div class="custom-dropdown-menu" id="manifest-dropdown-menu">
-      <div class="dropdown-item selected" data-value="all">All Manifests</div>
-      </div>
-    </div>
+    <button class="btn-action" id="manifest-dropdown-btn" data-panel="manifest" aria-haspopup="dialog" aria-expanded="false"><span id="manifest-selected-label">All manifests</span><span aria-hidden="true">⌄</span></button>
+    <button class="btn-action" data-panel="filters" aria-haspopup="dialog" aria-expanded="false">Filters <span aria-hidden="true">⌄</span></button>
     </div>
 
     <div class="right-controls">
     <div class="view-toggle">
-      <button class="view-btn active" id="view-timeline-btn">
+      <button class="view-btn active" id="view-timeline-btn" aria-pressed="true">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
       Timeline
       </button>
-      <button class="view-btn" id="view-calendar-btn">
+      <button class="view-btn" id="view-calendar-btn" aria-pressed="false">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
       Calendar
       </button>
@@ -2286,17 +2370,19 @@
   <div class="content-card">
     
     <!-- Table View -->
+    <div id="history-notices" class="history-notices" role="status" hidden></div>
+    <div id="active-filters" class="active-filters" aria-label="Applied filters" hidden></div>
     <div class="table-responsive" id="timeline-view">
     <table class="events-table">
       <colgroup>
-      <col style="width: 105px;">
-      <col style="width: 115px;">
-      <col style="width: 22%;">
-      <col style="width: 18%;">
-      <col style="width: 80px;">
-      <col style="width: 16%;">
-      <col style="width: 20%;">
-      <col style="width: 95px;">
+      <col style="width: 112px;">
+      <col style="width: 116px;">
+      <col style="width: 240px;">
+      <col style="width: 215px;">
+      <col style="width: 120px;">
+      <col style="width: 190px;">
+      <col style="width: 185px;">
+      <col style="width: 100px;">
       </colgroup>
       <thead>
       <tr>
@@ -2304,7 +2390,7 @@
         <th><span class="th-head"><span class="th-label">Action</span><button class="col-filter-icon" data-panel="action" aria-label="Filter by action" aria-haspopup="dialog" title="Filter actions"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th aria-sort="none"><span class="th-head"><button class="th-sort" data-sort="package">Dependency <span id="sort-pkg-icon"></span></button><button class="col-filter-icon" data-panel="package" aria-label="Filter by dependencies" aria-haspopup="dialog" title="Filter packages"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th><span class="th-head"><span class="th-label">Version Diff</span><button class="col-filter-icon" data-panel="change" aria-label="Filter by version changes" aria-haspopup="dialog" title="Filter versions"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
-        <th><span class="th-head"><span class="th-label">Type</span><button class="col-filter-icon" data-panel="type" aria-label="Filter by type" aria-haspopup="dialog" title="Filter types"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th><span class="th-head"><span class="th-label">Source</span><button class="col-filter-icon" data-panel="type" aria-label="Filter by source" aria-haspopup="dialog" title="Filter sources"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th><span class="th-head"><span class="th-label">Manifest</span><button class="col-filter-icon" data-panel="manifest" aria-label="Filter by manifest" aria-haspopup="dialog" title="Filter manifests"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th><span class="th-head"><span class="th-label">Author</span><button class="col-filter-icon" data-panel="author" aria-label="Filter by authors" aria-haspopup="dialog" title="Filter authors"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th><span class="th-head"><span class="th-label">Commit</span><button class="col-filter-icon" data-panel="commit" aria-label="Filter by commit" aria-haspopup="dialog" title="Filter commits"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
@@ -2349,14 +2435,10 @@
     </table>
     </div>
     <div class="pager" id="pager" hidden>
-      <span id="pager-info">Showing 0 events</span>
+      <span id="pager-info" role="status" aria-live="polite" aria-atomic="true">Showing 0 events</span>
       <span class="pager-controls">
         <label class="pager-size">Rows
-          <select id="pager-size" aria-label="Rows per page">
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="100" selected>100</option>
-          </select>
+<button class="pager-btn" id="pager-size" aria-label="Rows per page" aria-haspopup="dialog" aria-expanded="false">100 ▾</button>
         </label>
         <button class="pager-btn pager-icon" id="pager-first" aria-label="First page" title="First page"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg></button>
         <button class="pager-btn pager-icon" id="pager-prev" aria-label="Previous page" title="Previous page"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
@@ -2365,7 +2447,6 @@
         <button class="pager-btn pager-icon" id="pager-last" aria-label="Last page" title="Last page"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg></button>
       </span>
     </div>
-    <div class="filter-panel" id="filter-panel" role="dialog" aria-modal="false" hidden></div>
 
     <!-- Calendar View -->
     <div class="calendar-container" id="calendar-view">
@@ -2373,11 +2454,11 @@
       <div class="calendar-title-wrap">
       <h2 class="calendar-title" id="calendar-month-title">September 2026</h2>
       <div class="calendar-nav-group">
-        <button class="calendar-nav-btn" id="cal-prev-btn" title="Previous Month">
+        <button class="calendar-nav-btn" id="cal-prev-btn" aria-label="Previous month" title="Previous Month">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
         </button>
-        <button class="calendar-nav-btn" id="cal-today-btn" title="Jump to Latest Activity">Today</button>
-        <button class="calendar-nav-btn" id="cal-next-btn" title="Next Month">
+        <button class="calendar-nav-btn" id="cal-today-btn" title="Jump to latest matching activity">Latest</button>
+        <button class="calendar-nav-btn" id="cal-next-btn" aria-label="Next month" title="Next Month">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
         </button>
       </div>
@@ -2406,6 +2487,9 @@
   </div>
 
   </div>
+
+  <!-- Popovers belong to the viewport; card backdrop filters create a fixed containing block. -->
+  <div class="filter-panel" id="filter-panel" role="dialog" aria-modal="false" hidden></div>
 
   <!-- Slide-out Archaeology Drawer (Fixed, Clean, and Neat Header) -->
   <div class="drawer-overlay" id="drawer-overlay">
@@ -2506,6 +2590,8 @@
     </span>
     <span class="status-divider">|</span>
     <span class="status-item" id="pm-pill">npm</span>
+    <span class="status-divider">|</span>
+    <a class="status-item" id="forge-host" target="_blank" rel="noopener noreferrer">Local Git</a>
   </div>
   <div class="status-right">
     <span class="status-item status-live">

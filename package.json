@@ -6,9 +6,9 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -p packages/core/tsconfig.json",
+    "build": "npm run build --workspace packages/core",
     "pretest": "npm run build",
-    "test": "node --test test/**/*.test.js"
+    "test": "node scripts/test.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

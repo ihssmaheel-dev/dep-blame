@@ -44,9 +44,11 @@ export async function parseYarnLockfile(
 ): Promise<ParseResult | null> {
   const map = new Map<string, DependencyEntry>();
   const multiVersion = new Set<string>();
-  if (!content || typeof content !== 'string') {
+  if (content === null || content === undefined) {
     return { ok: true, entries: map };
   }
+
+  if (typeof content !== 'string' || !content.trim()) return {ok: false, entries: map, note: 'empty or invalid lockfile'};
 
   // Berry (v2+) is real YAML with __metadata — parse structurally.
   if (looksLikeBerry(content)) {
@@ -57,7 +59,8 @@ export async function parseYarnLockfile(
       if (parsed && typeof parsed === 'object' && parsed.__metadata) {
         for (const [descriptor, entry] of Object.entries<any>(parsed)) {
           if (descriptor === '__metadata') continue;
-          if (entry && typeof entry === 'object' && entry.version) {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.version !== 'string' || !entry.version) return {ok: false, entries: new Map(), note: 'invalid Yarn Berry entry'};
+          if (entry.version) {
             const nameMatch = descriptor.match(/^"?((?:@[^/]+\/)?[^@\s,:]+)/);
             if (nameMatch) {
               const name = nameMatch[1];
@@ -82,24 +85,28 @@ export async function parseYarnLockfile(
             : {})
         };
       }
-      // Berry-looking but unparsable -> fall through to v1 parser (best effort).
+      return { ok: false, entries: map, note: 'invalid Yarn Berry mapping' };
     } catch {
-      // Fall through to v1 line-based parser.
+      return { ok: false, entries: map, note: 'invalid Yarn Berry YAML' };
     }
   }
 
   // 2. Line-based parser for Yarn v1 Classic
   const lines = content.split('\n');
   let currentPackage: string | null = null;
+  let pendingVersion = false;
 
   for (const line of lines) {
     if (!line.startsWith(' ') && !line.startsWith('#') && line.includes('@') && line.trim().endsWith(':')) {
+      if (pendingVersion) return { ok: false, entries: new Map(), note: 'missing Yarn version' };
       const header = line.trim().slice(0, -1);
       const match = header.match(/^"?((?:@[^/]+\/)?[^@\s,:]+)/);
       currentPackage = match ? match[1] : null;
+      pendingVersion = !!currentPackage;
     } else if (currentPackage && line.trim().startsWith('version')) {
       const versionMatch = line.match(/version\s+"?([^"\s]+)"?/);
       if (versionMatch) {
+        pendingVersion = false;
         const version = versionMatch[1];
         if (!map.has(currentPackage)) {
           map.set(currentPackage, {
@@ -112,8 +119,11 @@ export async function parseYarnLockfile(
         }
       }
       currentPackage = null;
+    } else if (line.trim() && !line.startsWith(' ') && !line.startsWith('#')) {
+      return { ok: false, entries: new Map(), note: 'invalid Yarn Classic record' };
     }
   }
+  if (pendingVersion) return { ok: false, entries: new Map(), note: 'missing Yarn version' };
 
   return {
     ok: true,

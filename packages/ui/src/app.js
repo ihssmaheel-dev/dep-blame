@@ -1,7 +1,6 @@
   let allEvents = [];
   let currentFilter = 'all';
   let currentSearch = '';
-  let currentManifest = 'all';
   let currentView = 'timeline';
   let sortField = 'date';
   let sortAsc = false;
@@ -10,7 +9,6 @@
   let pageSize = 100;
   const PAGE_SIZES = [25, 50, 100];
   let searchTimer = null;
-  let colFilterTimer = null;
   // Per-column datatable filters. Sets (packages/changes/authors) and the
   // date range are empty/off when inactive; selects use 'all'.
   let colFilters = freshColFilters();
@@ -21,7 +19,12 @@
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
   let repoOwner = null;
-  let repoHost = 'github.com';
+  let repoHost = '';
+  let hosting = {provider: 'local', label: 'Local Git', host: ''};
+  let authorGeneration = 0;
+  const authorProfiles = new Map();
+  const authorRequests = new Set();
+  let authorTimer = null;
   let remoteUrl = null;
   let currentBranch = 'main';
   let currentRepo = '';
@@ -29,10 +32,16 @@
   let workspacePackages = {};
   let authorsMap = {};
   let headStateData = [];
+  let headStateComplete = true;
+  let historyWarnings = [];
+  let historyTruncated = false;
+  let drawerReturnFocus = null;
 
   // Theme Management (Dark Theme Default)
   function initTheme() {
-    const savedTheme = localStorage.getItem('dep-blame-theme') || 'dark';
+    let savedTheme = 'dark';
+    try { savedTheme = localStorage.getItem('dep-blame-theme') || 'dark'; } catch {}
+    if (!['dark', 'light'].includes(savedTheme)) savedTheme = 'dark';
     setTheme(savedTheme);
 
     document.getElementById('theme-toggle').addEventListener('click', () => {
@@ -44,7 +53,7 @@
 
   function setTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('dep-blame-theme', theme);
+    try { localStorage.setItem('dep-blame-theme', theme); } catch {}
     const darkIcon = document.getElementById('theme-icon-dark');
     const lightIcon = document.getElementById('theme-icon-light');
     if (theme === 'dark') {
@@ -56,45 +65,88 @@
     }
   }
 
-  // Resolves author information. Fully offline: no remote avatar fetches
-  // (initials are rendered instead) and no email exposure.
-  function getAuthorDetails(author) {
-    if (!author || author === 'Unknown') {
-    return {
-      name: 'Unknown',
-      username: 'unknown',
-      profileUrl: '#'
-    };
-    }
-
-    if (authorsMap && authorsMap[author]) {
-    const a = authorsMap[author];
-    return { name: a.name || author, username: a.username || 'author', profileUrl: a.profileUrl || '#' };
-    }
-
-    const clean = author.trim().replace(/^@/, '');
-    let username = '';
-    if (/^[a-zA-Z0-9_\-]+$/.test(clean)) {
-    username = clean;
-    } else if (repoOwner) {
-    username = repoOwner;
-    } else {
-    username = clean.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    }
-
-    const cleanHost = repoHost || 'github.com';
-    const profileUrl = username ? `https://${cleanHost}/${encodeURIComponent(username)}` : '#';
-
-    return {
-    name: author,
-    username: username || 'author',
-    profileUrl
-    };
+  function getAuthorDetails(author, commit) {
+    const profile = authorProfiles.get(commit)?.profile;
+    return {name: author || 'Unknown', username: profile?.username || '', profileUrl: safeExternalUrl(profile?.profileUrl) || '#'};
   }
 
-  // Backward-compatibility wrapper
-  function getAuthorProfileUrl(author) {
-    return getAuthorDetails(author).profileUrl;
+  function updateHosting(value) {
+    if (value && typeof value.label === 'string') { hosting = value; remoteUrl = safeExternalUrl(value.url) || remoteUrl; }
+    const el = document.getElementById('forge-host');
+    el.textContent = hosting.host ? hosting.label + ' · ' + hosting.host : 'Local Git';
+    el.title = el.textContent;
+    if (remoteUrl) el.href = remoteUrl; else el.removeAttribute('href');
+  }
+  function commitUrl(full) {
+    if (!remoteUrl || ['local', 'unknown'].includes(hosting.provider)) return null;
+    const segment = hosting.provider === 'gitlab' ? '/-/commit/' :
+      ['bitbucket', 'bitbucket-server'].includes(hosting.provider) ? '/commits/' : '/commit/';
+    return remoteUrl + segment + encodeURIComponent(full);
+  }
+  function treeUrl(ref, relativePath) {
+    if (hosting.provider === 'unknown') return remoteUrl;
+    const segment = hosting.provider === 'gitlab' ? '/-/tree/' :
+      ['gitea', 'forgejo'].includes(hosting.provider) ? '/src/branch/' :
+      ['bitbucket', 'bitbucket-server'].includes(hosting.provider) ? '/src/' : '/tree/';
+    if (hosting.provider === 'bitbucket-server') return remoteUrl.replace(/\/+$/, '') + '/browse/' + relativePath.split('/').map(encodeURIComponent).join('/') + '?at=' + encodeURIComponent(ref);
+    return remoteUrl.replace(/\/+$/, '') + segment + encodeURIComponent(ref) + '/' + relativePath.split('/').map(encodeURIComponent).join('/');
+  }
+  function hydrateAuthors() {
+    const missing = new Set();
+    document.querySelectorAll('[data-author-commit]').forEach(wrapper => {
+      const sha = wrapper.dataset.authorCommit;
+      if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) return;
+      const cached = authorProfiles.get(sha);
+      if (!cached || cached.until < Date.now()) { if (!authorRequests.has(sha)) missing.add(sha); return; }
+      const profile = cached.profile;
+      if (!profile) { wrapper.title = 'No linked hosting account available; showing Git initials'; return; }
+      const imageUrl = /^\/api\/avatars\/[a-f0-9]{64}$/.test(profile.avatarUrl || '') ? profile.avatarUrl : '';
+      if (imageUrl && !wrapper.querySelector('img')) {
+        const img = document.createElement('img');
+        img.className = 'author-avatar-img'; img.alt = ''; img.width = 26; img.height = 26;
+        img.loading = 'lazy'; img.decoding = 'async';
+        img.addEventListener('load', () => { const fallback = wrapper.querySelector('.author-avatar-fallback'); if (fallback) fallback.hidden = true; });
+        img.addEventListener('error', () => { img.remove(); wrapper.title = 'Profile picture unavailable; showing Git initials'; });
+        img.src = imageUrl; wrapper.appendChild(img);
+      }
+      wrapper.title = 'Hosting account: ' + (profile.username || 'author');
+      const name = wrapper.closest('td')?.querySelector('.author-name');
+      const profileUrl = safeExternalUrl(profile.profileUrl);
+      if (name && profileUrl && name.tagName !== 'A') {
+        const link = document.createElement('a'); link.className = name.className;
+        link.textContent = name.textContent; link.href = profileUrl;
+        link.target = '_blank'; link.rel = 'noopener noreferrer';
+        link.title = wrapper.title; name.replaceWith(link);
+      }
+    });
+    if (missing.size && remoteUrl && hosting.avatarsEnabled !== false) {
+      clearTimeout(authorTimer);
+      const generation = authorGeneration;
+      authorTimer = setTimeout(() => loadAuthors([...missing].slice(0,20), generation), 80);
+    }
+  }
+  async function loadAuthors(commits, generation) {
+    commits.forEach(sha => authorRequests.add(sha));
+    try {
+      const response = await fetch('/api/authors?commits=' + commits.join(','));
+      if (!response.ok) throw new Error('Author profiles unavailable');
+      const data = await response.json();
+      if (generation !== authorGeneration) return;
+      updateHosting(data.hosting);
+      for (const sha of commits) {
+        authorProfiles.delete(sha);
+        authorProfiles.set(sha, {profile: data.profiles?.[sha] || null, until: Date.now() + 300000});
+      }
+      while (authorProfiles.size > 512) authorProfiles.delete(authorProfiles.keys().next().value);
+    } catch {
+      if (generation === authorGeneration) commits.forEach(sha => authorProfiles.set(sha, {profile: null, until: Date.now() + 60000}));
+    } finally {
+      if (generation === authorGeneration) {
+        commits.forEach(sha => authorRequests.delete(sha));
+        while (authorProfiles.size > 512) authorProfiles.delete(authorProfiles.keys().next().value);
+        hydrateAuthors();
+      }
+    }
   }
 
   function renderScanningState() {
@@ -209,24 +261,34 @@
   }
 
   function applyLoadedData(data) {
-    allEvents = data.events || [];
+    if (data.schemaVersion !== 1 || !Array.isArray(data.events)) throw new Error('Unsupported history response.');
+    allEvents = data.events;
+    sortedCache = null;
+    facetCache.clear();
     repoOwner = data.repoOwner || null;
-    repoHost = data.repoHost || 'github.com';
-    remoteUrl = data.remoteUrl || null;
+    repoHost = data.repoHost || '';
+    authorGeneration++;
+    authorProfiles.clear(); authorRequests.clear(); clearTimeout(authorTimer);
+    remoteUrl = safeExternalUrl(data.remoteUrl) || null;
     currentBranch = data.branch || 'main';
     currentRepo = data.repository || '';
     currentPm = data.packageManager || 'npm';
     workspacePackages = data.workspacePackages || {};
     authorsMap = data.authors || {};
+    updateHosting(data.hosting);
     headStateData = Array.isArray(data.headState) ? data.headState : [];
+    headStateComplete = data.headStateComplete !== false;
 
     document.getElementById('repo-name').textContent = data.repository || 'repository';
     document.getElementById('branch-name').textContent = data.branch || 'main';
     document.getElementById('pm-pill').textContent = data.packageManager || 'npm';
     document.getElementById('index-time').textContent = 'Indexed ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    populateManifestDropdown();
-    populateManifestDatalist();
+    const notices = document.getElementById('history-notices');
+    historyWarnings = Array.isArray(data.warnings) ? data.warnings : [];
+    historyTruncated = Boolean(data.truncated);
+    notices.hidden = !historyWarnings.length && !historyTruncated;
+    notices.textContent = [historyTruncated ? 'History is incomplete: the scan limit was reached.' : '', ...historyWarnings].filter(Boolean).join(' • ');
     updateStats();
     renderView();
   }
@@ -245,6 +307,9 @@
 
   async function loadData() {
     const syncIcon = document.getElementById('sync-icon');
+    const syncButton = document.getElementById('refresh-btn');
+    if (syncButton) syncButton.disabled = true;
+    closeFilterPanel();
     if (syncIcon) syncIcon.style.animation = 'spin 1s linear infinite';
     renderScanningState();
     closeActiveStream();
@@ -253,7 +318,7 @@
     try {
       await openAnalysisStream();
       streamAttempts = 0;
-      return;
+      return true;
     } catch (err) {
       streamAttempts++;
       // Fall through to plain fetch on the last attempt.
@@ -263,6 +328,7 @@
       // Final fallback below.
     } finally {
       if (syncIcon) syncIcon.style.animation = '';
+      if (syncButton) syncButton.disabled = false;
     }
     }
     streamAttempts = 0;
@@ -270,15 +336,23 @@
     try {
     const res = await fetch('/api/events');
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'History request failed (' + res.status + ').');
     applyLoadedData(data);
+    return true;
     } catch (err) {
     document.getElementById('events-tbody').innerHTML = `
       <tr><td colspan="8" class="empty-state" style="color: var(--color-removed)">
-      Failed to fetch dependency events from /api/events.
+      ${escapeHtml(err.message || "Failed to load dependency history. Try Sync again.")}
       </td></tr>
     `;
+    const notices = document.getElementById('history-notices');
+    notices.hidden = false;
+    notices.textContent = err.message || 'Could not load history. Try Sync again.';
+    document.getElementById('pager').hidden = true;
+    return false;
     } finally {
     if (syncIcon) syncIcon.style.animation = '';
+    if (syncButton) syncButton.disabled = false;
     }
   }
 
@@ -329,42 +403,6 @@
     });
   }
 
-  // Custom Dropdown Populator (No native select)
-  function populateManifestDropdown() {
-    const manifests = Array.from(new Set(allEvents.map(e => e.manifest).filter(Boolean))).sort();
-    const menu = document.getElementById('manifest-dropdown-menu');
-    
-    let html = `<div class="dropdown-item ${currentManifest === 'all' ? 'selected' : ''}" role="option" tabindex="0" data-value="all">All Manifests (${manifests.length})</div>`;
-    for (const m of manifests) {
-    html += `<div class="dropdown-item ${currentManifest === m ? 'selected' : ''}" role="option" tabindex="0" data-value="${escapeHtml(m)}">${escapeHtml(m)}</div>`;
-    }
-    menu.innerHTML = html;
-
-    menu.querySelectorAll('.dropdown-item').forEach(item => {
-    item.addEventListener('click', () => {
-      currentManifest = item.dataset.value;
-      currentPage = 1;
-      document.getElementById('manifest-selected-label').textContent = currentManifest === 'all' ? 'All Manifests' : currentManifest;
-      menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
-      item.classList.add('selected');
-      document.getElementById('manifest-dropdown').classList.remove('open');
-      renderView();
-    });
-    });
-  }
-
-  // Dropdown toggle & click outside
-  const manifestDropdown = document.getElementById('manifest-dropdown');
-  document.getElementById('manifest-dropdown-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    manifestDropdown.classList.toggle('open');
-  });
-  window.addEventListener('click', (e) => {
-    if (!manifestDropdown.contains(e.target)) {
-    manifestDropdown.classList.remove('open');
-    }
-  });
-
   function updateStats() {
     const added = allEvents.filter(e => e.type === 'added').length;
     const updated = allEvents.filter(e => e.type === 'updated').length;
@@ -386,6 +424,8 @@
   function setFilter(type) {
     if (currentFilter === type) return;
     currentFilter = type;
+    colFilters.action = type;
+    refreshColFilterState();
     currentPage = 1;
     document.querySelectorAll('.filter-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.filter === type);
@@ -394,24 +434,23 @@
   }
 
   function getFilteredEvents() {
+    selectedFilterSets = {packages: new Set(colFilters.packages), changes: new Set(colFilters.changes), authors: new Set(colFilters.authors)};
+    const searchQuery = currentSearch.toLowerCase();
     return allEvents.filter(ev => {
     if (currentFilter !== 'all' && ev.type !== currentFilter) return false;
-    if (currentManifest !== 'all' && ev.manifest !== currentManifest) return false;
     if (!matchesColFilters(ev)) return false;
     if (currentSearch) {
-      const q = currentSearch.toLowerCase();
+      const q = searchQuery;
       const matchDate = (ev.date || '').toLowerCase().includes(q);
       const matchPkg = (ev.package || '').toLowerCase().includes(q);
       const matchAuthor = (ev.author || '').toLowerCase().includes(q);
-      const authorInfo = getAuthorDetails(ev.author);
-      const matchUsername = (authorInfo && authorInfo.username ? authorInfo.username.toLowerCase().includes(q) : false);
-      const matchSha = (ev.commit || '').toLowerCase().includes(q);
+      const matchSha = `${ev.commit || ''} ${ev.commitFull || ''}`.toLowerCase().includes(q);
       const matchMsg = (ev.message || '').toLowerCase().includes(q);
       const matchManifest = (ev.manifest || '').toLowerCase().includes(q);
       const matchTo = (ev.to || '').toLowerCase().includes(q);
       const matchFrom = (ev.from || '').toLowerCase().includes(q);
       const matchDepType = (ev.depType || '').toLowerCase().includes(q);
-      if (!matchDate && !matchPkg && !matchAuthor && !matchUsername && !matchSha && !matchMsg && !matchManifest && !matchTo && !matchFrom && !matchDepType) return false;
+      if (!matchDate && !matchPkg && !matchAuthor && !matchSha && !matchMsg && !matchManifest && !matchTo && !matchFrom && !matchDepType) return false;
     }
     return true;
     });
@@ -421,7 +460,7 @@
   // date range are empty/off when inactive; selects match exactly.
   // Returns true when the event passes all set columns.
   function eventDateKey(ev) {
-    return (ev.date || '').slice(0, 10);
+    return dayKeyLocal(ev.date) || '';
   }
 
   function changeKeyOf(ev) {
@@ -437,9 +476,7 @@
   }
 
   function typeTagOf(ev) {
-    if (ev.source === 'lockfile') return 'resolved';
-    if (ev.isDirect === false || ev.is_direct === false) return 'dep';
-    return 'direct';
+    return ev.source === 'lockfile' ? 'resolved' : 'declared';
   }
 
   function matchesColFilters(ev) {
@@ -450,12 +487,12 @@
       if (f.dateFrom && d < f.dateFrom) return false;
       if (f.dateTo && d > f.dateTo) return false;
     }
-    if (f.action !== 'all' && ev.type !== f.action) return false;
-    if (f.packages.length > 0 && !f.packages.includes(ev.package || '')) return false;
-    if (f.changes.length > 0 && !f.changes.includes(changeKeyOf(ev))) return false;
+    // Action is shared with the toolbar.
+    if (f.packages.length > 0 && !selectedFilterSets.packages.has(ev.package || '')) return false;
+    if (f.changes.length > 0 && !selectedFilterSets.changes.has(changeKeyOf(ev))) return false;
     if (f.type !== 'all' && typeTagOf(ev) !== f.type) return false;
     if (f.manifest && !(ev.manifest || '').toLowerCase().includes(f.manifest)) return false;
-    if (f.authors.length > 0 && !f.authors.includes(ev.author || '')) return false;
+    if (f.authors.length > 0 && !selectedFilterSets.authors.has(ev.author || '')) return false;
     if (f.commit && !`${ev.commit || ''} ${ev.commitFull || ''}`.toLowerCase().includes(f.commit)) return false;
     return true;
   }
@@ -472,11 +509,12 @@
   function setColFilter(col, value) {
     colFilters[col] = value;
     currentPage = 1;
-    renderView();
   }
 
   function clearColFilters() {
     colFilters = freshColFilters();
+    currentFilter = 'all';
+    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === 'all'));
     document.querySelectorAll('.col-filter').forEach(el => {
       el.value = el.tagName === 'SELECT' ? 'all' : '';
       el.classList.remove('active-filter');
@@ -499,6 +537,23 @@
 
   function refreshColFilterState() {
     const f = colFilters;
+    document.querySelectorAll('.filter-btn').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.filter === currentFilter)));
+    const chips = document.getElementById('active-filters');
+    const values = [];
+    if (currentFilter !== 'all') values.push(['action', `Action: ${currentFilter}`]);
+    if (f.dateFrom || f.dateTo) values.push(['date', `Date: ${f.dateFrom || 'any'} → ${f.dateTo || 'any'}`]);
+    for (const [key, title] of [['packages', 'Dependencies'], ['changes', 'Versions'], ['authors', 'Authors']]) {
+      if (f[key].length) values.push([key, `${title}: ${f[key].length === 1 ? f[key][0] : f[key].length + ' selected'}`]);
+    }
+    for (const [key, title] of [['type', 'Source'], ['manifest', 'Manifest'], ['commit', 'Commit']]) {
+      if (f[key] && f[key] !== 'all') values.push([key, `${title}: ${f[key]}`]);
+    }
+    if (chips) {
+      chips.hidden = !values.length;
+      chips.innerHTML = values.map(([key, label]) => `<button class="filter-chip" data-clear-filter="${key}" aria-label="Clear ${escapeHtml(label)}"><span>${escapeHtml(label)}</span><span aria-hidden="true">×</span></button>`).join('');
+    }
+    const manifestLabel = document.getElementById('manifest-selected-label');
+    if (manifestLabel) manifestLabel.textContent = f.manifest ? 'Manifest filtered' : 'All manifests';
     const clearBtn = document.getElementById('col-filter-clear');
     if (clearBtn) clearBtn.style.display = colFiltersActive() ? 'inline-block' : 'none';
     document.querySelectorAll('.col-filter').forEach(el => {
@@ -543,12 +598,26 @@
 
   // Rich floating panels for date + multi-select columns. One shared
   // container positioned under the trigger button; closes on outside
-  // click, Escape, scroll, or resize. Selections apply explicitly.
+  // click or Escape. Placement follows the trigger during scroll/resize.
+  let selectedFilterSets = {packages: new Set(), changes: new Set(), authors: new Set()};
+  let sortedCache = null;
+  const facetCache = new Map();
   let openPanelKind = null;
 
-  function closeFilterPanel() {
+  let panelAnchor = null;
+  let panelPlacement = null;
+  let panelPositionFrame = null;
+  function closeFilterPanel(restoreFocus = false) {
     const panel = document.getElementById('filter-panel');
-    if (panel) panel.hidden = true;
+    if (panel) { panel.hidden = true; delete panel.dataset.placement; }
+    if (panelPositionFrame !== null) cancelAnimationFrame(panelPositionFrame);
+    panelPositionFrame = null;
+    panelPlacement = null;
+    if (panelAnchor) {
+      panelAnchor.setAttribute('aria-expanded', 'false');
+      if (restoreFocus) panelAnchor.focus({preventScroll: true});
+    }
+    panelAnchor = null;
     openPanelKind = null;
   }
 
@@ -562,9 +631,10 @@
   function datePresets() {
     const now = new Date();
     const today = isoDay(now);
-    const yesterday = isoDay(new Date(now.getTime() - 86400000));
-    const last7 = isoDay(new Date(now.getTime() - 6 * 86400000));
-    const last30 = isoDay(new Date(now.getTime() - 29 * 86400000));
+    const before = n => isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - n));
+    const yesterday = before(1);
+    const last7 = before(6);
+    const last30 = before(29);
     const firstOfMonth = `${today.slice(0, 7)}-01`;
     return [
       { name: 'Today', from: today, to: today },
@@ -576,6 +646,7 @@
   }
 
   function facetValues(kind) {
+    if (facetCache.has(kind)) return facetCache.get(kind);
     const counts = new Map();
     for (const ev of allEvents) {
       let key = null;
@@ -585,87 +656,252 @@
       if (key === null) continue;
       counts.set(key, (counts.get(key) || 0) + 1);
     }
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+    const values = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+    facetCache.set(kind, values);
+    return values;
   }
 
   function openFilterPanel(kind, anchor) {
     const panel = document.getElementById('filter-panel');
     if (!panel) return;
-    if (openPanelKind === kind) {
+    if (openPanelKind === kind && panelAnchor === anchor) {
       closeFilterPanel();
       return;
     }
+    closeFilterPanel();
     openPanelKind = kind;
+    panelAnchor = anchor;
+    anchor.setAttribute('aria-expanded', 'true');
+    anchor.setAttribute('aria-controls', 'filter-panel');
+    panel.setAttribute('aria-label', kind === 'page-size' ? 'Rows per page' : kind === 'filters' ? 'Filter history' : `${kind} filters`);
     if (kind === 'date') renderDatePanel(panel);
     else if (kind === 'manifest' || kind === 'commit') renderTextPanel(panel, kind);
     else if (kind === 'action' || kind === 'type') renderOptionsPanel(panel, kind);
+    else if (kind === 'page-size') renderPageSizePanel(panel);
+    else if (kind === 'filters') renderFilterMenu(panel);
     else renderMultiPanel(panel, kind);
+    // Keep header/actions fixed; only the filter content scrolls.
+    const head = panel.querySelector('.filter-panel-head');
+    const foot = panel.querySelector('.filter-panel-foot');
+    const body = document.createElement('div');
+    body.className = 'filter-panel-body';
+    for (const child of [...panel.children]) if (child !== head && child !== foot) body.appendChild(child);
+    panel.insertBefore(body, foot);
+    panel.scrollTop = 0;
     panel.hidden = false;
-    const rect = anchor.getBoundingClientRect();
-    const width = Math.min(280, window.innerWidth - 16);
-    let left = Math.min(rect.left, window.innerWidth - width - 8);
-    left = Math.max(8, left);
-    panel.style.left = left + 'px';
-    panel.style.top = Math.min(rect.bottom + 6, window.innerHeight - 40) + 'px';
-    const focusTarget = panel.querySelector('.filter-panel-search, input[type="date"], .filter-preset');
-    if (focusTarget) focusTarget.focus();
+    positionFilterPanel();
+    if (panel.hidden) return;
+    const focusTarget = panel.querySelector('input, button');
+    if (focusTarget) focusTarget.focus({preventScroll: true});
+  }
+
+  function positionFilterPanel() {
+    const panel = document.getElementById('filter-panel');
+    if (!openPanelKind || panel.hidden) return;
+    if (!panelAnchor?.isConnected) { closeFilterPanel(); return; }
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft || 0;
+    const viewportTop = viewport?.offsetTop || 0;
+    const viewportRight = viewportLeft + (viewport?.width || window.innerWidth);
+    const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
+    const footer = document.querySelector('.bottom-status-bar')?.getBoundingClientRect();
+    const header = document.querySelector('header')?.getBoundingClientRect();
+    const safeLeft = viewportLeft + 12;
+    const safeRight = viewportRight - 12;
+    const safeTop = Math.max(viewportTop + 12, header && header.bottom > viewportTop && header.top < viewportBottom ? header.bottom + 8 : viewportTop + 12);
+    const safeBottom = Math.min(viewportBottom, footer && footer.top > viewportTop && footer.top < viewportBottom ? footer.top : viewportBottom) - 12;
+    const rect = panelAnchor.getBoundingClientRect();
+    const clip = panelAnchor.closest('.table-responsive')?.getBoundingClientRect();
+    if (rect.bottom <= safeTop || rect.top >= safeBottom || rect.right <= safeLeft || rect.left >= safeRight ||
+        (clip && (rect.right <= clip.left || rect.left >= clip.right))) { closeFilterPanel(); return; }
+
+    const preferredWidth = openPanelKind === 'date' ? 340 : openPanelKind === 'page-size' ? 160 : 300;
+    const heightLimit = openPanelKind === 'date' ? 580 : 400;
+    panel.style.width = Math.max(0, Math.min(preferredWidth, safeRight - safeLeft)) + 'px';
+    panel.style.maxHeight = Math.max(0, Math.min(heightLimit, safeBottom - safeTop)) + 'px';
+    const desiredHeight = panel.getBoundingClientRect().height;
+    const below = Math.max(0, safeBottom - rect.bottom - 8);
+    const above = Math.max(0, rect.top - safeTop - 8);
+    // Preserve the chosen side while there is useful space, including when
+    // facet search or validation changes the popup's content height.
+    const usefulHeight = Math.min(160, desiredHeight);
+    const currentSpace = panelPlacement === 'bottom' ? below : above;
+    const otherSpace = panelPlacement === 'bottom' ? above : below;
+    if (!panelPlacement || currentSpace < usefulHeight || (desiredHeight > currentSpace && otherSpace > currentSpace + 80)) {
+      panelPlacement = desiredHeight <= below || below >= above ? 'bottom' : 'top';
+    }
+    const availableHeight = panelPlacement === 'bottom' ? below : above;
+    if (availableHeight < 80) { closeFilterPanel(); return; }
+    panel.style.maxHeight = Math.min(heightLimit, availableHeight) + 'px';
+    const bounds = panel.getBoundingClientRect();
+    const preferredLeft = rect.left + bounds.width <= safeRight ? rect.left : rect.right - bounds.width;
+    panel.style.left = Math.round(Math.max(safeLeft, Math.min(preferredLeft, safeRight - bounds.width))) + 'px';
+    panel.style.top = (panelPlacement === 'bottom' ? rect.bottom + 8 : rect.top - bounds.height - 8) + 'px';
+    panel.dataset.placement = panelPlacement;
+  }
+
+  function scheduleFilterPanelPosition() {
+    if (!openPanelKind || panelPositionFrame !== null) return;
+    panelPositionFrame = requestAnimationFrame(() => {
+      panelPositionFrame = null;
+      positionFilterPanel();
+    });
+  }
+
+  function renderPageSizePanel(panel) {
+    panel.innerHTML = `<div class="filter-panel-head">Rows per page</div><div class="filter-panel-list" role="group" aria-label="Rows per page">${PAGE_SIZES.map(n => `<button class="filter-check" data-size="${n}" aria-pressed="${pageSize === n}"><span class="lbl">${n} rows</span>${pageSize === n ? '✓' : ''}</button>`).join('')}</div>`;
+    panel.querySelectorAll('[data-size]').forEach(btn => btn.addEventListener('click', () => {
+      pageSize = Number(btn.dataset.size);
+      currentPage = 1;
+      closeFilterPanel(true);
+      renderView();
+    }));
+  }
+
+  function renderFilterMenu(panel) {
+    const fields = [['date', 'Date range'], ['action', 'Action'], ['package', 'Dependency'], ['change', 'Version change'], ['type', 'Source'], ['manifest', 'Manifest'], ['author', 'Author'], ['commit', 'Commit']];
+    panel.innerHTML = `<div class="filter-panel-head">Filter history</div><div class="filter-panel-list">${fields.map(([kind, label]) => `<button class="filter-check" data-field="${kind}"><span class="lbl">${label}</span>${colFiltersActiveFor(kind) ? '●' : '›'}</button>`).join('')}</div>`;
+    panel.querySelectorAll('[data-field]').forEach(btn => btn.addEventListener('click', () => openFilterPanel(btn.dataset.field, panelAnchor)));
   }
 
   function renderDatePanel(panel) {
-    const f = colFilters;
+    let from = colFilters.dateFrom;
+    let to = colFilters.dateTo;
+    let preset = colFilters.datePreset;
+    let selecting = 'from';
+    let month = new Date((from || eventDateKey(getSortedEvents()[0] || {}) || isoDay(new Date())) + 'T12:00:00');
+    month.setDate(1);
     const presets = datePresets();
     panel.innerHTML = `
       <div class="filter-panel-head">Date range</div>
       <div class="filter-presets">
-        ${presets.map(p => `<button class="filter-preset${f.datePreset === p.name ? ' current' : ''}" data-preset="${p.name}">${p.name}</button>`).join('')}
+        ${presets.map(p => `<button class="filter-preset" data-preset="${p.name}">${p.name}</button>`).join('')}
       </div>
       <div class="filter-range">
-        <input type="date" id="filter-date-from" value="${escapeHtml(f.dateFrom)}" aria-label="From date" max="${isoDay(new Date())}">
+        <label>From<input type="text" id="filter-date-from" placeholder="YYYY-MM-DD" autocomplete="off" value="${escapeHtml(from)}" aria-label="From date" aria-describedby="date-error"></label>
         <span>–</span>
-        <input type="date" id="filter-date-to" value="${escapeHtml(f.dateTo)}" aria-label="To date" max="${isoDay(new Date())}">
+        <label>To<input type="text" id="filter-date-to" placeholder="YYYY-MM-DD" autocomplete="off" value="${escapeHtml(to)}" aria-label="To date" aria-describedby="date-error"></label>
+      </div>
+      <div class="date-calendar">
+        <div class="date-calendar-nav"><button class="pager-btn" data-month="-1" aria-label="Previous month">‹</button><strong id="date-month-label" aria-live="polite"></strong><button class="pager-btn" data-month="1" aria-label="Next month">›</button></div>
+        <div class="date-weekdays" aria-hidden="true">${['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => `<span>${d}</span>`).join('')}</div>
+        <div class="date-grid" role="group" aria-label="Choose dates"></div>
+        <div class="date-hint">Choose a start date, then an end date. Dates use your local timezone.</div>
+        <div id="date-error" class="date-error" role="alert"></div>
       </div>
       <div class="filter-panel-foot">
         <button class="pager-btn" data-panel-act="clear">Clear</button>
         <button class="pager-btn apply" data-panel-act="apply">Apply</button>
       </div>`;
+    const startInput = panel.querySelector('#filter-date-from');
+    const endInput = panel.querySelector('#filter-date-to');
+    const error = panel.querySelector('#date-error');
+    const grid = panel.querySelector('.date-grid');
+    const validDay = value => {
+      if (!value) return true;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const d = new Date(value + 'T12:00:00');
+      return !isNaN(d.getTime()) && isoDay(d) === value;
+    };
+    const draw = (focusDay) => {
+      panel.querySelector('#date-month-label').textContent = `${MONTHS[month.getMonth()]} ${month.getFullYear()}`;
+      const first = new Date(month.getFullYear(), month.getMonth(), 1);
+      const offset = first.getDay();
+      const focusKey = focusDay || (validDay(from) && from ? from : isoDay(first));
+      grid.innerHTML = Array.from({length: 42}, (_, i) => {
+        const day = new Date(month.getFullYear(), month.getMonth(), i - offset + 1, 12);
+        const key = isoDay(day);
+        const outside = day.getMonth() !== month.getMonth();
+        const selected = key === from || key === to;
+        const inRange = from && to && key > from && key < to;
+        return `<button class="date-day${outside ? ' outside' : ''}${selected ? ' selected' : ''}${inRange ? ' in-range' : ''}" data-date="${key}" tabindex="${key === focusKey ? 0 : -1}" aria-label="${day.toLocaleDateString([], {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'})}" aria-pressed="${!!selected}"${key === isoDay(new Date()) ? ' aria-current="date"' : ''}>${day.getDate()}</button>`;
+      }).join('');
+      // When the selected date is outside the visible month, retain a tab stop.
+      if (!grid.querySelector('[tabindex="0"]')) grid.querySelector(`[data-date="${isoDay(first)}"]`).tabIndex = 0;
+      panel.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('current', b.dataset.preset === preset));
+      if (focusDay) grid.querySelector(`[data-date="${focusDay}"]`)?.focus();
+    };
+    const choose = key => {
+      error.textContent = '';
+      preset = 'custom';
+      if (selecting === 'from') { from = key; to = ''; selecting = 'to'; }
+      else {
+        to = key;
+        if (from && to < from) [from, to] = [to, from];
+        selecting = 'from';
+      }
+      startInput.value = from;
+      endInput.value = to;
+      draw(key);
+    };
+    grid.addEventListener('click', e => {
+      const day = e.target.closest('[data-date]');
+      if (day) choose(day.dataset.date);
+    });
+    grid.addEventListener('keydown', e => {
+      const button = e.target.closest('[data-date]');
+      if (!button) return;
+      const d = new Date(button.dataset.date + 'T12:00:00');
+      const delta = {ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7}[e.key];
+      if (delta !== undefined) d.setDate(d.getDate() + delta);
+      else if (e.key === 'Home') d.setDate(d.getDate() - d.getDay());
+      else if (e.key === 'End') d.setDate(d.getDate() + 6 - d.getDay());
+      else if (e.key === 'PageUp' || e.key === 'PageDown') {
+        const day = d.getDate();
+        d.setDate(1);
+        d.setMonth(d.getMonth() + (e.key === 'PageUp' ? -1 : 1));
+        d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+      } else return;
+      e.preventDefault();
+      month = new Date(d.getFullYear(), d.getMonth(), 1);
+      draw(isoDay(d));
+    });
+
+    panel.querySelectorAll('[data-month]').forEach(btn => btn.addEventListener('click', () => {
+      month.setMonth(month.getMonth() + Number(btn.dataset.month));
+      draw();
+    }));
     panel.querySelectorAll('[data-preset]').forEach(btn => {
       btn.addEventListener('click', () => {
         const p = presets.find(x => x.name === btn.dataset.preset);
         if (!p) return;
-        panel.querySelector('#filter-date-from').value = p.from;
-        panel.querySelector('#filter-date-to').value = p.to;
-        panel.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('current', b === btn));
-        colFilters.datePreset = p.name;
+        from = p.from; to = p.to; preset = p.name; selecting = 'from';
+        startInput.value = from; endInput.value = to;
+        month = new Date(from + 'T12:00:00'); month.setDate(1);
+        draw();
       });
     });
-    const markCustom = () => {
-      colFilters.datePreset = 'custom';
-      panel.querySelectorAll('[data-preset]').forEach(b => b.classList.remove('current'));
-    };
-    panel.querySelector('#filter-date-from').addEventListener('change', markCustom);
-    panel.querySelector('#filter-date-to').addEventListener('change', markCustom);
+    [startInput, endInput].forEach((input, i) => {
+      input.addEventListener('focus', () => { selecting = i === 0 ? 'from' : 'to'; });
+      input.addEventListener('input', () => {
+        from = startInput.value.trim(); to = endInput.value.trim(); preset = 'custom';
+        if (validDay(input.value) && input.value) { month = new Date(input.value + 'T12:00:00'); month.setDate(1); }
+        error.textContent = ''; draw();
+      });
+    });
     panel.querySelector('[data-panel-act="clear"]').addEventListener('click', () => {
       colFilters.dateFrom = '';
       colFilters.dateTo = '';
       colFilters.datePreset = '';
       currentPage = 1;
       refreshColFilterState();
-      closeFilterPanel();
+      closeFilterPanel(true);
       renderView();
     });
     panel.querySelector('[data-panel-act="apply"]').addEventListener('click', () => {
-      let from = panel.querySelector('#filter-date-from').value;
-      let to = panel.querySelector('#filter-date-to').value;
-      if (from && to && from > to) { const t = from; from = to; to = t; }
+      from = startInput.value.trim(); to = endInput.value.trim();
+      const invalid = !validDay(from) ? startInput : !validDay(to) ? endInput : null;
+      if (invalid) { error.textContent = 'Enter a valid date as YYYY-MM-DD.'; invalid.focus(); return; }
+      if (from && to && from > to) { error.textContent = 'End date must be on or after start date.'; endInput.focus(); return; }
       colFilters.dateFrom = from;
       colFilters.dateTo = to;
-      if (!from && !to) colFilters.datePreset = '';
-      else if (!colFilters.datePreset) colFilters.datePreset = 'custom';
+      colFilters.datePreset = from || to ? preset : '';
       currentPage = 1;
       refreshColFilterState();
-      closeFilterPanel();
+      closeFilterPanel(true);
       renderView();
     });
+    draw();
   }
 
   // Single-value text panel (manifest substring, commit SHA/prefix).
@@ -683,17 +919,17 @@
     const apply = () => {
       setColFilter(kind, input.value.trim().toLowerCase());
       refreshColFilterState();
-      closeFilterPanel();
+      closeFilterPanel(true);
       renderView();
     };
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') apply();
-      else e.stopPropagation();
+      // Escape bubbles to the shared popover handler.
     });
     panel.querySelector('[data-panel-act="clear"]').addEventListener('click', () => {
       setColFilter(kind, '');
       refreshColFilterState();
-      closeFilterPanel();
+      closeFilterPanel(true);
       renderView();
     });
     panel.querySelector('[data-panel-act="apply"]').addEventListener('click', apply);
@@ -701,11 +937,11 @@
 
   // Single-choice option panel (action, type). Applies immediately.
   function renderOptionsPanel(panel, kind) {
-    const titles = { action: 'Action', type: 'Type' };
+    const titles = { action: 'Action', type: 'Source' };
     const options = kind === 'action'
       ? [['all', 'All actions'], ['added', '+ Added'], ['updated', '↑ Updated'], ['removed', '− Removed']]
-      : [['all', 'All types'], ['direct', 'direct'], ['dep', 'dep'], ['resolved', 'resolved']];
-    const current = colFilters[kind];
+      : [['all', 'All sources'], ['declared', 'Declared · package.json'], ['resolved', 'Resolved · lockfile']];
+    let current = kind === 'action' ? currentFilter : colFilters[kind];
     panel.innerHTML = `
       <div class="filter-panel-head">${titles[kind]}</div>
       <div class="filter-panel-list" role="radiogroup" aria-label="${titles[kind]}">
@@ -714,15 +950,27 @@
             <span class="box">${current === value ? '●' : ''}</span>
             <span class="lbl">${label}</span>
           </button>`).join('')}
-      </div>`;
+      </div><div class="filter-panel-foot"><button class="pager-btn" data-panel-act="clear">Clear</button><button class="pager-btn apply" data-panel-act="apply">Apply</button></div>`;
     panel.querySelector('.filter-panel-list').addEventListener('click', (e) => {
       const row = e.target.closest('[data-value]');
       if (!row) return;
-      setColFilter(kind, row.getAttribute('data-value') || 'all');
-      refreshColFilterState();
-      closeFilterPanel();
-      renderView();
+      current = row.getAttribute('data-value') || 'all';
+      panel.querySelectorAll('[data-value]').forEach(b => {
+        const selected = b.dataset.value === current;
+        b.setAttribute('aria-checked', String(selected));
+        b.querySelector('.box').textContent = selected ? '●' : '';
+      });
     });
+    const apply = value => {
+      if (kind === 'action') setFilter(value);
+      else colFilters[kind] = value;
+      currentPage = 1;
+      refreshColFilterState();
+      closeFilterPanel(true);
+      renderView();
+    };
+    panel.querySelector('[data-panel-act="clear"]').addEventListener('click', () => apply('all'));
+    panel.querySelector('[data-panel-act="apply"]').addEventListener('click', () => apply(current));
   }
 
   function renderMultiPanel(panel, kind) {
@@ -736,7 +984,6 @@
       <div class="filter-panel-list" role="group" aria-label="${titles[kind]}"></div>
       <div class="filter-panel-foot">
         <button class="pager-btn" data-panel-act="clear">Clear</button>
-        <button class="pager-btn" data-panel-act="all">All</button>
         <button class="pager-btn apply" data-panel-act="apply">Apply</button>
       </div>`;
     const list = panel.querySelector('.filter-panel-list');
@@ -748,12 +995,12 @@
         list.innerHTML = '<div class="filter-panel-empty">No matches.</div>';
         return;
       }
-      list.innerHTML = shown.map(([name, count]) => `
+      list.innerHTML = shown.slice(0, 200).map(([name, count]) => `
         <button class="filter-check" data-name="${escapeHtml(name)}" aria-checked="${selected.has(name)}" role="checkbox">
           <span class="box">✓</span>
           <span class="lbl" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
           <span class="cnt">${count}</span>
-        </button>`).join('');
+        </button>`).join('') + (shown.length > 200 ? '<div class="filter-panel-empty">Showing 200 results. Refine your search to find more.</div>' : '');
     };
     draw('');
     search.addEventListener('input', () => draw(search.value.trim()));
@@ -766,42 +1013,37 @@
       row.setAttribute('aria-checked', String(selected.has(name)));
     });
     panel.querySelector('[data-panel-act="clear"]').addEventListener('click', () => {
-      selected.clear();
-      list.querySelectorAll('[aria-checked="true"]').forEach(el => el.setAttribute('aria-checked', 'false'));
-    });
-    panel.querySelector('[data-panel-act="all"]').addEventListener('click', () => {
-      for (const [name] of items) selected.add(name);
-      list.querySelectorAll('.filter-check').forEach(el => el.setAttribute('aria-checked', 'true'));
+      colFilters[stateKey] = [];
+      currentPage = 1;
+      closeFilterPanel(true);
+      renderView();
     });
     panel.querySelector('[data-panel-act="apply"]').addEventListener('click', () => {
-      colFilters[stateKey] = items.map(([name]) => name).filter(name => selected.has(name));
+      colFilters[stateKey] = selected.size === items.length ? [] : Array.from(selected);
       currentPage = 1;
       refreshColFilterState();
-      closeFilterPanel();
+      closeFilterPanel(true);
       renderView();
     });
   }
 
-  function populateManifestDatalist() {
-    const dl = document.getElementById('manifest-datalist');
-    if (!dl) return;
-    const manifests = Array.from(new Set(allEvents.map(e => e.manifest).filter(Boolean))).sort();
-    dl.innerHTML = manifests.map(m => `<option value="${escapeHtml(m)}"></option>`).join('');
-  }
-
   function getSortedEvents() {
+    const key = JSON.stringify([currentFilter, currentSearch, colFilters, sortField, sortAsc]);
+    if (sortedCache?.key === key && sortedCache.source === allEvents) return sortedCache.events;
     const events = getFilteredEvents();
-    return events.sort((a, b) => {
+    events.sort((a, b) => {
     let valA = a[sortField] || '';
     let valB = b[sortField] || '';
     if (sortField === 'date') {
-      valA = new Date(valA).getTime() || 0;
-      valB = new Date(valB).getTime() || 0;
+      valA = eventTime(a);
+      valB = eventTime(b);
     }
     if (valA < valB) return sortAsc ? -1 : 1;
     if (valA > valB) return sortAsc ? 1 : -1;
     return 0;
     });
+    sortedCache = {key, source: allEvents, events};
+    return events;
   }
 
   function toggleSort(field) {
@@ -818,10 +1060,12 @@
     if (dateTh) dateTh.setAttribute('aria-sort', sortField === 'date' ? (sortAsc ? 'ascending' : 'descending') : 'none');
     if (pkgTh) pkgTh.setAttribute('aria-sort', sortField === 'package' ? (sortAsc ? 'ascending' : 'descending') : 'none');
     currentPage = 1;
-    renderTable();
+    renderView();
   }
 
   function renderView() {
+    refreshColFilterState();
+    document.getElementById('pager').hidden = currentView !== 'timeline';
     if (currentView === 'timeline') renderTable();
     else if (currentView === 'calendar') renderCalendar();
   }
@@ -850,7 +1094,7 @@
     const page = filtered.slice(start, start + pageSize);
 
     tbody.innerHTML = page.map(ev => {
-    const dateStr = (ev.date || '').slice(0, 10);
+    const dateStr = eventDateKey(ev);
     let badgeClass = 'updated';
     let badgeLabel = '↑ Updated';
 
@@ -875,15 +1119,10 @@
       `;
     }
 
-    const authorInfo = getAuthorDetails(ev.author);
+    const authorInfo = getAuthorDetails(ev.author, ev.commitFull);
     const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
     const isResolved = ev.source === 'lockfile';
-    const isTransitive = ev.isDirect === false || ev.is_direct === false;
-    const typeBadge = isResolved
-      ? `<span class="dep-type-tag">resolved</span>`
-      : isTransitive
-        ? `<span class="dep-type-tag">dep</span>`
-        : `<span class="dep-type-tag direct">direct</span>`;
+    const typeBadge = '<span class="dep-type-tag' + (isResolved ? '' : ' direct') + '" title="' + escapeHtml((ev.depTypeFrom ? ev.depTypeFrom + ' → ' : '') + (ev.depType || '') + (ev.lockfile ? ' · ' + ev.lockfile : '')) + '">' + (isResolved ? 'resolved' : 'declared') + '</span>';
 
     const isWs = Boolean(
       (workspacePackages && Object.prototype.hasOwnProperty.call(workspacePackages, ev.package)) ||
@@ -910,25 +1149,27 @@
       <td>${typeBadge}</td>
       <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
       <td>
-        <a href="${authorInfo.profileUrl}" target="_blank" rel="noopener noreferrer" class="author-cell-link" title="View ${escapeHtml(authorInfo.name)} (@${escapeHtml(authorInfo.username)}) on ${repoHost}">
-        <div class="author-avatar-wrapper">
+        <div class="author-cell-link" title="Git author: ${escapeHtml(authorInfo.name)}">
+        <div class="author-avatar-wrapper" data-author-commit="${escapeHtml(ev.commitFull || ev.commit)}">
           <div class="author-avatar-fallback" style="display: flex;">${escapeHtml(authorInitial)}</div>
         </div>
         <div class="author-meta">
           <span class="author-name">${escapeHtml(authorInfo.name)}</span>
-          <span class="author-user">@${escapeHtml(authorInfo.username)}</span>
+
         </div>
-        </a>
+        </div>
       </td>
       <td>
-        <button class="commit-tag" data-commit="${escapeHtml(ev.commit)}" data-full="${escapeHtml(ev.commitFull || ev.commit)}" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open on GitHub' : 'click to copy'})">
-        ${ev.commit}
+        <button class="commit-tag" data-commit="${escapeHtml(ev.commit)}" data-full="${escapeHtml(ev.commitFull || ev.commit)}" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open in repository' : 'click to copy'})">
+        ${escapeHtml(ev.commit)}
         </button>
       </td>
       </tr>
     `;
     }).join('');
     renderPager(filtered.length, start, totalPages);
+    hydrateAuthors();
+    document.getElementById('timeline-view').scrollTop = 0;
   }
 
   function renderPager(total, start, totalPages) {
@@ -941,9 +1182,9 @@
     const numbers = document.getElementById('pager-numbers');
     const sizeSel = document.getElementById('pager-size');
     if (!pager) return;
-    if (sizeSel && String(pageSize) !== sizeSel.value) sizeSel.value = String(pageSize);
+    if (sizeSel) sizeSel.textContent = pageSize + ' ▾';
     if (total <= pageSize) {
-      pager.hidden = total === 0 ? false : true;
+      pager.hidden = currentView !== 'timeline' || total === 0;
       if (info) info.textContent = total === 0 ? 'Showing 0 events' : `Showing all ${total} events`;
       if (numbers) numbers.innerHTML = '';
       if (first) first.disabled = true;
@@ -952,7 +1193,7 @@
       if (last) last.disabled = true;
       return;
     }
-    pager.hidden = false;
+    pager.hidden = currentView !== 'timeline';
     if (info) info.textContent = `Showing ${total === 0 ? 0 : start + 1}–${Math.min(start + pageSize, total)} of ${total} events · page ${currentPage}/${totalPages}`;
     if (first) first.disabled = currentPage <= 1;
     if (prev) prev.disabled = currentPage <= 1;
@@ -1007,8 +1248,9 @@
       if (commit && tbody.contains(commit)) {
         const short = commit.getAttribute('data-commit') || '';
         const full = commit.getAttribute('data-full') || short;
-        if (remoteUrl) window.open(remoteUrl + '/commit/' + full, '_blank');
-        else copyText(short, 'Commit SHA copied!');
+        const link = commitUrl(full);
+        if (link) window.open(link, '_blank', 'noopener,noreferrer');
+        else copyText(full, 'Commit SHA copied!');
         return;
       }
       const action = e.target.closest('[data-action="reset-filters"]');
@@ -1026,11 +1268,11 @@
     const statsElem = document.getElementById('calendar-month-stats');
     if (!grid || !titleElem) return;
 
-    const filtered = getFilteredEvents();
+    const filtered = getSortedEvents();
 
     // If opening calendar for first time, center on latest event's month
     if (!calendarInitialized && filtered.length > 0) {
-    for (const ev of filtered) {
+    for (const ev of [latestEvent(filtered)].filter(Boolean)) {
       if (ev.date) {
       const d = new Date(ev.date);
       if (!isNaN(d.getTime())) {
@@ -1124,11 +1366,11 @@
     const countBadge = dayEvents.length > 0 ? `<span class="day-badge-count">${dayEvents.length}</span>` : '';
 
     cellsHtml += `
-      <div class="calendar-day-box ${isToday ? 'today' : ''} ${dayEvents.length > 0 ? 'has-events' : ''}" data-day="${dayStr}" role="button" tabindex="${dayEvents.length > 0 ? '0' : '-1'}" aria-label="${d} ${MONTHS[calendarMonth]}: ${dayEvents.length} change(s). Activate to view day timeline." title="${d} ${MONTHS[calendarMonth]}: ${dayEvents.length} change(s). Click to view day timeline.">
-      <div class="day-box-header">
+      <div class="calendar-day-box ${isToday ? 'today' : ''} ${dayEvents.length > 0 ? 'has-events' : ''}" data-day="${dayStr}" title="${d} ${MONTHS[calendarMonth]}: ${dayEvents.length} change(s). Click to view day timeline.">
+      <button class="day-box-header day-open-btn" ${dayEvents.length ? '' : 'disabled'} aria-label="${d} ${MONTHS[calendarMonth]} ${calendarYear}: ${dayEvents.length} changes. View day history.">
         <span class="day-number">${d}</span>
         ${countBadge}
-      </div>
+      </button>
       <div class="day-events-stack">
         ${eventsHtml}
       </div>
@@ -1169,40 +1411,28 @@
       const day = e.target.closest('[data-day]');
       if (day && grid.contains(day)) filterByDay(day.getAttribute('data-day') || '');
     });
-    grid.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      const pkg = e.target.closest('[data-pkg]');
-      if (pkg && grid.contains(pkg)) {
-        e.preventDefault();
-        e.stopPropagation();
-        openArchaeology(pkg.getAttribute('data-pkg') || '');
-        return;
-      }
-      const day = e.target.closest('[data-day]');
-      if (day && grid.contains(day)) {
-        e.preventDefault();
-        filterByDay(day.getAttribute('data-day') || '');
-      }
-    });
+
   }
 
   function filterByDay(dayStr) {
-    document.getElementById('search-input').value = dayStr;
-    currentSearch = dayStr;
-    document.getElementById('search-clear').style.display = 'block';
+    colFilters.dateFrom = dayStr;
+    colFilters.dateTo = dayStr;
+    colFilters.datePreset = 'custom';
+    currentPage = 1;
+    refreshColFilterState();
     switchToTimeline();
   }
 
   function resetFilters() {
+    clearTimeout(searchTimer);
     currentFilter = 'all';
     currentSearch = '';
-    currentManifest = 'all';
     closeFilterPanel();
     clearColFilters();
     currentPage = 1;
     document.getElementById('search-input').value = '';
     document.getElementById('search-clear').style.display = 'none';
-    document.getElementById('manifest-selected-label').textContent = 'All Manifests';
+
     document.querySelectorAll('.filter-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.filter === 'all');
     });
@@ -1211,6 +1441,7 @@
 
   // Archaeology Drawer
   function openArchaeology(pkgName) {
+    drawerReturnFocus = document.activeElement;
     selectedPkgName = pkgName;
     const pkgEvents = allEvents.filter(e => e.package === pkgName);
     if (pkgEvents.length === 0) return;
@@ -1267,9 +1498,9 @@
       if (remoteUrl) {
       const cleanRemote = remoteUrl.replace(/\/+$/, '');
       const branchRef = encodeURIComponent(currentBranch || 'main');
-      const targetUrl = pkgRelDir ? `${cleanRemote}/tree/${branchRef}/${pkgRelDir}` : cleanRemote;
+      const targetUrl = pkgRelDir ? treeUrl(currentBranch || 'main', pkgRelDir) : cleanRemote;
       pkgLink.href = targetUrl;
-      pkgLink.title = `View package directory (${pkgRelDir || 'root'}) on GitHub`;
+      pkgLink.title = `View package directory (${pkgRelDir || 'root'}) on ${hosting.label}`;
       pkgLinkText.textContent = 'View in Repo';
       pkgLink.classList.remove('disabled');
       pkgLink.setAttribute('target', '_blank');
@@ -1317,12 +1548,9 @@
       ? `Active ${first.version || ''} · ${first.manifest}`
       : `Active in ${headEntries.length} manifests`;
     }
-    } else if (latest.type === 'removed') {
-    statusBadge.className = 'drawer-status-pill removed';
-    if (statusText) statusText.textContent = 'Removed (was ' + (latest.from || latest.to || '') + ')';
     } else {
     statusBadge.className = 'drawer-status-pill removed';
-    if (statusText) statusText.textContent = 'Removed at HEAD';
+    if (statusText) statusText.textContent = headStateComplete ? 'Not declared at HEAD' : 'HEAD status unknown · unreadable manifest';
     }
 
     // Deptype badge
@@ -1346,7 +1574,7 @@
 
     const firstDateElem = document.getElementById('drawer-first-date');
     if (firstDateElem) {
-    firstDateElem.textContent = (pkgEvents[0].date || '').slice(0, 10);
+    firstDateElem.textContent = eventDateKey(pkgEvents[0]);
     }
 
     const authorsCountElem = document.getElementById('drawer-authors-count');
@@ -1357,7 +1585,7 @@
 
     const timeline = document.getElementById('drawer-timeline');
     timeline.innerHTML = pkgEvents.map(ev => {
-    const dateStr = (ev.date || '').slice(0, 10);
+    const dateStr = eventDateKey(ev);
     let actionSymbol = '';
     if (ev.type === 'added') actionSymbol = '+';
     else if (ev.type === 'removed') actionSymbol = '–';
@@ -1366,9 +1594,10 @@
     let actionText = '';
     if (ev.type === 'added') actionText = `Added version <span style="color: var(--color-added)">${escapeHtml(ev.to || '')}</span>`;
     else if (ev.type === 'removed') actionText = `Removed dependency (was ${escapeHtml(ev.from || '')})`;
-    else actionText = `Upgraded ${escapeHtml(ev.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ev.to || '')}</span>`;
+    else actionText = `Updated ${escapeHtml(ev.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ev.to || '')}</span>`;
+    if (ev.depTypeFrom && ev.depTypeFrom !== ev.depType) actionText += ` · ${escapeHtml(ev.depTypeFrom)} → ${escapeHtml(ev.depType)}`;
 
-    const authorInfo = getAuthorDetails(ev.author);
+    const authorInfo = getAuthorDetails(ev.author, ev.commitFull);
     const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
 
     return `
@@ -1377,15 +1606,15 @@
       <div class="node-card">
         <div class="node-meta">
         <span>${dateStr}</span>
-        <button class="commit-tag" data-commit="${escapeHtml(ev.commit)}" data-full="${escapeHtml(ev.commitFull || ev.commit)}" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open on GitHub' : 'click to copy'})">${ev.commit}</button>
+        <button class="commit-tag" data-commit="${escapeHtml(ev.commit)}" data-full="${escapeHtml(ev.commitFull || ev.commit)}" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open in repository' : 'click to copy'})">${escapeHtml(ev.commit)}</button>
         </div>
         <div class="node-version">${actionText}</div>
         <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
         <div style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 7px;">
-        <div class="author-avatar-wrapper" style="width: 18px; height: 18px;">
+        <div class="author-avatar-wrapper" data-author-commit="${escapeHtml(ev.commitFull || ev.commit)}" style="width: 18px; height: 18px;">
           <div class="author-avatar-fallback" style="font-size: 9px; display: flex;">${escapeHtml(authorInitial)}</div>
         </div>
-        <span>by <a href="${authorInfo.profileUrl}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; font-weight: 500;" title="View ${escapeHtml(authorInfo.name)} (@${escapeHtml(authorInfo.username)}) on GitHub">${escapeHtml(authorInfo.name)}</a> <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-secondary);">@${escapeHtml(authorInfo.username)}</span> in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span></span>
+        <span>by ${escapeHtml(authorInfo.name)} · ${ev.source === 'lockfile' ? 'Resolved' : 'Declared'} in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span></span>
         </div>
       </div>
       </div>
@@ -1394,6 +1623,7 @@
 
     document.getElementById('drawer-overlay').classList.add('active');
     initTimelineDelegation();
+    hydrateAuthors();
     // Move focus into the dialog for keyboard and screen-reader users.
     const closeBtn = document.getElementById('drawer-close');
     if (closeBtn) closeBtn.focus();
@@ -1409,8 +1639,9 @@
       if (commit && timeline.contains(commit)) {
         const short = commit.getAttribute('data-commit') || '';
         const full = commit.getAttribute('data-full') || short;
-        if (remoteUrl) window.open(remoteUrl + '/commit/' + full, '_blank');
-        else copyText(short, 'Commit SHA copied!');
+        const link = commitUrl(full);
+        if (link) window.open(link, '_blank', 'noopener,noreferrer');
+        else copyText(full, 'Commit SHA copied!');
       }
     });
   }
@@ -1418,12 +1649,15 @@
   function closeArchaeology() {
     document.getElementById('drawer-overlay').classList.remove('active');
     selectedPkgName = null;
+    if (drawerReturnFocus?.isConnected) drawerReturnFocus.focus({preventScroll: true});
+    drawerReturnFocus = null;
   }
 
   function copyText(text, msg = 'Copied to clipboard!') {
+    if (!navigator.clipboard) { showToast('Clipboard is unavailable in this browser'); return; }
     navigator.clipboard.writeText(text).then(() => {
     showToast(msg);
-    });
+    }).catch(() => showToast('Clipboard permission was denied'));
   }
 
   function showToast(msg) {
@@ -1431,6 +1665,14 @@
     toast.textContent = msg;
     toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+
+  function safeExternalUrl(value) {
+    if (!value) return '';
+    try {
+      const u = new URL(value);
+      return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password ? u.href.replace(/\/$/, '') : '';
+    } catch { return ''; }
   }
 
   function escapeHtml(str) {
@@ -1448,6 +1690,17 @@
    * month selection, and day cells so boundary events can't select
    * one month but render in another.
    */
+  const eventTimes = new WeakMap();
+  function eventTime(ev) {
+    if (!eventTimes.has(ev)) eventTimes.set(ev, Date.parse(ev.date) || 0);
+    return eventTimes.get(ev);
+  }
+  function latestEvent(events) {
+    let latest = null;
+    for (const ev of events) if (!latest || eventTime(ev) > eventTime(latest)) latest = ev;
+    return latest;
+  }
+
   function dayKeyLocal(iso) {
     if (!iso) return null;
     const d = new Date(iso);
@@ -1460,7 +1713,10 @@
 
   function switchToTimeline() {
     if (currentView === 'timeline') return;
+    closeFilterPanel();
     currentView = 'timeline';
+    document.getElementById('view-timeline-btn').setAttribute('aria-pressed', 'true');
+    document.getElementById('view-calendar-btn').setAttribute('aria-pressed', 'false');
     document.getElementById('view-timeline-btn').classList.add('active');
     document.getElementById('view-calendar-btn').classList.remove('active');
     document.getElementById('timeline-view').style.display = 'block';
@@ -1470,7 +1726,11 @@
 
   function switchToCalendar() {
     if (currentView === 'calendar') return;
+    closeFilterPanel();
+    document.getElementById('pager').hidden = true;
     currentView = 'calendar';
+    document.getElementById('view-calendar-btn').setAttribute('aria-pressed', 'true');
+    document.getElementById('view-timeline-btn').setAttribute('aria-pressed', 'false');
     document.getElementById('view-calendar-btn').classList.add('active');
     document.getElementById('view-timeline-btn').classList.remove('active');
     document.getElementById('timeline-view').style.display = 'none';
@@ -1510,9 +1770,9 @@
   const calToday = document.getElementById('cal-today-btn');
   if (calToday) {
     calToday.addEventListener('click', () => {
-    const filtered = getFilteredEvents();
+    const filtered = getSortedEvents();
     if (filtered.length > 0) {
-      for (const ev of filtered) {
+      for (const ev of [latestEvent(filtered)].filter(Boolean)) {
       if (ev.date) {
         const d = new Date(ev.date);
         if (!isNaN(d.getTime())) {
@@ -1554,21 +1814,10 @@
     });
   });
 
-  // Manifest dropdown: reset page on change + keyboard access
-  const manifestMenu = document.getElementById('manifest-dropdown-menu');
-  if (manifestMenu) {
-    manifestMenu.addEventListener('keydown', (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.classList.contains('dropdown-item')) {
-      e.preventDefault();
-      e.target.click();
-    }
-    });
-  }
-
   // Pager: full controls — first/prev/numbered/next/last + page size.
   // The footer is fixed below the rows-only scroll region.
   function pagerTotalPages() {
-    const total = getFilteredEvents().length;
+    const total = getSortedEvents().length;
     return Math.max(1, Math.ceil(total / pageSize));
   }
   const pagerFirst = document.getElementById('pager-first');
@@ -1596,70 +1845,61 @@
     const btn = e.target.closest('[data-page]');
     if (btn) gotoPage(parseInt(btn.dataset.page, 10) || 1, pagerTotalPages());
   });
-  if (pagerSize) pagerSize.addEventListener('change', (e) => {
-    const next = parseInt(e.target.value, 10);
-    pageSize = [25, 50, 100].includes(next) ? next : 100;
-    currentPage = 1;
-    renderTable();
-  });
+  if (pagerSize) pagerSize.addEventListener('click', () => openFilterPanel('page-size', pagerSize));
 
   // Per-column datatable filters (debounced text, immediate selects).
   // Date/package/change/author columns open rich floating panels instead.
-  document.querySelectorAll('.col-filter-icon[data-panel]').forEach(btn => {
+  document.querySelectorAll('button[data-panel]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openFilterPanel(btn.dataset.panel, btn);
     });
   });
+  // Re-rendering a calendar/menu can detach the clicked node before the document handler runs.
+  document.getElementById('filter-panel').addEventListener('click', e => e.stopPropagation());
   document.addEventListener('click', (e) => {
     const panel = document.getElementById('filter-panel');
-    if (panel && !panel.hidden && !panel.contains(e.target) && !e.target.closest('.col-filter-icon')) {
+    if (panel && !panel.hidden && !panel.contains(e.target) && !e.target.closest('button[data-panel], #pager-size')) {
       closeFilterPanel();
     }
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && openPanelKind) closeFilterPanel();
-  });
-  window.addEventListener('resize', closeFilterPanel);
-  const tableScroll = document.querySelector('.table-responsive');
-  if (tableScroll) tableScroll.addEventListener('scroll', closeFilterPanel, { passive: true });
-  document.querySelectorAll('.col-filter').forEach(el => {
-    const col = el.dataset.col;
-    if (!col) return;
-    if (el.tagName === 'SELECT') {
-      el.addEventListener('change', () => {
-        setColFilter(col, el.value);
-        refreshColFilterState();
-      });
-    } else {
-      el.addEventListener('input', () => {
-        if (colFilterTimer) clearTimeout(colFilterTimer);
-        const value = el.value;
-        colFilterTimer = setTimeout(() => {
-          setColFilter(col, value.trim().toLowerCase());
-          refreshColFilterState();
-        }, 150);
-      });
-      el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          if (colFilterTimer) clearTimeout(colFilterTimer);
-          setColFilter(col, el.value.trim().toLowerCase());
-          refreshColFilterState();
-        } else if (e.key === 'Escape') {
-          el.value = '';
-          if (colFilterTimer) clearTimeout(colFilterTimer);
-          setColFilter(col, col === 'action' || col === 'type' ? 'all' : '');
-          refreshColFilterState();
-        }
-        e.stopPropagation();
-      });
+    if (e.key === 'Escape' && openPanelKind) { e.preventDefault(); closeFilterPanel(true); }
+    if (e.key === 'Tab' && openPanelKind) {
+      const panel = document.getElementById('filter-panel');
+      const items = [...panel.querySelectorAll('button:not([disabled]), input')].filter(el => el.tabIndex >= 0);
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
     }
   });
+  window.addEventListener('resize', scheduleFilterPanelPosition, {passive: true});
+  window.addEventListener('scroll', scheduleFilterPanelPosition, {passive: true});
+  window.visualViewport?.addEventListener('resize', scheduleFilterPanelPosition, {passive: true});
+  window.visualViewport?.addEventListener('scroll', scheduleFilterPanelPosition, {passive: true});
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(scheduleFilterPanelPosition).observe(document.getElementById('filter-panel'));
+  }
+  const tableScroll = document.querySelector('.table-responsive');
+  if (tableScroll) tableScroll.addEventListener('scroll', scheduleFilterPanelPosition, {passive: true});
   const colClearBtn = document.getElementById('col-filter-clear');
   if (colClearBtn) colClearBtn.addEventListener('click', () => {
     clearColFilters();
     refreshColFilterState();
     renderView();
+    document.querySelector('button[data-panel="filters"]').focus({preventScroll: true});
+  });
+
+  document.getElementById('active-filters').addEventListener('click', e => {
+    const key = e.target.closest('[data-clear-filter]')?.dataset.clearFilter;
+    if (!key) return;
+    if (key === 'action') { currentFilter = 'all'; colFilters.action = 'all'; }
+    else if (key === 'date') { colFilters.dateFrom = ''; colFilters.dateTo = ''; colFilters.datePreset = ''; }
+    else colFilters[key] = Array.isArray(colFilters[key]) ? [] : key === 'type' ? 'all' : '';
+    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === currentFilter));
+    currentPage = 1;
+    renderView();
+    (document.querySelector('#active-filters button') || document.querySelector('button[data-panel="filters"]')).focus({preventScroll: true});
   });
 
   // Live search (debounced so large histories don't re-render per keystroke)
@@ -1676,6 +1916,8 @@
   });
 
   searchClear.addEventListener('click', () => {
+    clearTimeout(searchTimer);
+    currentPage = 1;
     searchInput.value = '';
     currentSearch = '';
     searchClear.style.display = 'none';
@@ -1688,6 +1930,17 @@
     return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
   }
   window.addEventListener('keydown', (e) => {
+    if (openPanelKind || e.defaultPrevented) return;
+    if (document.getElementById('drawer-overlay').classList.contains('active')) {
+      if (e.key === 'Escape') { e.preventDefault(); closeArchaeology(); }
+      if (e.key === 'Tab') {
+        const items = [...document.querySelectorAll('.drawer button:not([disabled]), .drawer a[href]')].filter(el => el.getClientRects().length && el.tabIndex >= 0);
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
+      return;
+    }
     if ((e.key === '/' || (e.ctrlKey && e.key === 'k') || (e.metaKey && e.key === 'k')) && !isTypingTarget(document.activeElement)) {
     e.preventDefault();
     searchInput.focus();
@@ -1722,9 +1975,13 @@
     const pkg = selectedPkgName;
     closeArchaeology();
     const searchInput = document.getElementById('search-input');
-    searchInput.value = pkg;
-    currentSearch = pkg;
-    document.getElementById('search-clear').style.display = 'block';
+    clearTimeout(searchTimer);
+    currentPage = 1;
+    colFilters.packages = [pkg];
+    currentSearch = '';
+    searchInput.value = '';
+    document.getElementById('search-clear').style.display = 'none';
+    switchToTimeline();
     renderView();
     showToast(`Filtered table by "${pkg}"`);
   });
@@ -1733,32 +1990,34 @@
   document.getElementById('drawer-copy-md').addEventListener('click', () => {
     if (!selectedPkgName) return;
     const pkgEvents = allEvents.filter(e => e.package === selectedPkgName);
-    let md = `### Dependency Archaeology: \`${selectedPkgName}\`\n\n`;
-    md += `| Date | Action | From | To | Commit | Author |\n`;
-    md += `| :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+    const mdCell = value => String(value ?? '-').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ').replace(/`/g, '\\`');
+    let md = `### Dependency history: ${mdCell(selectedPkgName)}\n\n`;
+    if (historyTruncated || historyWarnings.length) md += 'History contains scan warnings; consult the JSON export for details.\n\n';
+    md += `| Date | Action | Source | Manifest | From | To | Commit | Author |\n`;
+    md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
     for (const ev of pkgEvents) {
-    const d = (ev.date || '').slice(0, 10);
-    md += `| ${d} | ${ev.type} | ${ev.from || '-'} | ${ev.to || '-'} | ${ev.commit} | ${ev.author || '-'} |\n`;
+    const d = eventDateKey(ev);
+    md += `| ${[d, ev.type, ev.source || 'manifest', ev.manifest, ev.from, ev.to, ev.commitFull || ev.commit, ev.author].map(mdCell).join(' | ')} |\n`;
     }
     copyText(md, `Copied ${selectedPkgName} markdown changelog!`);
   });
 
   // Export JSON
   document.getElementById('export-json-btn').addEventListener('click', () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(allEvents, null, 2));
+    const dataStr = URL.createObjectURL(new Blob([JSON.stringify({schemaVersion: 1, repository: currentRepo, branch: currentBranch, headStateComplete, warnings: historyWarnings, truncated: historyTruncated, events: getSortedEvents()}, null, 2)], {type: 'application/json'}));
     const a = document.createElement('a');
     a.setAttribute('href', dataStr);
     a.setAttribute('download', `dep-blame-${document.getElementById('repo-name').textContent || 'export'}.json`);
     document.body.appendChild(a);
     a.click();
     a.remove();
-    showToast('Exported events as JSON');
+    setTimeout(() => URL.revokeObjectURL(dataStr), 1000);
+    showToast('Exported matching history as JSON');
   });
 
   // Sync button
-  document.getElementById('refresh-btn').addEventListener('click', () => {
-    loadData();
-    showToast('Synced with git repository!');
+  document.getElementById('refresh-btn').addEventListener('click', async () => {
+    if (await loadData()) showToast('History synced with git repository');
   });
 
   initTheme();

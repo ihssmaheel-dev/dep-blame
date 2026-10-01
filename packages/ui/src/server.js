@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { createForgeDirectory, configureRemote } from './forge.js';
 import { runDepBlame, getRepoRemoteInfo, detectPackageManager } from 'dep-blame';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -43,7 +44,7 @@ function gzipIfAccepted(req, body, contentType, extraHeaders = {}) {
 }
 
 // No inline scripts remain (see app.js), so script-src stays 'self'.
-// No remote fonts, avatars, or analytics: the dashboard is fully offline.
+// History and fonts work offline; optional avatars are proxied through this origin.
 const CSP = [
   "default-src 'none'",
   "base-uri 'none'",
@@ -66,7 +67,7 @@ const CSP = [
  * @returns {Record<string, string>}
  */
 function getWorkspacePackageMap(repoDir) {
-  const pkgs = {};
+  const pkgs = Object.create(null);
   try {
     const pmInfo = detectPackageManager(repoDir);
     for (const mPath of pmInfo.manifestPaths || []) {
@@ -92,41 +93,22 @@ function getWorkspacePackageMap(repoDir) {
  * `git log --all` scan on the dashboard hot path, no email exposure,
  * and no remote avatar URLs (the UI renders local initials).
  */
-function getAuthorMapFromEvents(events, repoOwner, repoHost = 'github.com') {
+function getAuthorMapFromEvents(events) {
   const names = new Set();
   for (const e of events || []) {
     if (e && e.author) names.add(e.author);
   }
-  const map = {};
-  const singleAuthor = names.size === 1 ? Array.from(names)[0] : null;
-  for (const name of names) {
-    let username = '';
-    const clean = name.trim().replace(/^@/, '');
-    if (/^[a-zA-Z0-9_\-]+$/.test(clean)) {
-      username = clean;
-    } else if (singleAuthor && repoOwner) {
-      username = repoOwner;
-    } else if (repoOwner && names.size > 0) {
-      username = clean.toLowerCase().replace(/[^a-z0-9_-]/g, '') || repoOwner;
-    } else {
-      username = clean.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    }
-    const cleanHost = repoHost || 'github.com';
-    map[name] = {
-      name,
-      username: username || 'author',
-      profileUrl: username ? `https://${cleanHost}/${encodeURIComponent(username)}` : '#'
-    };
-  }
+  const map = Object.create(null);
+  for (const name of names) map[name] = {name, username: '', profileUrl: null};
   return map;
 }
 
-async function loadFullData(cwd, onProgress) {
+async function loadFullData(cwd, onProgress, forge) {
   const remotePromise = getRepoRemoteInfo(cwd).catch(() => ({
     remoteUrl: null,
     owner: null,
     repo: null,
-    host: 'github.com'
+    host: ''
   }));
   const workspacePackages = getWorkspacePackageMap(cwd);
 
@@ -135,21 +117,25 @@ async function loadFullData(cwd, onProgress) {
     runDepBlame({ cwd, silent: true, onProgress })
   ]);
 
-  const authors = getAuthorMapFromEvents(result.events, remoteInfo.owner, remoteInfo.host);
+  const authors = getAuthorMapFromEvents(result.events);
+  const configuredRemote = configureRemote(remoteInfo);
+  forge.setRepository(configuredRemote, result.events);
 
   return {
     schemaVersion: 1,
     repository: result.repository,
     branch: result.branch || 'main',
     packageManager: result.packageManager,
-    remoteUrl: remoteInfo.remoteUrl,
+    remoteUrl: forge.getHosting().url,
     repoOwner: remoteInfo.owner,
-    repoHost: remoteInfo.host || 'github.com',
+    repoHost: configuredRemote.host || '',
+    hosting: forge.getHosting(),
     workspacePackages,
     authors,
     warnings: result.warnings || [],
     truncated: Boolean(result.truncated),
     headState: result.headState || [],
+    headStateComplete: result.headStateComplete !== false,
     generatedAt: new Date().toISOString(),
     events: result.events
   };
@@ -175,7 +161,7 @@ export async function startServer(options = {}) {
   if (!Number.isInteger(safePort) || safePort < 0 || safePort > 65535) {
     throw new Error(`Invalid port: ${port}. Expected 0-65535.`);
   }
-  if (typeof host !== 'string' || host.length === 0 || host.length > 255 || /[\s;|&$`]/.test(host)) {
+  if (typeof host !== 'string' || host.length === 0 || host.length > 255 || !/^[a-zA-Z0-9.:\[\]-]+$/.test(host)) {
     throw new Error(`Invalid host: ${host}`);
   }
   // Non-loopback binding exposes repository history (and author names)
@@ -205,31 +191,19 @@ export async function startServer(options = {}) {
   // instead of interleaving full-history scans against the cache.
   /** @type {Promise<any> | null} */
   let inflightScan = null;
-  function scanOnce(onProgress) {
+  const forge = createForgeDirectory(cwd);
+  let authorQueries = 0;
+  const progressListeners = new Set();
+  let lastProgress = null;
+  function scanOnce() {
     if (!inflightScan) {
-      inflightScan = loadFullData(cwd, onProgress).finally(() => {
-        inflightScan = null;
-      });
+      lastProgress = null;
+      inflightScan = loadFullData(cwd, p => {
+        lastProgress = p;
+        for (const listener of progressListeners) listener(p);
+      }, forge).finally(() => { inflightScan = null; lastProgress = null; });
     }
     return inflightScan;
-  }
-
-  // Drop stale scan locks left by killed processes at startup: no scan
-  // is running yet, so anything present is debris — never wait on it.
-  try {
-    const { getGitCommonDir } = await import('dep-blame');
-    const common = await getGitCommonDir(cwd).catch(() => cwd);
-    const dir = path.join(common, 'dep-blame', 'scan.lock');
-    try {
-      const st = fs.statSync(dir);
-      if (Date.now() - st.mtimeMs > 10 * 1000) {
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
-    } catch {
-      // No lock present.
-    }
-  } catch {
-    // Best-effort only.
   }
 
   const server = http.createServer(async (req, res) => {
@@ -243,29 +217,29 @@ export async function startServer(options = {}) {
       // Host validation (DNS-rebinding barrier): browser-facing routes
       // only answer for loopback hosts, the configured host, or an
       // explicitly allowed LAN bind. Spoofed Host headers get a 403.
-      const reqHost = headerHostname(req.headers.host);
-      const configuredHost = headerHostname(host) || host;
-      const lanAllowed = process.env.DEP_BLAME_ALLOW_LAN === '1';
-      const hostOk =
-        !reqHost ||
-        isLoopbackHost(reqHost) ||
-        reqHost === String(configuredHost).toLowerCase() ||
-        (lanAllowed && !isLoopbackHost(configuredHost));
-      if (!hostOk) {
-        res.writeHead(403, { 'Content-Type': 'text/plain' });
+      const authority = String(req.headers.host || '');
+      let requestOrigin;
+      try {
+        const parsed = new URL('http://' + authority);
+        if (!authority || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) throw new Error('Invalid Host');
+        const actualPort = server.address()?.port;
+        if (Number(parsed.port || 80) !== actualPort) throw new Error('Invalid port');
+        const reqHost = parsed.hostname;
+        const configuredHost = headerHostname(host) || host;
+        const wildcard = host === '0.0.0.0' || host === '::';
+        const localAddress = String(req.socket.localAddress || '').replace(/^::ffff:/, '');
+        const hostOk = isLoopbackHost(reqHost) || reqHost === configuredHost ||
+          (wildcard && reqHost.replace(/^\[|\]$/g, '') === localAddress);
+        if (!hostOk) throw new Error('Invalid Host');
+        requestOrigin = parsed.origin;
+        if (req.headers.origin && req.headers.origin !== requestOrigin) throw new Error('Invalid Origin');
+        if (req.headers['sec-fetch-site'] === 'cross-site') throw new Error('Cross-site request');
+      } catch {
+        res.writeHead(403, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
         res.end('Forbidden');
         return;
       }
-      // Origin check for browser requests: a cross-site page must not
-      // be able to read the API through the user's browser.
-      const origin = req.headers.origin ? headerHostname(req.headers.origin) : '';
-      if (origin && origin !== reqHost && !isLoopbackHost(origin)) {
-        res.writeHead(403, { 'Content-Type': 'text/plain' });
-        res.end('Forbidden');
-        return;
-      }
-
-      const url = new URL(req.url, `http://${req.headers.host || host}`);
+      const url = new URL(req.url, requestOrigin);
 
       if (url.pathname === '/favicon.ico') {
         res.writeHead(204);
@@ -330,10 +304,37 @@ export async function startServer(options = {}) {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/authors') {
+        if (authorQueries >= 6) {
+          res.writeHead(429, {'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Retry-After': '2'});
+          res.end(JSON.stringify({error: 'Author lookup busy'})); return;
+        }
+        authorQueries++;
+        try {
+          const commits = (url.searchParams.get('commits') || '').split(',').filter(Boolean);
+          const data = await forge.resolve(commits);
+          res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'});
+          res.end(JSON.stringify(data));
+        } catch {
+          res.writeHead(400, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
+          res.end(JSON.stringify({error: 'Invalid author lookup'}));
+        } finally { authorQueries--; }
+        return;
+      }
+      if (req.method === 'GET' && url.pathname.startsWith('/api/avatars/')) {
+        const key = url.pathname.slice('/api/avatars/'.length);
+        const avatar = /^[a-f0-9]{64}$/.test(key) ? forge.getAvatar(key) : null;
+        if (!avatar) { res.writeHead(404, {'Cache-Control': 'no-store'}); res.end(); return; }
+        res.writeHead(200, {'Content-Type': avatar.type, 'Content-Length': avatar.bytes.length,
+          'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': CSP});
+        res.end(avatar.bytes);
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/events/stream') {
         res.writeHead(200, {
           'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
+          'Cache-Control': 'no-store, no-transform',
           'Connection': 'keep-alive',
           'X-Accel-Buffering': 'no',
           'X-Content-Type-Options': 'nosniff'
@@ -346,17 +347,23 @@ export async function startServer(options = {}) {
           `event: progress\ndata: ${JSON.stringify({ phase: 'initializing', current: 0, total: 100, message: 'Starting scan…' })}\n\n`
         );
 
+        const sendProgress = p => {
+          if (!res.destroyed && !res.writableEnded) res.write(`event: progress\ndata: ${JSON.stringify(p)}\n\n`);
+        };
+        progressListeners.add(sendProgress);
+        res.on('close', () => progressListeners.delete(sendProgress));
+        if (lastProgress) sendProgress(lastProgress);
         try {
-          const data = await scanOnce((p) => {
-            res.write(`event: progress\ndata: ${JSON.stringify(p)}\n\n`);
-          });
+          const data = await scanOnce();
+          if (res.destroyed) return;
 
           res.write(`event: complete\ndata: ${JSON.stringify(data)}\n\n`);
           res.end();
         } catch (err) {
+          if (res.destroyed) return;
           res.write(`event: error\ndata: ${JSON.stringify({ error: err && err.message ? err.message : 'Analysis failed' })}\n\n`);
           res.end();
-        }
+        } finally { progressListeners.delete(sendProgress); }
         return;
       }
 
@@ -364,7 +371,8 @@ export async function startServer(options = {}) {
         try {
           const data = await scanOnce();
           const { body, headers } = gzipIfAccepted(req, JSON.stringify(data), 'application/json; charset=utf-8', {
-            'X-Content-Type-Options': 'nosniff'
+            'X-Content-Type-Options': 'nosniff',
+            'Cache-Control': 'no-store'
           });
           res.writeHead(200, {
             ...headers,
@@ -399,7 +407,7 @@ export async function startServer(options = {}) {
       const address = server.address();
       const actualPort = typeof address === 'object' && address ? address.port : safePort;
       const hostForUrl = host === '0.0.0.0' ? '127.0.0.1' : host;
-      const serverUrl = `http://${hostForUrl}:${actualPort}`;
+      const serverUrl = `http://${hostForUrl.includes(':') ? '[' + hostForUrl + ']' : hostForUrl}:${actualPort}`;
       resolve({
         server,
         url: serverUrl,

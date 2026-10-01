@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import type { DependencyEvent, FilterOptions, StoreInterface } from '../types.js';
 
-export const JSON_CACHE_SCHEMA_VERSION = '2';
+export const JSON_CACHE_SCHEMA_VERSION = '3';
 
 interface JsonCacheData {
   meta: Record<string, string>;
@@ -61,10 +61,13 @@ export class JsonStore implements StoreInterface {
         const raw = fs.readFileSync(this.filePath, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          const events = Array.isArray(parsed.events) ? parsed.events.filter(isValidEvent) : [];
+          if (!Array.isArray(parsed.events) || !parsed.events.every(isValidEvent)) {
+            throw new Error('Incomplete JSON history cache.');
+          }
+          const events = parsed.events;
           const meta = parsed.meta && typeof parsed.meta === 'object' ? parsed.meta : {};
           // Drop incompatible caches from older schema versions.
-          if (meta.schema_version && meta.schema_version !== JSON_CACHE_SCHEMA_VERSION) {
+          if (meta.schema_version !== JSON_CACHE_SCHEMA_VERSION) {
             this.data = { meta: { schema_version: JSON_CACHE_SCHEMA_VERSION }, events: [] };
             return;
           }
@@ -90,18 +93,14 @@ export class JsonStore implements StoreInterface {
     try {
       fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), 'utf8');
       fs.renameSync(tmp, this.filePath);
-    } catch {
+    } catch (err) {
       try {
         fs.rmSync(tmp, { force: true });
       } catch {
         // Ignore cleanup failures.
       }
-      // Last-resort direct write (e.g. cross-device rename issues).
-      try {
-        fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2), 'utf8');
-      } catch {
-        // Cache is best-effort; never crash analysis on write failure.
-      }
+      // Preserve the previous complete cache if atomic replacement fails.
+      throw err;
     }
   }
 
@@ -118,7 +117,7 @@ export class JsonStore implements StoreInterface {
     if (!events || events.length === 0) {
       return;
     }
-    this.data.events.push(...events);
+    for (const event of events) this.data.events.push(event);
     this.save();
   }
 
@@ -127,15 +126,20 @@ export class JsonStore implements StoreInterface {
    * one write at the end instead of O(windows) full-file rewrites.
    */
   transaction(fn: () => void): void {
+    // Snapshot metadata and event references once; rollback matches SQLite semantics.
+    const before = { meta: { ...this.data.meta }, events: this.data.events };
+    const length = before.events.length;
+    const rollback = () => {
+      before.events.length = length;
+      this.data = before;
+    };
     this.suppressSave++;
-    try {
-      fn();
-    } finally {
-      this.suppressSave--;
-      if (this.suppressSave <= 0) {
-        this.suppressSave = 0;
-        this.save();
-      }
+    try { fn(); }
+    catch (err) { rollback(); throw err; }
+    finally { this.suppressSave--; }
+    if (this.suppressSave === 0) {
+      try { this.save(); }
+      catch (err) { rollback(); throw err; }
     }
   }
 

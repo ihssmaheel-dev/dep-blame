@@ -27,10 +27,12 @@ jobs:
       - name: Pack and smoke-test tarballs
         shell: bash
         run: |
+          mkdir -p dist-pack
           npm pack --workspace packages/core --pack-destination ./dist-pack
           npm pack --workspace packages/ui --pack-destination ./dist-pack
-          node packages/core/bin/cli.js --help
-          test "${SKIP_JSON_FALLBACK:-0}" = "1" || npm test -- --test-name-pattern="JsonStore|fallback"
+          smoke=$(mktemp -d)
+          npm install --prefix "$smoke" --ignore-scripts "$PWD"/dist-pack/*.tgz
+          node test/pack-smoke.js "$smoke"
 
   json-fallback:
     runs-on: ubuntu-latest

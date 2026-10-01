@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import type { BlobRequest } from '../types.js';
 
 export interface BlobId {
@@ -8,14 +9,6 @@ export interface BlobId {
   size: number;
   /** True when the object does not exist at the requested revision. */
   missing: boolean;
-}
-
-interface HeaderInfo {
-  objectId: string;
-  type: string;
-  size: number;
-  headerLength: number;
-  key: string;
 }
 
 /**
@@ -55,164 +48,111 @@ export async function batchReadBlobs(
   return batchReadBlobsChunk(repoRoot, requests);
 }
 
+function validRequest(req: BlobRequest): boolean {
+  return !!req && /^[0-9a-f]{4,64}$/i.test(req.commit) && !!req.path && !/[\r\n\0]/.test(req.path);
+}
+
 function batchReadBlobsChunk(
   repoRoot: string,
   requests: BlobRequest[]
 ): Promise<Map<string, string | null>> {
-  const results = new Map<string, string | null>();
-
+  // Repeated requests must not confuse response indexing or duplicate retained strings.
+  if (requests.some(r => !validRequest(r))) return Promise.reject(new Error('Invalid blob request.'));
+  requests = [...new Map(requests.map(r => [r.commit + ':' + r.path, r])).values()];
   return new Promise((resolve, reject) => {
-    const child = spawn('git', ['cat-file', '--batch'], {
-      cwd: repoRoot,
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let buffer = Buffer.alloc(0);
+    const child = spawn('git', ['cat-file', '--batch'], {cwd: repoRoot, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']});
+    const results = new Map<string, string | null>();
     let requestIndex = 0;
-    let expectedHeader: HeaderInfo | null = null;
-    let isSettled = false;
-
-    // Timeout watchdog (30 seconds)
-    const timeout = setTimeout(() => {
-      if (!isSettled) {
-        isSettled = true;
-        child.kill();
-        reject(new Error('git cat-file --batch timed out after 30 seconds.'));
-      }
-    }, 30000);
-
-    const cleanup = () => {
-      clearTimeout(timeout);
-      isSettled = true;
-    };
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
-
-      while (requestIndex < requests.length) {
-        if (!expectedHeader) {
-          // Look for newline byte 0x0A for the header
-          const newlineIndex = buffer.indexOf(0x0a);
-          if (newlineIndex === -1) {
-            break; // Incomplete header, wait for next chunk
-          }
-
-          const headerLine = buffer.subarray(0, newlineIndex).toString('utf8').trim();
-          const req = requests[requestIndex];
-          const key = `${req.commit}:${req.path}`;
-
-          if (headerLine.endsWith('missing')) {
-            results.set(key, null);
-            buffer = buffer.subarray(newlineIndex + 1);
-            requestIndex++;
-            continue;
-          }
-
-          const parts = headerLine.split(' ');
-          if (parts.length < 3) {
-            cleanup();
-            child.kill();
-            return reject(new Error(`Unexpected git cat-file header format: "${headerLine}"`));
-          }
-
-          const objectId = parts[0];
-          const type = parts[1];
-          const size = parseInt(parts[2], 10);
-          const headerLength = newlineIndex + 1;
-
-          if (isNaN(size) || size < 0) {
-            cleanup();
-            child.kill();
-            return reject(new Error(`Invalid size in git cat-file header: "${headerLine}"`));
-          }
-
-          expectedHeader = { objectId, type, size, headerLength, key };
-        }
-
-        // Check if we have header + blob content + trailing newline (size + 1 bytes)
-        const totalNeeded = expectedHeader.headerLength + expectedHeader.size + 1;
-        if (buffer.length < totalNeeded) {
-          break; // Wait for full blob content
-        }
-
-        const contentBuf = buffer.subarray(
-          expectedHeader.headerLength,
-          expectedHeader.headerLength + expectedHeader.size
-        );
-        const content = contentBuf.toString('utf8');
-
-        results.set(expectedHeader.key, content);
-
-        // Advance buffer past content and trailing newline
-        buffer = buffer.subarray(totalNeeded);
-        expectedHeader = null;
-        requestIndex++;
-      }
-    });
-
+    let headerParts: Buffer[] = [];
+    let headerSize = 0;
+    let body: Buffer | null = null;
+    let bodyOffset = 0;
+    let retainedBytes = 0;
+    let settled = false;
     let stderr = '';
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-
-    child.on('error', (err) => {
-      if (isSettled) return;
-      cleanup();
-      reject(err);
-    });
-
-    child.on('close', (code) => {
-      if (isSettled) return;
-      cleanup();
-      if (code !== 0 && requestIndex < requests.length) {
-        reject(new Error(`git cat-file --batch exited with code ${code}: ${stderr}`));
-      } else {
-        // Fill any unanswered requests (e.g. short reads) with null.
-        for (let i = requestIndex; i < requests.length; i++) {
-          const req = requests[i];
-          const key = `${req.commit}:${req.path}`;
-          if (!results.has(key)) results.set(key, null);
-        }
-        resolve(results);
-      }
-    });
-
-    // Swallow EPIPE when git exits early; close handler surfaces the error.
-    child.stdin.on('error', () => {});
-
-    // Validate requests to avoid malformed batch lines.
-    for (const req of requests) {
-      if (!req || !/^[0-9a-f]{4,40}$/i.test(req.commit) || !req.path || req.path.includes('\n')) {
-        cleanup();
-        child.kill();
-        return reject(new Error(`Invalid blob request: ${JSON.stringify(req)}`));
-      }
+    const timeout = setTimeout(() => fail(new Error('git cat-file --batch timed out after 30 seconds.')), 30000);
+    function fail(error: Error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.kill();
+      reject(error);
     }
-
-    // Write requests to stdin with backpressure support
-    let writeIdx = 0;
-    function writeMore() {
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (settled) return;
       try {
-        while (writeIdx < requests.length) {
-          const req = requests[writeIdx];
-          writeIdx++;
-          const canContinue = child.stdin.write(`${req.commit}:${req.path}\n`);
-          if (!canContinue) {
+        let pos = 0;
+        while (pos < chunk.length) {
+          if (requestIndex >= requests.length) throw new Error('Unexpected extra git cat-file response.');
+          if (body === null) {
+            const nl = chunk.indexOf(10, pos);
+            const part = chunk.subarray(pos, nl < 0 ? chunk.length : nl);
+            headerParts.push(part);
+            headerSize += part.length;
+            if (headerSize > 16384) throw new Error('Git object response header is too large.');
+            if (nl < 0) break;
+            const header = Buffer.concat(headerParts, headerSize).toString('utf8');
+            headerParts = [];
+            headerSize = 0;
+            pos = nl + 1;
+            const req = requests[requestIndex];
+            if (header === req.commit + ':' + req.path + ' missing') {
+              results.set(req.commit + ':' + req.path, null);
+              requestIndex++;
+              continue;
+            }
+            const match = /^([0-9a-f]{40,64}) blob (\d+)$/.exec(header);
+            const size = match ? Number(match[2]) : NaN;
+            if (!Number.isSafeInteger(size) || size < 0) throw new Error('Invalid Git blob response.');
+            // A repository must not trigger an unbounded single-object allocation.
+            if (size > 64 * 1024 * 1024) throw new Error('Manifest blob exceeds the 64 MiB safety limit.');
+            retainedBytes += size;
+            if (retainedBytes > 64 * 1024 * 1024) throw new Error('Git blob batch exceeds the 64 MiB safety limit.');
+            body = Buffer.allocUnsafe(size);
+            bodyOffset = 0;
+          }
+          if (bodyOffset < body.length) {
+            const count = Math.min(body.length - bodyOffset, chunk.length - pos);
+            chunk.copy(body, bodyOffset, pos, pos + count);
+            pos += count;
+            bodyOffset += count;
+          }
+          if (bodyOffset === body.length && pos < chunk.length) {
+            if (chunk[pos++] !== 10) throw new Error('Invalid Git blob response terminator.');
+            const req = requests[requestIndex++];
+            results.set(req.commit + ':' + req.path, body.toString('utf8'));
+            body = null;
+          }
+        }
+      } catch (err) { fail(err instanceof Error ? err : new Error(String(err))); }
+    });
+    child.stderr.on('data', (chunk: Buffer) => { if (stderr.length < 8192) stderr += chunk.toString('utf8'); });
+    child.on('error', fail);
+    child.on('close', (code) => {
+      if (settled) return;
+      if (code !== 0 || requestIndex !== requests.length || body !== null || headerSize > 0) {
+        fail(new Error('git cat-file returned an incomplete response (exit ' + code + '): ' + stderr));
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      resolve(results);
+    });
+    child.stdin.on('error', () => {}); // The close handler reports early process termination.
+    let writeIndex = 0;
+    function writeMore() {
+      if (settled) return;
+      try {
+        while (writeIndex < requests.length) {
+          const req = requests[writeIndex++];
+          if (!child.stdin.write(req.commit + ':' + req.path + '\n')) {
             child.stdin.once('drain', writeMore);
             return;
           }
         }
         child.stdin.end();
-      } catch (err: any) {
-        if (!isSettled) {
-          cleanup();
-          child.kill();
-          reject(err);
-        }
-      }
+      } catch (err) { fail(err instanceof Error ? err : new Error(String(err))); }
     }
-
     writeMore();
   });
 }
@@ -233,6 +173,8 @@ export function resolveBlobOids(
   if (!requests || requests.length === 0) {
     return Promise.resolve(results);
   }
+  if (requests.some(r => !validRequest(r))) return Promise.reject(new Error('Invalid blob request.'));
+  requests = [...new Map(requests.map(r => [r.commit + ':' + r.path, r])).values()];
 
   return new Promise((resolve, reject) => {
     const child = spawn('git', ['cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)'], {
@@ -242,6 +184,8 @@ export function resolveBlobOids(
     });
 
     let buffer = '';
+    const decoder = new StringDecoder('utf8');
+    let requestIndex = 0;
     let settled = false;
     const timeout = setTimeout(() => {
       if (!settled) {
@@ -257,20 +201,22 @@ export function resolveBlobOids(
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString('utf8');
+      if (settled) return;
+      buffer += decoder.write(chunk);
       let nl: number;
       while ((nl = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, nl).trim();
         buffer = buffer.slice(nl + 1);
-        const req = requests[results.size];
-        if (!req) continue;
+        const req = requests[requestIndex++];
+        if (!req) { cleanup(); child.kill(); reject(new Error('Extra Git object response.')); return; }
         const key = `${req.commit}:${req.path}`;
-        if (line.endsWith('missing') || line.length === 0) {
+        if (line === req.commit + ':' + req.path + ' missing') {
           results.set(key, { oid: '', size: 0, missing: true });
           continue;
         }
         const parts = line.split(' ');
-        const size = parseInt(parts[2], 10);
+        const size = Number(parts[2]);
+        if (!/^[0-9a-f]{40,64}$/.test(parts[0]) || parts[1] !== 'blob' || parts.length !== 3 || !Number.isSafeInteger(size) || size < 0) { cleanup(); child.kill(); reject(new Error('Invalid Git object sizing response.')); return; }
         results.set(key, {
           oid: parts[0] || '',
           size: Number.isInteger(size) && size >= 0 ? size : 0,
@@ -297,27 +243,9 @@ export function resolveBlobOids(
         reject(new Error(`git cat-file --batch-check exited with code ${code}: ${stderr}`));
         return;
       }
-      // Trailing line without newline (should not happen, but be safe).
-      if (buffer.trim().length > 0 && results.size < requests.length) {
-        const req = requests[results.size];
-        const key = `${req.commit}:${req.path}`;
-        const line = buffer.trim();
-        if (line.endsWith('missing')) {
-          results.set(key, { oid: '', size: 0, missing: true });
-        } else {
-          const parts = line.split(' ');
-          const size = parseInt(parts[2], 10);
-          results.set(key, {
-            oid: parts[0] || '',
-            size: Number.isInteger(size) && size >= 0 ? size : 0,
-            missing: false
-          });
-        }
-      }
-      // Any unanswered requests (short reads) count as missing.
-      for (const req of requests) {
-        const key = `${req.commit}:${req.path}`;
-        if (!results.has(key)) results.set(key, { oid: '', size: 0, missing: true });
+      if (requestIndex !== requests.length || buffer.length > 0) {
+        reject(new Error('git cat-file --batch-check returned an incomplete response.'));
+        return;
       }
       resolve(results);
     });
@@ -325,7 +253,7 @@ export function resolveBlobOids(
     child.stdin.on('error', () => {});
 
     for (const req of requests) {
-      if (!req || !/^[0-9a-f]{4,40}$/i.test(req.commit) || !req.path || req.path.includes('\n')) {
+      if (!validRequest(req)) {
         cleanup();
         child.kill();
         reject(new Error(`Invalid blob request: ${JSON.stringify(req)}`));
@@ -333,17 +261,22 @@ export function resolveBlobOids(
       }
     }
 
-    try {
-      for (const req of requests) {
-        child.stdin.write(`${req.commit}:${req.path}\n`);
-      }
-      child.stdin.end();
-    } catch (err: any) {
-      if (!settled) {
-        cleanup();
-        child.kill();
-        reject(err);
+    let writeIndex = 0;
+    function writeMore() {
+      if (settled) return;
+      try {
+        while (writeIndex < requests.length) {
+          const req = requests[writeIndex++];
+          if (!child.stdin.write(req.commit + ':' + req.path + '\n')) {
+            child.stdin.once('drain', writeMore);
+            return;
+          }
+        }
+        child.stdin.end();
+      } catch (err) {
+        if (!settled) { cleanup(); child.kill(); reject(err); }
       }
     }
+    writeMore();
   });
 }

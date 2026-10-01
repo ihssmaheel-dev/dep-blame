@@ -55,7 +55,7 @@ export function renderStatsView(events: DependencyEvent[]): string {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  const dates = events.map((e) => e.date).filter(Boolean).sort();
+  const dates = events.map((e) => e.date).filter(d => Number.isFinite(Date.parse(d))).sort((a, b) => Date.parse(a) - Date.parse(b));
   const firstDate = dates[0] ? dates[0].slice(0, 10) : 'N/A';
   const lastDate = dates[dates.length - 1] ? dates[dates.length - 1].slice(0, 10) : 'N/A';
 
@@ -84,7 +84,7 @@ export function renderStatsView(events: DependencyEvent[]): string {
   lines.push('');
   lines.push(c.bold('Top Authors (Dependency Touches):'));
   for (const [author, count] of topAuthors) {
-    lines.push(`  ${author.padEnd(26)} ${c.bold(count)} commit(s)`);
+    lines.push(`  ${author.padEnd(26)} ${c.bold(count)} event(s)`);
   }
 
   return lines.join('\n');

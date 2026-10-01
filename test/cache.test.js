@@ -34,7 +34,7 @@ test('SqliteStore migrates a stale schema instead of serving it', async () => {
 
     const store = await openCache({ repoRoot: tmpDir, cacheDir: tmpDir });
     assert.equal(store.queryEvents().length, 0, 'stale v1 history must not be served');
-    assert.equal(store.getMeta('schema_version'), '2');
+    assert.equal(store.getMeta('schema_version'), '3');
     store.close();
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

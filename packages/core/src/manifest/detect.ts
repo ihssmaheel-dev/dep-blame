@@ -83,6 +83,7 @@ export function resolveWorkspaceManifests(repoRoot: string, workspaceGlobs: stri
   const inclusions: string[] = [];
   const exclusions: string[] = [];
   for (const raw of workspaceGlobs) {
+    if (typeof raw !== 'string') continue;
     const pattern = raw.trim();
     if (!pattern) continue;
     if (pattern.startsWith('!')) {
@@ -93,11 +94,23 @@ export function resolveWorkspaceManifests(repoRoot: string, workspaceGlobs: stri
   }
 
   const manifests = new Set<string>();
+  const visited = new Set<string>();
+  const realRoot = fs.realpathSync(repoRoot);
+  const isInside = (candidate: string): boolean => {
+    try {
+      const relative = path.relative(realRoot, fs.realpathSync(candidate));
+      return relative === '' || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative));
+    } catch { return false; }
+  };
 
   const expandSegments = (dirAbs: string, segments: string[], segIdx: number): void => {
+    if (!isInside(dirAbs)) return;
+    const key = `${dirAbs}\0${segments.join('/')}\0${segIdx}`;
+    if (visited.has(key)) return;
+    visited.add(key);
     if (segIdx >= segments.length) {
       const pkg = path.join(dirAbs, 'package.json');
-      if (fs.existsSync(pkg)) {
+      if (fs.existsSync(pkg) && isInside(pkg)) {
         manifests.add(toPosixPath(path.relative(repoRoot, pkg)));
       }
       return;
@@ -117,7 +130,6 @@ export function resolveWorkspaceManifests(repoRoot: string, workspaceGlobs: stri
         if (!entry.isDirectory() || SKIPPED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
         const full = path.join(dirAbs, entry.name);
         expandSegments(full, segments, segIdx);
-        expandSegments(full, segments, segIdx + 1);
       }
       return;
     }
@@ -137,9 +149,9 @@ export function resolveWorkspaceManifests(repoRoot: string, workspaceGlobs: stri
       return;
     }
     const next = path.join(dirAbs, seg);
-    if (fs.existsSync(next) && fs.statSync(next).isDirectory()) {
-      expandSegments(next, segments, segIdx + 1);
-    }
+    try {
+      if (fs.statSync(next).isDirectory()) expandSegments(next, segments, segIdx + 1);
+    } catch { /* A workspace may disappear while being inspected. */ }
   };
 
   for (const pattern of inclusions) {
@@ -283,17 +295,19 @@ export interface HistoricDiscovery {
 
 export async function discoverHistoricManifests(
   repoRoot: string,
-  maxPaths = 300
+  maxPaths = 300,
+  range?: string
 ): Promise<HistoricDiscovery> {
   try {
     const { stdout } = await execFileAsync(
       'git',
       [
         'log',
-        '--all',
+        ...(range ? [range] : ['--all']),
         '--full-history',
         '--format=',
         '--name-only',
+        '-z',
         '--diff-filter=AMR',
         '--',
         '*package.json',
@@ -306,8 +320,7 @@ export async function discoverHistoricManifests(
     );
     const found = new Set<string>();
     let truncated = false;
-    for (const line of stdout.split('\n')) {
-      const f = line.trim();
+    for (const f of stdout.split('\0')) {
       if (!f) continue;
       const base = f.split('/').pop() || '';
       if (!isManifestBasename(base)) continue;

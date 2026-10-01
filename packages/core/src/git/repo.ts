@@ -160,6 +160,7 @@ export interface RepoRemoteInfo {
   owner: string | null;
   repo: string | null;
   host: string;
+  repoPath?: string | null;
 }
 
 /**
@@ -169,23 +170,26 @@ export async function getRepoRemoteInfo(cwd: string = process.cwd()): Promise<Re
   try {
     const { stdout } = await execGit(['config', '--get', 'remote.origin.url'], cwd);
     const raw = stdout.trim();
-    if (!raw) return { remoteUrl: null, owner: null, repo: null, host: 'github.com' };
+    if (!raw) return { remoteUrl: null, owner: null, repo: null, host: '' };
 
-    const match = raw.match(/^(?:https?:\/\/|git@)([^/:]+)[/:]([^/]+)\/([^/]+?)(?:\.git)?$/i);
-    if (match) {
-      const host = match[1];
-      const owner = match[2];
-      const repo = match[3];
-      return {
-        remoteUrl: `https://${host}/${owner}/${repo}`,
-        owner,
-        repo,
-        host
-      };
+    const scp = raw.match(/^[a-z0-9._-]+@([a-z0-9.-]+):(.+)$/i);
+    const url = new URL(scp ? `https://${scp[1]}/${scp[2]}` : raw);
+    if (!['https:', 'http:', 'ssh:'].includes(url.protocol) || !url.hostname || url.password) {
+      return { remoteUrl: null, owner: null, repo: null, host: '' };
     }
-    return { remoteUrl: raw, owner: null, repo: null, host: 'github.com' };
+    // Display links never include credentials, query strings, or fragments.
+    const segments = url.pathname.replace(/\/+$/, '').replace(/\.git$/, '').split('/').filter(Boolean);
+    if (segments.length < 2) return { remoteUrl: null, owner: null, repo: null, host: url.host };
+    const host = url.protocol === 'ssh:' ? url.hostname : url.host;
+    return {
+      remoteUrl: `${url.protocol === 'http:' ? 'http:' : 'https:'}//${host}/${segments.join('/')}`,
+      owner: decodeURIComponent(segments[0]),
+      repo: decodeURIComponent(segments[segments.length - 1]),
+      host,
+      repoPath: segments.map(segment => decodeURIComponent(segment)).join('/')
+    };
   } catch {
-    return { remoteUrl: null, owner: null, repo: null, host: 'github.com' };
+    return { remoteUrl: null, owner: null, repo: null, host: '' };
   }
 }
 
@@ -251,7 +255,7 @@ export async function resolveBaseRef(
  * Returns the author date (ISO 8601) of a commit, or null if unresolvable.
  */
 export async function getCommitDate(sha: string, cwd: string = process.cwd()): Promise<string | null> {
-  if (!sha || !/^[0-9a-f]{4,40}$/i.test(sha.trim())) return null;
+  if (!sha || !/^[0-9a-f]{4,64}$/i.test(sha.trim())) return null;
   try {
     const { stdout } = await execGit(['show', '-s', '--format=%aI', sha], cwd);
     const d = stdout.trim().split('\n')[0]?.trim();
@@ -276,14 +280,14 @@ export async function getCommitsInRange(
   manifestPaths: string[] = []
 ): Promise<Set<string> | null> {
   const out = new Set<string>();
-  if (!baseSha || !/^[0-9a-f]{4,40}$/i.test(baseSha.trim())) return null;
+  if (!baseSha || !/^[0-9a-f]{4,64}$/i.test(baseSha.trim())) return null;
   const args = ['log', '--format=%H', `${baseSha}..HEAD`];
   if (manifestPaths.length > 0) args.push('--', ...manifestPaths);
   try {
     const { stdout } = await execGit(args, cwd);
     for (const line of stdout.split('\n')) {
       const sha = line.trim();
-      if (/^[0-9a-f]{40}$/i.test(sha)) out.add(sha);
+      if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha)) out.add(sha);
     }
   } catch {
     return null;

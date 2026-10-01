@@ -9,6 +9,7 @@ export interface RenderJsonData {
   warnings?: string[];
   truncated?: boolean;
   headState?: HeadEntry[];
+  headStateComplete?: boolean;
 }
 
 /**
@@ -27,7 +28,8 @@ export function renderJson(data: RenderJsonData): string {
     events: data.events || [],
     warnings: data.warnings || [],
     ...(data.truncated ? { truncated: true } : {}),
-    ...(data.headState ? { headState: data.headState } : {})
+    ...(data.headState ? { headState: data.headState } : {}),
+    ...(data.headStateComplete === false ? { headStateComplete: false } : {})
   };
 
   return JSON.stringify(output, null, 2);

@@ -15,9 +15,11 @@ export function parseNpmLockfile(
   const { directOnly = true } = options;
   const map = new Map<string, DependencyEntry>();
 
-  if (!content || typeof content !== 'string') {
+  if (content === null || content === undefined) {
     return { ok: true, entries: map };
   }
+
+  if (typeof content !== 'string' || !content.trim()) return {ok: false, entries: map, note: 'empty or invalid lockfile'};
 
   let parsed: any;
   try {
@@ -26,9 +28,24 @@ export function parseNpmLockfile(
     return { ok: false, entries: map, note: 'invalid JSON' };
   }
 
-  if (!parsed || typeof parsed !== 'object') {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return { ok: false, entries: map, note: 'not a JSON object' };
   }
+
+  const isMapping = (v: any) => !!v && typeof v === 'object' && !Array.isArray(v);
+  for (const field of ['packages', 'dependencies']) {
+    if (parsed[field] !== undefined && !isMapping(parsed[field])) return {ok: false, entries: map, note: 'invalid lockfile section'};
+  }
+  if (parsed.packages) {
+    for (const entry of Object.values<any>(parsed.packages)) {
+      if (!isMapping(entry)) return {ok: false, entries: map, note: 'invalid resolved entry'};
+    }
+    const root = parsed.packages[''];
+    for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+      if (root?.[field] !== undefined && (!isMapping(root[field]) || Object.values(root[field]).some(v => typeof v !== 'string'))) return {ok: false, entries: map, note: 'invalid root dependency'};
+    }
+  }
+  if (parsed.dependencies && Object.values(parsed.dependencies).some(v => !isMapping(v))) return {ok: false, entries: map, note: 'invalid dependency entry'};
 
   // Handle v2 & v3 (parsed.packages)
   if (parsed.packages && typeof parsed.packages === 'object') {
@@ -56,6 +73,7 @@ export function parseNpmLockfile(
       // Check if it's a top-level node_modules package
       const match = pkgPath.match(/^node_modules\/((?:@[^/]+\/)?[^/]+)$/);
       if (match) {
+        if (entry.version !== undefined && typeof entry.version !== 'string') return { ok: false, entries: new Map(), note: 'invalid resolved version' };
         const name = match[1];
         const isDirect = directNames.has(name);
 
@@ -83,6 +101,7 @@ export function parseNpmLockfile(
   if (parsed.dependencies && typeof parsed.dependencies === 'object') {
     for (const [name, entry] of Object.entries<any>(parsed.dependencies)) {
       if (!entry || typeof entry !== 'object') continue;
+      if (entry.version !== undefined && typeof entry.version !== 'string') return { ok: false, entries: new Map(), note: 'invalid resolved version' };
 
       let depType: DepType = 'dependencies';
       if (entry.dev) depType = 'devDependencies';

@@ -119,6 +119,8 @@ export interface EngineResult {
   truncated?: boolean;
   /** Declared dependency state at HEAD, for trustworthy active/removed status. */
   headState?: HeadEntry[];
+  /** False when a declared HEAD manifest could not be decoded or read. */
+  headStateComplete?: boolean;
 }
 
 /** One declared dependency at HEAD. */

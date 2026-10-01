@@ -1,100 +1,84 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
-export interface ScanLock {
-  release(): void;
-}
-
-const LOCK_DIR = 'scan.lock';
-const STALE_MS = 60 * 1000;
-const WAIT_MS = 15000;
+export interface ScanLock { release(): void; }
+const STALE_MS = 60_000;
+const WAIT_MS = 15_000;
 const POLL_MS = 100;
 
-/**
- * Cross-process scan lock via atomic directory creation (`mkdir` is
- * atomic on POSIX and Windows). Prevents two concurrent scans from
- * interleaving events in the same cache. Stale locks (crashed
- * processes) are reclaimed after {@link STALE_MS}.
- *
- * `onWait` fires (at most every 2s) while blocked so callers can show
- * exactly what the scan is waiting on instead of hanging silently.
- */
-export async function acquireScanLock(baseDir: string, onWait?: () => void): Promise<ScanLock> {
-  try {
-    fs.mkdirSync(baseDir, { recursive: true });
-  } catch {
-    // Base dir may be read-only; locking is best-effort then.
-    return { release: () => {} };
-  }
-
-  const lockPath = path.join(baseDir, LOCK_DIR);
-  const deadline = Date.now() + WAIT_MS;
-  let waitedNotifiedAt = 0;
-
-  const notifyWait = () => {
-    const now = Date.now();
-    if (onWait && now - waitedNotifiedAt > 2000) {
-      waitedNotifiedAt = now;
-      try {
-        onWait();
-      } catch {
-        // Progress callbacks must never break locking.
-      }
-    }
-  };
-
-  for (;;) {
-    try {
-      fs.mkdirSync(lockPath);
-      try {
-        fs.writeFileSync(path.join(lockPath, 'pid'), String(process.pid), 'utf8');
-      } catch {
-        // Best-effort marker only.
-      }
-      let released = false;
-      return {
-        release() {
-          if (released) return;
-          released = true;
-          try {
-            fs.rmSync(lockPath, { recursive: true, force: true });
-          } catch {
-            // Ignore cleanup failures.
-          }
-        }
-      };
-    } catch (err: any) {
-      if (err?.code !== 'EEXIST') {
-        // Locking unsupported here; proceed unlocked (server serializes anyway).
-        return { release: () => {} };
-      }
-      if (isStale(lockPath) || Date.now() >= deadline) {
-        if (isStale(lockPath)) {
-          try {
-            fs.rmSync(lockPath, { recursive: true, force: true });
-            continue;
-          } catch {
-            // Fall through to waiting.
-          }
-        }
-        if (Date.now() >= deadline) {
-          throw new Error(
-            `Another dep-blame scan is in progress for this repository (${lockPath}). ` +
-              `Wait for it to finish or remove the directory if the process crashed.`
-          );
-        }
-      }
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      notifyWait();
-    }
-  }
-}
-
+/** Age alone never permits stealing a live process's scan lock. */
 function isStale(lockPath: string): boolean {
   try {
-    const st = fs.statSync(lockPath);
-    return Date.now() - st.mtimeMs > STALE_MS;
-  } catch {
-    return true;
+    const pid = Number(fs.readFileSync(path.join(lockPath, 'pid'), 'utf8'));
+    if (Number.isInteger(pid) && pid > 0) {
+      try { process.kill(pid, 0); return false; }
+      catch (err: any) { return err?.code === 'ESRCH'; }
+    }
+  } catch { /* An interrupted mkdir may not have written its marker yet. */ }
+  try { return Date.now() - fs.statSync(lockPath).mtimeMs > STALE_MS; }
+  catch { return false; }
+}
+
+/** Atomic directory lock shared by CLI and UI scans; fail closed on I/O errors. */
+export async function acquireScanLock(baseDir: string, onWait?: () => void): Promise<ScanLock> {
+  fs.mkdirSync(baseDir, { recursive: true });
+  const lockPath = path.join(path.resolve(baseDir), 'scan.lock');
+  const deadline = Date.now() + WAIT_MS;
+  let lastNotice = 0;
+  for (;;) {
+    let acquired = false;
+    try {
+      fs.mkdirSync(lockPath);
+      acquired = true;
+      const token = randomUUID();
+      fs.writeFileSync(path.join(lockPath, 'pid'), String(process.pid), 'utf8');
+      fs.writeFileSync(path.join(lockPath, 'owner'), token, 'utf8');
+      let released = false;
+      return { release() {
+        if (released) return;
+        released = true;
+        try {
+          if (fs.readFileSync(path.join(lockPath, 'owner'), 'utf8') === token) {
+            fs.rmSync(lockPath, { recursive: true, force: true });
+          }
+        } catch { /* Never remove a replacement owner's directory. */ }
+      } };
+    } catch (err: any) {
+      if (acquired) {
+        fs.rmSync(lockPath, { recursive: true, force: true });
+        throw err;
+      }
+      if (err?.code !== 'EEXIST') throw err;
+      if (isStale(lockPath)) {
+        const claim = path.join(lockPath, 'reclaim');
+        try {
+          const fd = fs.openSync(claim, 'wx');
+          fs.writeFileSync(fd, String(process.pid));
+          fs.closeSync(fd);
+          if (isStale(lockPath)) fs.rmSync(lockPath, { recursive: true, force: true });
+          else fs.rmSync(claim, { force: true });
+          continue;
+        } catch {
+          // Recover a reclaimer interrupted before removing the original lock.
+          try {
+            const pid = Number(fs.readFileSync(claim, 'utf8'));
+            let dead = false;
+            if (Number.isInteger(pid) && pid > 0) {
+              try { process.kill(pid, 0); } catch (err: any) { dead = err?.code === 'ESRCH'; }
+            } else dead = Date.now() - fs.statSync(claim).mtimeMs > STALE_MS;
+            if (dead) fs.rmSync(claim, { force: true });
+          } catch { /* Another contender is reclaiming it. */ }
+        }
+      }
+      if (Date.now() >= deadline) {
+        throw new Error('Another dep-blame scan is in progress for this repository (' + lockPath + '). Wait for it to finish.');
+      }
+      if (onWait && Date.now() - lastNotice > 2000) {
+        lastNotice = Date.now();
+        try { onWait(); } catch { /* Progress callbacks cannot break locking. */ }
+      }
+      await new Promise(resolve => setTimeout(resolve, POLL_MS));
+    }
   }
 }

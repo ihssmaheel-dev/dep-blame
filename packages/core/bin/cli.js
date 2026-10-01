@@ -23,7 +23,8 @@ import {
   renderCiSummary,
   renderJson,
   renderCsv,
-  c
+  c,
+  stripControl
 } from '../dist/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -103,8 +104,8 @@ function createCliProgress(options = {}) {
       bar = ` ${c.bold(`${pct}%`)}`;
     }
 
-    const msg = p.message ? ` ${c.dim(p.message)}` : '';
-    const detail = p.detail ? ` ${c.dim(`• ${p.detail}`)}` : '';
+    const msg = p.message ? ` ${c.dim(stripControl(p.message))}` : '';
+    const detail = p.detail ? ` ${c.dim(`• ${stripControl(p.detail)}`)}` : '';
     const text = `${spin} ${c.bold('dep-blame')}:${bar}${msg}${detail}`;
 
     const cols = process.stderr.columns || 80;
@@ -199,7 +200,7 @@ async function main() {
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (err) {
-    console.error(c.red(`Error: ${err.message}`));
+    console.error(c.red(`Error: ${stripControl(err.message)}`));
     console.error(`Run 'dep-blame --help' for usage.`);
     process.exit(1);
   }
@@ -243,7 +244,7 @@ async function main() {
     if (!result || !result.warnings || result.warnings.length === 0) return;
     if (values.json || values.csv) return; // machine output stays clean
     for (const w of result.warnings) {
-      console.warn(c.yellow(`⚠ ${w}`));
+      console.warn(c.yellow(`⚠ ${stripControl(w)}`));
     }
   }
 
@@ -348,7 +349,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
       process.exit(0);
     } catch (err) {
       progress.done();
-      console.error(c.red(err.message || 'An error occurred during CI analysis.'));
+      console.error(c.red(stripControl(err.message) || 'An error occurred during CI analysis.'));
       process.exit(1);
     }
   }
@@ -403,7 +404,8 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
           events: result.events,
           warnings: result.warnings,
           truncated: result.truncated,
-          headState: result.headState
+          headState: result.headState,
+          headStateComplete: result.headStateComplete
         })
       );
       return;
@@ -417,7 +419,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
     printWarnings(result);
 
     if (subCommand === 'pkg' && targetPkg) {
-      console.log(renderArchaeologyView(targetPkg, result.events, result.headState));
+      console.log(renderArchaeologyView(targetPkg, result.events, result.headState, result.headStateComplete));
     } else if (subCommand === 'calendar') {
       console.log(renderCalendarView(result.events));
     } else if (subCommand === 'stats') {
@@ -427,7 +429,7 @@ Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
     }
   } catch (err) {
     progress.done();
-    console.error(c.red(err.message || 'An error occurred during dep-blame analysis.'));
+    console.error(c.red(stripControl(err.message) || 'An error occurred during dep-blame analysis.'));
     process.exit(1);
   }
 }

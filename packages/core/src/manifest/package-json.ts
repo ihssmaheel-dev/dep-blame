@@ -16,7 +16,7 @@ export const DEP_TYPES: DepType[] = [
  */
 export function parsePackageJson(content?: string | null): ParseResult {
   const map = new Map<string, DependencyEntry>();
-  if (!content || typeof content !== 'string') {
+  if (content === null || content === undefined) {
     return { ok: true, entries: map };
   }
 
@@ -27,14 +27,20 @@ export function parsePackageJson(content?: string | null): ParseResult {
     return { ok: false, entries: map, note: 'invalid JSON' };
   }
 
-  if (!parsed || typeof parsed !== 'object') {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return { ok: false, entries: map, note: 'not a JSON object' };
   }
 
   for (const depType of DEP_TYPES) {
     const section = parsed[depType];
+    if (section !== undefined && (!section || typeof section !== 'object' || Array.isArray(section))) {
+      return { ok: false, entries: new Map(), note: `invalid ${depType} section` };
+    }
     if (section && typeof section === 'object') {
       for (const [name, version] of Object.entries(section)) {
+        if (typeof version !== 'string' || !name.trim() || !version.trim()) {
+          return { ok: false, entries: new Map(), note: `invalid ${depType} entry` };
+        }
         if (typeof version === 'string' && name.trim().length > 0) {
           map.set(name.trim(), {
             version: version.trim(),

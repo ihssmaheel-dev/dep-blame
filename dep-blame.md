@@ -847,3 +847,343 @@ without the engine it renders.
   lazily-installed side effect of a CLI flag. Vanilla HTML/JS/SVG, no React,
   no bundler, enforced sub-100KB gzip budget — it never affects the core
   install's size or dependency count either way.
+## 12. Implementation audit and next delivery plan — 2026-10-01
+
+This section describes the current reviewed implementation and supersedes
+conflicting assumptions in the original proposal above. Earlier performance
+numbers, prior-art claims and package-name availability are design assumptions,
+not verified release facts. The project remains a local dependency-history tool.
+
+### 12.1 Concept and product assessment
+
+**dep-blame answers:** what dependency changed, when, by whom, in which commit
+and manifest, and whether the change affected a declared requirement or a
+lockfile resolution. The CLI, calendar, table and package archaeology drawer
+are different ways to inspect the same Git evidence.
+
+The idea is useful for investigating regressions, understanding an unfamiliar
+repository, reconstructing package lifecycles, reviewing dependency changes and
+explaining a dependency's current state. Its value depends on trustworthy
+history reconstruction and a fast, clear interface. It is a focused package
+concept; popularity and demand have not been established by this code audit.
+
+Keep the scope centered on Git history. Revision comparisons, source evidence,
+package lifecycles, author attribution, filters and reproducible exports fit.
+Registry recommendations, automatic upgrades, vulnerability monitoring and
+project-management features would need a separate product decision.
+
+### 12.2 Audit scope and evidence
+
+Reviewed the core Git readers, engine and cache paths, package/workspace and
+lockfile parsers, CLI renderers, local server, browser application, styles,
+package metadata, tests and CI/publish packaging. Used real disposable Git
+repositories to exercise corruption, branching, merge, incremental and transport
+cases. Used the browser for desktop/mobile visual and interaction verification.
+
+Verification is evidence for the cases exercised, not a guarantee that every
+possible repository, hosting version or malformed input is supported. No changes
+were committed, pushed or published by this review.
+
+### 12.3 Findings fixed in this working tree
+
+| Area | Finding and consequence | Implemented correction |
+| --- | --- | --- |
+| Dark theme | Tinted backgrounds, decorative grid and glow made the table visually noisy | Neutral black background, restrained gray surfaces/borders, consistent text and status colors |
+| Popover positioning | A fixed popup inside a filtered/blurred ancestor was positioned or clipped incorrectly | One body-level popup, measured anchoring, viewport clamping, flip above trigger and footer clearance |
+| Calendar pagination | `.pager { display: flex }` overrode the browser's styling of `hidden` | Enforced `[hidden] { display: none !important }`; calendar uses month navigation only |
+| Controls | Native selects/date inputs differed by OS and theme | Custom page-size, facet and date-range panels; strict text dates, presets and keyboard calendar |
+| Filter state | Multiple entry points could disagree or close after a redraw | Shared filter state, draft/apply/cancel, visible chips, reset behavior and delegated events |
+| Table rendering | Every filter/page operation could repeat sorting and render excessive choices | Cached sorted results/facets, Set membership, 25/50/100 row pages, 150 ms search debounce, 200-option facet DOM cap |
+| Calendar mobile layout | Long package pills and minimum cell widths overflowed narrow screens | Seven shrinkable columns, compact counts on small screens, native day buttons and clear drill-down |
+| Accessibility | Dialog focus, calendar controls and filter dismissal were inconsistent | Focus trapping/return, Escape, date-grid navigation, active-view state, live pager text and visible focus |
+| Labels | Dependency events were described as commits/upgrades or mixed source/type concepts | Event counts, explicit declared/resolved Source column, dependency-section moves shown separately |
+| HEAD status | Unreadable HEAD or no current declaration could be mislabeled as a removal | `headStateComplete`; distinct active, not declared and unknown states |
+| Dates | UTC strings and local controls could disagree | One viewer-local calendar-day convention throughout the UI |
+| Export | The visible page could obscure the scope of exported history | Export all matching events with warnings/truncation and HEAD completeness; safe Markdown and CSV text |
+| Git records | Delimiters in subjects and Unicode/chunk boundaries could corrupt records | NUL-delimited incremental log parsing and UTF-8 streaming decoders |
+| Git blob transport | Repeated buffer concatenation and incomplete responses were costly or ambiguous | Linear body assembly, strict sizes/response counts, backpressure, timeouts and explicit transport errors |
+| Blob memory | Count-only batches could retain large blobs simultaneously | Byte-aware groups, same-OID reuse and release of processed blobs; 16 MiB target batches / 64 MiB safety limits |
+| Scan consistency | HEAD could change between discovery, log reading and checkpoint | Pin the starting full SHA throughout the scan and cache checkpoint |
+| Incremental workspaces | Newly added/deleted workspace manifests could be missed | Discover changed workspace paths across the cached-to-current range |
+| Corrupt baseline | Recovery could invent additions or drop last-good history | Recover readable first-parent snapshots or rebuild when the incremental baseline is unusable |
+| Parse validity | Empty or malformed dependency sections were accepted as empty snapshots | Tri-state parsing and structural guards; undecodable data preserves last-good state and warns |
+| Bun/Yarn | JSONC cleanup could alter strings; descriptors and malformed lockfiles were misread | String-aware Bun cleanup/descriptor parsing; stricter Yarn decoding and failure semantics |
+| Source history | Declaration changes could suppress same-commit resolved changes | Keep both evidence streams independently |
+| Cache warnings | A warm read could hide previously detected incomplete/corrupt history | Persist and restore warnings/truncation metadata |
+| Cache locks | An old but live process lock could be stolen | Live PID ownership checks, dead-process reclamation and owner-token release |
+| JSON transactions | Events/HEAD or in-memory state could diverge after an interrupted/disk-failed write | Transaction rollback and atomic rename; propagate write failure |
+| Invalid cache | Partially valid rows could retain a misleading checkpoint | Invalidate malformed cache generations and bump schema to version 3 |
+| Workspace paths | Globs/symlinks could walk outside the repository or repeatedly visit directories | Realpath boundary and visited-directory checks |
+| Output safety | Terminal control sequences and spreadsheet formulas could escape intended display | Terminal sanitization; RFC CSV quoting plus formula neutralization |
+| Local server | Host/Origin validation needed exact authority and port checks | Loopback default, strict Host/Origin/Sec-Fetch-Site validation, explicit LAN opt-in |
+| Scan concurrency | Concurrent loads could race or fail to receive progress | Shared in-flight scan, per-client progress listeners and disconnect cleanup |
+| Hosting attribution | Git names were treated as usernames; links assumed GitHub; no remote defaulted to GitHub | Host-specific adapters/links, verified account mapping, local-no-remote state and actual host footer |
+| Profile pictures | Raw external images would weaken CSP and repeat network work | Lazy bounded account lookup, local raster image proxy, caching, initials fallback, no email/token exposure |
+| Outbound security | Self-host support could otherwise become a private-network proxy | DNS validation/pinning, restricted private-origin opt-in, redirect checks, HTTPS-only token transport and response limits |
+| Publication | Stale compiler output could ship removed modules; test globs differed across Node/shell versions | Clean build output, explicit test-file enumeration and isolated install/runtime smoke tests for both tarballs |
+
+### 12.4 Remaining issues and release decisions
+
+These are unresolved limitations. Priority reflects correctness and scale, not
+whether an exploit has been demonstrated.
+
+| Priority | Issue | Current effect | Required follow-up |
+| --- | --- | --- | --- |
+| P1 | Full history remains resident in the engine/API/browser | Pagination bounds DOM, not total RAM; JSON serialization/gzip/SSE completion can block or duplicate memory | Indexed queries, bounded page responses, month aggregates/facets and streaming CLI export |
+| P1 | npm lockfile workspace/nested resolution coverage is incomplete | Importer attribution and multiple installed versions can be collapsed or missed | Model importer/package/resolution identities and test real npm workspace/nested fixtures |
+| P1 | Maps keyed only by dependency name cannot represent all simultaneous sections/resolutions | A package in multiple dependency sections or multiple Yarn/Bun resolutions may lose information | Composite identity and explicit ambiguity/unknown fields; schema migration |
+| P1 | Cache promotion involves backend files rather than an atomic generation pointer | Interruption/backend switching can leave stale JSON/SQLite/WAL generations | Generation directories and atomically switched manifest; close/checkpoint SQLite and recovery tests |
+| P2 | Historic discovery has path/buffer limits and workspace YAML detection is heuristic | Large or unusual repositories can be incomplete; warnings must remain prominent | Stream discovery, explicit configurable limits and structural workspace-YAML parsing |
+| P2 | Newline/CR characters in Git paths are explicitly unsupported by line-based cat-file requests | Valid but unusual paths fail rather than produce complete history | Capability-gated NUL request protocol or clear unsupported-path warning |
+| P2 | Workspace/package-manager labels come partly from working-tree discovery | Labels can differ from the pinned indexed commit | Derive display metadata from that commit; expose `indexedCommit` in every output |
+| P2 | Font reads, synchronous compression and slow SSE clients | Large responses or slow clients can affect responsiveness | Cache immutable bytes/compression, asynchronous response compression and bounded/throttled SSE writes |
+| P2 | Drawer and month filtering still traverse/render large histories | A heavily changed package can create a large drawer | Paginated lifecycle nodes and server month/day queries |
+| P2 | Hosting APIs differ by deployment/version/authentication | Some hosts need configuration; unknown accounts, protected images or unapproved CDNs retain initials | Tested adapter compatibility fixtures, clear nonblocking enrichment status and measured retry policy |
+| P2 | Image limits bound compressed bytes, not every decoded image dimension | A pathological raster can still be expensive for a browser decoder | Validate dimensions or request/serve bounded thumbnails with a hardened image pipeline |
+| P2 | Automated tests do not yet cover browser interaction in CI | Manual checks can regress during UI changes | A small browser regression suite for critical flows and accessibility |
+| P2 | Original 10,000-commit / sub-200-ms targets are unproven | The proposal can overpromise published performance | Reproducible benchmarks across commit/event/manifest sizes and both cache backends |
+| P3 | Large client file and obsolete CSS selectors/overrides | Changes are harder to reason about consistently | Extract query state, popover, calendar, table and drawer modules; remove dead CSS without adding a framework |
+
+For publication: do not advertise complete importer/multi-resolution support,
+unbounded-repository scalability or crash-safe cache generation switching until
+the P1 gates pass. A limited initial release needs explicit supported-input and
+resource-limit documentation. Dependency-audit success is not a security
+certification of custom application code.
+
+### 12.5 Hosting/profile behavior
+
+Git contains names/emails, not profile photographs. The server asks the detected
+host for the account associated with a commit. GitHub/Gitea-compatible REST,
+GitLab GraphQL and Bitbucket adapters return a host account where available.
+Git-only identities stay as initials. Matching uses server-side name/email
+identities rather than names alone; repeated commits share lookups. No name is
+invented as a login, and the repository owner is not assigned to all authors.
+
+The footer shows `GitHub · github.com`, the corresponding self-hosted service
+and hostname/port, `Git host · <host>` if detection is inconclusive, or `Local Git`
+when no remote exists. Links use each service's commit/tree conventions.
+Nested GitLab namespaces and configured installation subpaths are retained.
+Unknown services copy the full commit SHA instead of guessing a commit URL.
+
+History renders before account enrichment. Account concurrency is three;
+positive/negative caches and client work are bounded. Server identity cache:
+512 entries. Image cache: 128 entries / 16 MiB; individual image: 512 KiB.
+At most six author-query handlers run concurrently. HTTP requests have
+five-second deadlines and DNS has a four-second deadline.
+A self-host detection attempt can involve several requests, so its total time
+can exceed one request deadline; this does not block history rendering.
+
+`DEP_BLAME_AVATARS=0` restores fully offline behavior. Private forge origins,
+SSH/web URL differences, subpath deployments and private API access can be
+configured using the settings documented in `packages/ui/README.md`. Tokens
+stay server-side and require HTTPS. Do not disable TLS verification for a local
+CA; configure Node's trusted CA instead.
+
+Live check for this repository: GitHub returned `author: null` for the initial
+commit. Its rows retain initials because GitHub did not return a linked
+account from which to obtain a profile picture. Other adapters were
+validated with controlled fixtures, not with live installations of every host.
+
+Primary adapter references:
+
+- [GitHub commits API](https://docs.github.com/en/rest/commits/commits?apiversion=2022-11-28)
+- [GitLab commit GraphQL type](https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/graphql/types/repositories/commit_type.rb)
+- [Gitea single-commit API](https://docs.gitea.com/api/operations/repo-get-single-commit/)
+- [Bitbucket Cloud commits API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-commits/)
+- [Bitbucket Server repository API](https://developer.atlassian.com/server/bitbucket/rest/v900/api-group-repository/)
+
+### 12.6 UI design specification
+
+**Hierarchy:** compact header with Export/Sync/theme controls; four event-count
+cards; one toolbar with search/action/manifest/filter/view controls; applied
+filter chips and honest warning notices; table or calendar; compact repository,
+branch, package-manager, hosting and indexing footer.
+
+**Color/system:** dark background #000; secondary #0a0a0a; surface #101010;
+hover #1a1a1a; borders #262626; main text #f5f5f5; secondary #a3a3a3;
+muted #858585. Green/amber/red indicate added/updated/removed, with accompanying
+text. Use the same spacing, borders, radii, typography and focus styles for all
+controls. Light theme must preserve the same hierarchy and behavior.
+
+**Datatable:** semantic table; Date, Action, Dependency, Version diff, Source,
+Manifest, Author, Commit. Fixed readable column widths, sticky header, internally
+scrolling rows and a stable pager. Long values truncate with full-value titles.
+Author pictures are 26 px circles, lazy decoded, with initials until loaded.
+Only host-linked accounts become profile links. Page changes do not re-sort
+unchanged results; filtering resets to page one. Page-size menu is custom.
+Horizontal scrolling belongs inside the table on narrow screens.
+
+**Filters:** one anchored component for toolbar and column triggers. The popup
+stays within viewport/footer edges, with a limited internal list scroll area.
+Facets use search plus checkable choices. Date range uses strict YYYY-MM-DD
+text inputs, presets, a custom calendar and Apply/Clear. Draft changes do not
+alter results until Apply. Escape cancels and returns focus; Tab stays within
+the open dialog. Applied chips are the visible record of active state.
+
+**Calendar:** month controls plus seven equal columns. No table pager. Desktop
+shows a bounded preview and counts; mobile prioritizes counts. Day headers are
+real buttons and empty days are disabled. Selecting a day opens the matching
+table range. Latest navigates to the latest recorded month, not today's date.
+
+**Drawer:** focus-contained package lifecycle dialog with HEAD status, source,
+manifest, full commit evidence and meaningful account attribution. Escape and
+close return focus. Not declared and unknown are distinct from a recorded
+removal. Future large lifecycle lists need pagination.
+
+**Responsive behavior:** 375 px must have no body horizontal overflow. KPI
+cards become 2×2; toolbar wraps; calendar cells shrink; footer truncates long
+repository/host strings with titles. Test 375/768/1280/1440 px and zoom. Small
+screens may scroll the table internally. Never squeeze headings into ellipses
+or hide the meaning of an active filter.
+
+**Required states:** loading with real scan stages; empty repository; no matching
+results; corrupt/incomplete history; scan failure with retry; syncing; avatar
+loading/unmatched/offline; disabled month/day/pager controls. Network profile
+failure must not turn a successful history scan into an error.
+
+### 12.7 Implementation sequence and acceptance gates
+
+#### Phase A — ship the current corrections after verification
+
+1. Review this diff and the additive API fields (`hosting`, `headStateComplete`).
+2. Run the complete engine/security/parser suite and both isolated tarball smoke
+   installs on the Node × OS matrix; include the JSON/omit-optional fallback job.
+3. Capture desktop black/light, narrow layout, anchored filters and calendar
+   without pager. Check keyboard navigation, drawer focus and full export scope.
+4. Document account fallback, supported parser coverage, safety limits and
+   optional networking. Retain strict CSP and zero inline event handlers.
+
+Gate: all required tests pass, tarballs contain only current modules/assets and
+licenses, no credentials/private email in frontend responses, and no known
+critical history regression in supported fixtures.
+
+#### Phase B — finish history fidelity and cache durability (P1)
+
+1. Introduce an explicit event/resolution identity: source, manifest/importer,
+   dependency section, package and lock resolution locator. Preserve multiple
+   sections/versions; represent unknown values rather than substituting ranges
+   as resolved versions.
+2. Add npm importer/nested-version fixtures, Yarn/Bun multi-resolution fixtures,
+   aliases/catalog/protocol entries and dependency-section coexistence cases.
+3. Migrate the cache schema deliberately; full rescan must reconstruct the same
+   events as incremental scans for branch/merge/corruption fixtures.
+4. Store each full scan under a new generation directory. Close/checkpoint the
+   database, then atomically replace a small active-generation manifest. Readers
+   pin one generation; interrupted promotions must leave the previous generation
+   readable. Reclaim unreferenced generations only after reader ownership ends.
+
+Gate: cold/warm/backend-switch outputs agree; process-kill tests before/after
+promotion never combine events and HEAD from different generations; unsupported
+resolution cases are warned and never reported as authoritative versions.
+
+#### Phase C — bounded queries and performance (P1/P2)
+
+1. Query SQLite by a normalized filter/sort contract with a stable full event-ID
+   tie-breaker. Return bounded pages, total counts and an indexed-generation ID.
+2. Add month/day aggregates, server-side facets and separately paged package
+   lifecycles. Cursor/page requests must stay on one generation or explicitly
+   restart after Sync. Exports stream all matches through the same query.
+3. Route the CLI through that query contract; JSON/CSV writers honor backpressure.
+   JSON fallback uses equivalent results with documented scale limitations or a
+   bounded disk index rather than silently loading every event indefinitely.
+4. Cache static asset bytes/compressed variants; use asynchronous compression
+   for large responses. Throttle SSE progress, limit queues and handle slow or
+   disconnected clients. Bound server avatar-query concurrency as well.
+5. Benchmark 1k/10k/50k commits; 1k/100k/1M events; many manifests; large lockfiles;
+   cold/warm/incremental; SQLite/JSON; both CLI and browser. Record medians, p95,
+   peak RSS and fixture details. Set measured regression budgets.
+
+Gate: page/month/search operations avoid full-history transfer and unbounded DOM;
+exports and UI use identical filters; cancel/disconnect does not retain large
+buffers; publish only performance targets actually met by repeatable evidence.
+
+#### Phase D — UI structure and browser regression gates
+
+1. Extract framework-free components for popup/date grid, filter state/query,
+   table, calendar and lifecycle drawer. Centralize tokens and remove dead CSS.
+2. Add browser tests for Apply/Cancel/Escape, date boundaries/DST, facet search
+   beyond 200 options, first/last page, sorting, day drill-down, export, malicious
+   repository text, avatar success/error, mobile overflow and focus restoration.
+3. Add explicit nonblocking hosting-enrichment status for offline/auth/rate-limit
+   cases. Validate image dimensions or serve bounded thumbnails.
+4. Test keyboard-only and screen-reader semantics, reduced motion, both themes,
+   long package names, nested manifests and 200% zoom.
+
+Gate: one control style and one filter behavior everywhere; calendar pager is
+always hidden; no native selects/date inputs; no clipping/body overflow; critical
+browser tests run against installed tarballs as well as workspace sources.
+
+#### Phase E — useful additions within the history concept
+
+- **Compare two revisions:** exact declared/resolved differences, with author,
+  commit and source evidence. Handle invalid/non-ancestor refs explicitly.
+- **Evidence links:** open the relevant manifest/lockfile at the full indexed
+  commit, with provider-specific paths; copy a reproducible CLI command.
+- **Shareable local view state:** validated URL filters/sort/month for repeatable
+  investigation, without embedding private author information.
+- **Package lifecycle summary:** first appearance, recorded changes, removal and
+  current declaration status, respecting unknown/truncated history.
+- **Rename/path transitions:** explicit evidence and documented semantics for
+  manifest moves, rather than accidental disappearance/re-addition.
+
+Each feature must reuse the history/query model, preserve provenance and have a
+bounded rendering/export path. Avoid features that require registry monitoring
+or automatic dependency changes.
+
+### 12.8 Measured verification results
+
+- Full suite at this review: **76 tests passed** after adding corruption,
+  concurrency, transport, source and hosting regressions. The final complete
+  rerun passed after the UI/hosting changes.
+- `npm audit --json`: **0 known vulnerabilities**, including development
+  dependencies, when checked during this review. `--omit=dev` was also clean.
+- Both packed packages were installed into an isolated directory and passed CLI,
+  engine, HTTP/CSP, JavaScript and bundled-font smoke checks, with LICENSE files.
+  The final avatar/server changes were repacked and the install smoke passed.
+- Removed stale compiled modules from the core tarball via clean build output.
+- Browser checks covered black/light themes, 375 px layout, shared filter
+  positioning, draft cancel, invalid dates, source/action facets, package search
+  beyond the initial facet list, page sizes/last page, drawer focus, month/day
+  navigation and calendar pager hiding. A controlled local forge fixture loaded
+  26 px avatars and account links. Browser coverage is manual, not a CI gate.
+- JSON export payload construction was reviewed, but download completion could
+  not be confirmed through the in-app browser download tool (it timed out);
+  a browser download regression gate remains pending.
+- Initial audit snapshot HTML + JavaScript gzip size: **36,452 bytes**, below the 40 KiB budget.
+- A disposable fixture with **3 relevant commits, 1,000 declared dependencies
+  and 1,100 events** measured **556 ms cold / 61.01 MiB peak RSS**, and **234 ms
+  warm / 59.82 MiB peak RSS** on Windows / Node 22.23.2. Each is a single run,
+  not a distribution or a 10,000-commit benchmark. The warm run exceeds the
+  original 200 ms target; do not present that target as achieved.
+
+The implemented improvements remove concrete bugs and add meaningful gates.
+The P1 work above remains necessary to claim comprehensive history fidelity,
+robust generation switching and bounded memory across large repositories.
+
+Temporary audit/install artifacts remain in `.audit-pack/` and the disposable
+Git fixture remains under the OS temp directory. Automatic approval review
+rejected their removal with “blocked by policy”; this did not affect code or
+verification results. The fixture servers were stopped.
+
+## 13. Filter popup positioning follow-up — 2026-10-01
+
+Reproduced a date popup overlapping its trigger at 1280 × 720: the old
+placement used the full popup height and then pushed it into the viewport,
+covering the toolbar when neither side could fit that height.
+
+The shared popup now measures available space on each side of the trigger,
+keeps an 8 px gap, and limits its height to the chosen side. Content scrolls
+inside a separate body; the heading and Clear/Apply actions remain visible.
+Right-edge popups align inward, page-size menus use a compact 160 px width,
+and header/footer/viewport boundaries are respected. Placement follows
+scrolling/resizing using one animation-frame update, preserves drafts, and
+retains its side through facet search unless another side has substantially
+more usable space.
+
+Verified date and facet panels, toolbar-to-date navigation, right-edge commit
+filters, upward page-size menus, draft retention and date selection in a
+scrolled popup across desktop, 375 px mobile and short viewports. All nine UI
+tests passed, syntax/whitespace checks passed, and the updated UI tarball
+passed the isolated install smoke check. Current HTML + JavaScript gzip size:
+**37,447 bytes**, within the 40 KiB budget. The earlier full-suite result remains
+an audit snapshot; this follow-up changed only popup UI behavior and styling.

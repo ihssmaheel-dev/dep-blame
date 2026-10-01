@@ -115,7 +115,8 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     assert.equal(data.workspacePackages['@dep-blame/ui'], 'packages/ui');
     assert.ok(data.authors && typeof data.authors === 'object');
     assert.ok(data.authors['Mohamed Ismail S']);
-    assert.equal(data.authors['Mohamed Ismail S'].username, 'ihssmaheel-dev');
+    assert.equal(data.authors['Mohamed Ismail S'].username, '');
+    assert.equal(data.authors['Mohamed Ismail S'].profileUrl, null);
     // No email or remote-avatar exposure.
     for (const author of Object.values(data.authors)) {
       assert.ok(!('email' in author), 'author map must not expose emails');

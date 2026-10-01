@@ -28,7 +28,7 @@
   },
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {},

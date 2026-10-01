@@ -42,13 +42,13 @@ if (values.help) {
 }
 
 const portRaw = values.port ? String(values.port).trim() : '4321';
-const port = parseInt(portRaw, 10);
-if (!Number.isInteger(port) || port < 0 || port > 65535) {
+const port = Number(portRaw);
+if (!/^\d+$/.test(portRaw) || !Number.isInteger(port) || port < 0 || port > 65535) {
   console.error(`Error: invalid --port "${values.port}". Expected 0-65535.`);
   process.exit(1);
 }
 const host = values.host || '127.0.0.1';
-if (typeof host !== 'string' || /[\s;|&$`'"\\]/.test(host) || host.length > 255) {
+if (typeof host !== 'string' || !/^[a-zA-Z0-9.:\[\]-]+$/.test(host) || host.length > 255) {
   console.error(`Error: invalid --host "${values.host}".`);
   process.exit(1);
 }

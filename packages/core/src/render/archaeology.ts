@@ -32,7 +32,8 @@ function formatRelativeTime(isoString?: string): string {
 export function renderArchaeologyView(
   packageName: string,
   events: DependencyEvent[],
-  headState?: HeadEntry[]
+  headState?: HeadEntry[],
+  headStateComplete = true
 ): string {
   const safeName = stripControl(packageName);
   const pkgEvents = events.filter((e) => e.package === packageName);
@@ -54,8 +55,10 @@ export function renderArchaeologyView(
       (h) => `${stripControl(h.version)} (${stripControl(h.depType)} in ${stripControl(h.manifest)})`
     );
     statusBanner = c.green('● Active at HEAD') + c.dim(` in ${headEntries.length} manifest(s): ${parts.join('; ')}`);
-  } else if (headEntries && latestEvent.type !== 'removed') {
-    statusBanner = c.red('● Currently removed at HEAD') + c.dim(` (last event in ${stripControl(latestEvent.commit)})`);
+  } else if (headEntries && !headStateComplete) {
+    statusBanner = c.yellow('● HEAD status unknown') + c.dim(' (unreadable manifest)');
+  } else if (headEntries) {
+    statusBanner = c.dim('● Not declared at HEAD') + c.dim(` (last event in ${stripControl(latestEvent.commit)})`);
   } else if (latestEvent.type === 'removed') {
     statusBanner = c.red('● Currently removed') + c.dim(` (last active in ${stripControl(latestEvent.commit)})`);
   } else {

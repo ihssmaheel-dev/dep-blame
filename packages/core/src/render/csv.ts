@@ -1,7 +1,9 @@
 import type { DependencyEvent } from '../types.js';
 
 function cell(value: string | undefined | null): string {
-  const s = value === undefined || value === null ? '' : String(value);
+  let s = value === undefined || value === null ? '' : String(value);
+  // Repository-controlled author/message fields must stay text in spreadsheet apps.
+  if (/^[\s]*[=+@-]/.test(s) || /^[\t\r\n]/.test(s)) s = "'" + s;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -10,7 +12,7 @@ function cell(value: string | undefined | null): string {
  * spreadsheets, and CI artifacts.
  */
 export function renderCsv(events: DependencyEvent[]): string {
-  const header = ['package', 'type', 'from', 'to', 'date', 'commit', 'commitFull', 'author', 'message', 'manifest', 'depType', 'source'].join(',');
+  const header = ['package', 'type', 'from', 'to', 'date', 'commit', 'commitFull', 'author', 'message', 'manifest', 'depType', 'source', 'lockfile', 'depTypeFrom', 'isDirect'].join(',');
   const rows = (events || []).map((ev) =>
     [
       cell(ev.package),
@@ -24,7 +26,10 @@ export function renderCsv(events: DependencyEvent[]): string {
       cell(ev.message),
       cell(ev.manifest),
       cell(ev.depType),
-      cell(ev.source || 'manifest')
+      cell(ev.source || 'manifest'),
+      cell(ev.lockfile),
+      cell(ev.depTypeFrom),
+      cell(ev.isDirect === undefined ? '' : String(ev.isDirect))
     ].join(',')
   );
   return [header, ...rows].join('\n');

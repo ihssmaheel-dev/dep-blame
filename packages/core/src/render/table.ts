@@ -92,12 +92,13 @@ export function renderEventTable(
   let currentCommit: string | null = null;
 
   for (const ev of events) {
-    if (ev.commit !== currentCommit) {
+    const identity = ev.commitFull || ev.commit;
+    if (identity !== currentCommit) {
       if (currentGroup.length > 0) {
         commitGroups.push(currentGroup);
       }
       currentGroup = [ev];
-      currentCommit = ev.commit;
+      currentCommit = identity;
     } else {
       currentGroup.push(ev);
     }
