@@ -1,0 +1,80 @@
+name: Publish to npm
+
+# Auto-publishes the single `dep-blame` package (CLI + engine + bundled
+# dashboard) on GitHub Release. Tag convention (see CONTRIBUTING.md):
+#   dep-blame-vX.Y.Z
+#
+# One-time npm setup:
+#   1. Reserve the `dep-blame` name on npmjs.com.
+#   2. Add an Automation token as the `NPM_TOKEN` repository secret
+#      (or configure trusted publishing for the package instead).
+#   3. Create a GitHub Release from the version tag below.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Pack and smoke-test without publishing
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write # required for --provenance attestations
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name || '' }}
+        run: |
+          if [[ ! "$TAG" =~ ^dep-blame-v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+            echo "::error::Unrecognized tag '$TAG'. Use dep-blame-vX.Y.Z."
+            exit 1
+          fi
+          ver="${TAG#dep-blame-v}"
+          actual="$(node -p "require('./packages/core/package.json').version")"
+          if [ "$actual" != "$ver" ]; then
+            echo "::error::Tag version '$ver' does not match packages/core/package.json version '$actual'."
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      - name: Pack and smoke-test tarball
+        shell: bash
+        run: |
+          mkdir -p dist-pack
+          npm pack --workspace packages/core --pack-destination ./dist-pack
+          smoke=$(mktemp -d)
+          npm install --prefix "$smoke" --ignore-scripts "$PWD"/dist-pack/*.tgz
+          node test/pack-smoke.js "$smoke"
+
+      - name: Publish to npm
+        if: github.event_name == 'release' || inputs.dry-run == false
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # --provenance: Sigstore attestation; needs the id-token permission above.
+          # If provenance fails with a classic (non-granular) token, retry without it.
+          npm publish --workspace packages/core --provenance --access public

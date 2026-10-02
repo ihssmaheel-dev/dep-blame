@@ -29,7 +29,6 @@ jobs:
         run: |
           mkdir -p dist-pack
           npm pack --workspace packages/core --pack-destination ./dist-pack
-          npm pack --workspace packages/ui --pack-destination ./dist-pack
           smoke=$(mktemp -d)
           npm install --prefix "$smoke" --ignore-scripts "$PWD"/dist-pack/*.tgz
           node test/pack-smoke.js "$smoke"

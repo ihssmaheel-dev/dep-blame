@@ -18,10 +18,13 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./ui/server.js": "./ui/server.js",
+    "./ui/*": "./ui/*"
   },
   "bin": {
-    "dep-blame": "./bin/cli.js"
+    "dep-blame": "./bin/cli.js",
+    "dep-blame-ui": "./bin/dep-blame-ui.js"
   },
   "engines": {
     "node": ">=20"
@@ -38,6 +41,7 @@
   "files": [
     "bin",
     "dist",
+    "ui",
     "README.md",
     "LICENSE"
   ]

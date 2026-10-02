@@ -6,7 +6,7 @@
 
 | Version | Supported |
 |---|---|
-| `dep-blame` / `@dep-blame/ui` latest `0.1.x` | Yes |
+| `dep-blame` latest `0.1.x` | Yes |
 | Older releases | No — please upgrade; pre-1.0 APIs and cache schemas change between minors |
 
 Cache schema is currently **v4**. Older caches are migrated (cleared and rescanned), never served as if current.

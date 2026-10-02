@@ -50,24 +50,22 @@ Useful commands:
 | `npm test` | Build, then run the full suite (`node --test` via `scripts/test.mjs`) |
 | `node --test test/<file>.test.js` | Run one test file |
 | `node packages/core/bin/cli.js --help` | Exercise the local CLI without installing |
-| `node packages/ui/bin/cli.js --port 0` | Start the dashboard on an ephemeral port |
+| `node packages/core/bin/cli.js ui --port 0 --no-open` | Start the bundled dashboard on an ephemeral port |
 
 ## Repository map
 
 ```text
-packages/core/          published as `dep-blame` — engine + CLI
-  bin/cli.js            arg parsing, progress, exit codes
+packages/core/          the single publishable package: `dep-blame`
+  bin/cli.js            `dep-blame` entrypoint (arg parsing, progress, exit codes)
+  bin/dep-blame-ui.js   `dep-blame-ui` alias — prepends `ui`, same package
+  ui/                   bundled dashboard (server.js, forge.js, app.js,
+                        index.html, fonts/) shipped raw via `files`
   src/engine.ts         pipeline orchestration (the file most changes touch)
   src/git/              log streaming, cat-file batch reads, repo state
   src/manifest/         package.json + npm/pnpm/yarn/bun parsers
   src/diff/             snapshot diff → DependencyEvent[]
   src/cache/            SQLite + JSON stores, generation pointer, scan lock
   src/render/           table, calendar, stats, archaeology, json, csv, ci
-packages/ui/            published as `@dep-blame/ui` — vanilla dashboard
-  src/server.js         node:http server, routes, Host/Origin validation
-  src/forge.js          hosting adapters, avatar proxy, SSRF guards
-  src/app.js            client (no framework)
-  src/index.html        inline styles + markup (gzip budget enforced)
 test/                   81 real-git-fixture tests (never mocked `git log`)
 scripts/test.mjs        Windows-safe test enumerator
 dep-blame.md            architecture spec and audit log (see below)
@@ -149,15 +147,22 @@ Scopes: `core`, `ui`, `engine`, `cache`, `git`, `manifest`, `cli`, `docs`, `test
 
 ## Release process
 
-Maintainers only:
+Releases are published automatically by [`.github/workflows/publish.yml`](./.github/workflows/publish.yml) when a GitHub Release is created from a version tag:
 
-1. `npm test` green on `main`, tarballs smoke-tested (`test/pack-smoke.js`).
-2. Bump versions (`packages/core`, `packages/ui`; UI depends on the released core range).
+| Tag | Publishes |
+|---|---|
+| `dep-blame-vX.Y.Z` | `dep-blame` — CLI, engine, and bundled dashboard in one package |
+
+The workflow verifies the tag matches `packages/core/package.json`, then runs `npm ci`, `npm run build`, `npm test`, tarball smoke tests (`test/pack-smoke.js`), and `npm publish --provenance`. One-time setup (reserving the `dep-blame` name + `NPM_TOKEN` secret) is documented at the top of the workflow file.
+
+Maintainer checklist:
+
+1. `npm test` green on `main`, tarballs smoke-tested.
+2. Bump the version in `packages/core/package.json`.
 3. Update [CHANGELOG.md](./CHANGELOG.md) under `Unreleased` → versioned section with date.
-4. Tag `dep-blame-vX.Y.Z` / `@dep-blame/ui-vX.Y.Z`, push, publish with provenance.
-5. Verify `npx dep-blame --version` and `npx @dep-blame/ui --help` from a clean directory.
-
-First-time scoped publish reminder: `@dep-blame/ui` needs `"publishConfig": { "access": "public" }` (already set) — npm defaults new scoped packages to private.
+4. Create the GitHub Release from the version tag and let the workflow publish.
+5. Verify from a clean directory: `npx dep-blame --version` and `dep-blame ui --help`.
+6. If a publish step fails transiently, re-run it via the workflow's `workflow_dispatch` input instead of pushing a new tag.
 
 ## Getting help
 

@@ -10,7 +10,7 @@ Response times are best-effort; maintainers acknowledge new issues as capacity a
 
 ## Before opening an issue
 
-1. Update to the latest `dep-blame` / `@dep-blame/ui` and retry.
+1. Update to the latest `dep-blame` and retry.
 2. Search existing issues for duplicates.
 3. For empty or wrong results, check [Troubleshooting](./README.md#troubleshooting) first — shallow clones (`fetch-depth: 1`) are the most common cause.
 

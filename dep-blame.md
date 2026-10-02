@@ -1222,3 +1222,41 @@ an audit snapshot; this follow-up changed only popup UI behavior and styling.
   UI HTML+JS gzip transfer is 38,897 bytes (under 40 KiB). Installed tarball
   CLI, engine, API, font, CSP, and LICENSE smoke checks pass. No new runtime
   dependencies were added.
+
+## 15. Single-package decision — 2026-10-02
+
+Supersedes the two-package split in §6, §6.1–§6.2, §10.1, and the §7/§9
+references to a `dep-blame` npm org and a separately installed
+`@dep-blame/ui`. Those sections remain as the design record; this section
+states what shipped instead and why.
+
+**Decision:** one `dep-blame` package carries the CLI, the engine, and the
+dashboard. There is no separate download — CLI-only users never touch the
+UI, and visual users run `dep-blame ui` (or the identical same-package
+`dep-blame-ui` alias bin).
+
+**Rationale:** the dashboard is ~39KB gzipped with zero runtime
+dependencies of its own, so a second package bought version-skew risk
+(core/UI ranges drifting, two tags, two publish steps) for no install-size
+win. Bundling keeps one version, one tag (`dep-blame-vX.Y.Z`), one publish
+step, and a UI that can never disagree with its engine.
+
+**Mapping, old → new:**
+
+| Before (§6–§7) | Now |
+|---|---|
+| `packages/ui/` (`@dep-blame/ui`) | `packages/core/ui/` (shipped raw via `files`, history preserved with `git mv`) |
+| `npx @dep-blame/ui` | `dep-blame ui` / `dep-blame-ui` (same package, both bins) |
+| `packages/ui/bin/cli.js` flags | `dep-blame ui [--port --host --no-open]` (+ dedicated `ui --help`) |
+| UI `dependencies: { dep-blame }` | Package self-reference (`import 'dep-blame'` resolves via `exports`; no cycle — `src/index.ts` does not import the server) |
+| `GET /api/*` in `packages/ui/src/server.js` | Unchanged, at `packages/core/ui/server.js` (asset paths are `__dirname`-relative, so the move is behavior-preserving) |
+| Tests importing `packages/ui/src/*` | Now import `packages/core/ui/*` |
+| `test/pack-smoke.js` (two tarballs) | Single-tarball smoke: `bin/cli.js`, `bin/dep-blame-ui.js`, `dist/`, `ui/` assets, CSP, fonts, LICENSE |
+| CI `npm pack --workspace packages/ui` | Dropped; core tarball only |
+| Publish tags `dep-blame-v*` + `@dep-blame/ui-v*` | Single `dep-blame-v*` tag → one `npm publish --provenance` |
+| `packages/ui/README.md` settings reference (§12.5) | Root `README.md` (§Web dashboard, §HTTP API, §Configuration) + `packages/core/README.md` dashboard section |
+
+The zero-dependency guarantee is unchanged: the UI adds no entry to the
+core package's `dependencies` (the optional `yaml` parser remains the sole
+`optionalDependencies` entry), and CLI-only installs never execute UI code
+— `../ui/server.js` loads only on the `ui` subcommand path.

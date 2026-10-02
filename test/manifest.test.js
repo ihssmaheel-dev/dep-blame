@@ -4,6 +4,7 @@ import { parsePnpmLockfile, parsePnpmLockfiles } from '../packages/core/dist/man
 import { parseYarnLockfile } from '../packages/core/dist/manifest/lockfiles/yarn.js';
 import { parseBunLockfile, parseBunLockfiles } from '../packages/core/dist/manifest/lockfiles/bun.js';
 import { parsePackageJson } from '../packages/core/dist/manifest/package-json.js';
+import { isYamlAvailable } from './helpers/yaml-available.js';
 import { createTestRepo } from './helpers/git-fixture.js';
 import { runDepBlame } from '../packages/core/dist/engine.js';
 import { renderEventTable } from '../packages/core/dist/render/table.js';
@@ -24,7 +25,12 @@ importers:
 `;
 
   const map = await parsePnpmLockfile(pnpmV6Content);
-  assert.ok(map);
+  if (!map) {
+    // --omit=optional contract: no yaml parser means no per-package detail.
+    // Callers degrade to a low-fidelity `(lockfile)` event, never silence.
+    assert.ok(!(await isYamlAvailable()), 'pnpm parsing must not return null when yaml is installed');
+    return;
+  }
   assert.equal(map.size, 2);
   assert.equal(map.get('react')?.version, '18.2.0');
   assert.equal(map.get('react')?.depType, 'dependencies');
@@ -48,7 +54,11 @@ importers:
         version: 2.0.1
 `;
   const res = await parsePnpmLockfiles(content);
-  assert.ok(res);
+  if (!res) {
+    // --omit=optional contract: see above.
+    assert.ok(!(await isYamlAvailable()), 'pnpm parsing must not return null when yaml is installed');
+    return;
+  }
   assert.equal(res.ok, true);
   assert.ok(res.maps.get('package.json')?.has('a'));
   assert.equal(res.maps.get('packages/app/package.json')?.get('b')?.version, '2.0.1');

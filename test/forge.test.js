@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import {createTestRepo} from './helpers/git-fixture.js';
 import {getRepoRemoteInfo} from '../packages/core/dist/git/repo.js';
-import {createForgeDirectory, configureRemote, hostingInfo, isPublicAddress, requestBytes} from '../packages/ui/src/forge.js';
+import {createForgeDirectory, configureRemote, hostingInfo, isPublicAddress, requestBytes} from '../packages/core/ui/forge.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6N8sAAAAASUVORK5CYII=', 'base64');
 const json = value => ({status: 200, headers: {}, bytes: Buffer.from(JSON.stringify(value))});

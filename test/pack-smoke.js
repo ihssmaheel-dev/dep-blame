@@ -5,14 +5,18 @@ import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createTestRepo } from './helpers/git-fixture.js';
 
+// Single-package smoke: one `dep-blame` tarball carries the CLI, the engine,
+// and the bundled dashboard (ui/).
 const installed = path.resolve(process.argv[2]);
 const core = path.join(installed, 'node_modules/dep-blame');
-const ui = path.join(installed, 'node_modules/@dep-blame/ui');
-for (const pkg of [core, ui]) assert.ok(fs.existsSync(path.join(pkg, 'LICENSE')));
+assert.ok(fs.existsSync(path.join(core, 'LICENSE')));
+assert.ok(fs.existsSync(path.join(core, 'ui', 'server.js')));
+assert.ok(fs.existsSync(path.join(core, 'ui', 'index.html')));
+assert.ok(fs.existsSync(path.join(core, 'ui', 'app.js')));
 execFileSync(process.execPath, [path.join(core, 'bin/cli.js'), '--help']);
-execFileSync(process.execPath, [path.join(ui, 'bin/cli.js'), '--help']);
+execFileSync(process.execPath, [path.join(core, 'bin/dep-blame-ui.js'), '--help']);
 const {runDepBlame} = await import(pathToFileURL(path.join(core, 'dist/index.js')));
-const {startServer} = await import(pathToFileURL(path.join(ui, 'src/server.js')));
+const {startServer} = await import(pathToFileURL(path.join(core, 'ui/server.js')));
 const repo = await createTestRepo();
 let instance;
 try {
@@ -31,7 +35,7 @@ try {
   assert.equal((await fetch(`${instance.url}/app.js`)).status, 200);
   const data = await (await fetch(`${instance.url}/api/events`)).json();
   assert.equal(data.events.length, 2);
-  console.log('Installed core and UI tarballs: CLI, engine, API, font, CSP, and LICENSE smoke checks passed.');
+  console.log('Installed dep-blame tarball: CLI, UI bins, engine, API, font, CSP, and LICENSE smoke checks passed.');
 } finally {
   if (instance) await instance.close();
   repo.cleanup();

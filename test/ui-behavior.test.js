@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const html = fs.readFileSync(new URL('../packages/ui/src/index.html', import.meta.url), 'utf8');
-const script = fs.readFileSync(new URL('../packages/ui/src/app.js', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../packages/core/ui/index.html', import.meta.url), 'utf8');
+const script = fs.readFileSync(new URL('../packages/core/ui/app.js', import.meta.url), 'utf8');
 
 // Execute the actual client with a controlled stream and a minimal DOM adapter.
 // Layout and popover interactions are checked separately in a real browser.

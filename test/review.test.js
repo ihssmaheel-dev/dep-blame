@@ -17,8 +17,9 @@ import { parsePnpmLockfiles } from '../packages/core/dist/manifest/lockfiles/pnp
 import { resolveWorkspaceManifests } from '../packages/core/dist/manifest/detect.js';
 import { renderCsv } from '../packages/core/dist/render/csv.js';
 import { runDepBlame } from '../packages/core/dist/engine.js';
-import { startServer } from '../packages/ui/src/server.js';
+import { startServer } from '../packages/core/ui/server.js';
 import { createTestRepo } from './helpers/git-fixture.js';
+import { isYamlAvailable } from './helpers/yaml-available.js';
 import { getManifestCommits } from '../packages/core/dist/git/log.js';
 import { batchReadBlobs, resolveBlobOids } from '../packages/core/dist/git/batch.js';
 
@@ -90,8 +91,16 @@ test('review: malformed declarations and corrupt Yarn stay undecodable', async (
   for (const content of ['', '[]', '{"dependencies":[]}', '{"dependencies":"bad"}', '{"dependencies":{"alpha":23}}']) {
     assert.equal(parsePackageJson(content).ok, false, content);
   }
-  for (const content of ['broken', '__metadata: [broken', 'alpha@^1:\n  integrity abc']) {
+  for (const content of ['broken', 'alpha@^1:\n  integrity abc']) {
     assert.equal((await parseYarnLockfile(content)).ok, false, content);
+  }
+  // Berry-shaped input needs the optional yaml parser; without it the
+  // documented contract is a null result (low-fi path), not a crash.
+  const berry = await parseYarnLockfile('__metadata: [broken');
+  if (berry) {
+    assert.equal(berry.ok, false, '__metadata: [broken');
+  } else {
+    assert.ok(!(await isYamlAvailable()), 'Berry parsing must not return null when yaml is installed');
   }
   const pnpm = await parsePnpmLockfiles('importers:\n  .:\n    dependencies:\n      alpha:\n        version: 42\n');
   if (pnpm) assert.equal(pnpm.ok, false);

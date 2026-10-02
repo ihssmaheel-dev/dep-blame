@@ -9,6 +9,7 @@ process.on('warning', (warning) => {
 import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   runDepBlame,
@@ -140,7 +141,7 @@ ${c.bold('COMMANDS:')}
   ${c.cyan('calendar')}                 Month-grid visualization in the terminal
   ${c.cyan('stats')}                    Aggregate counts, churn rate, top modified packages
   ${c.cyan('ci')}                       CI summary view, diffing against base branch
-  ${c.cyan('ui')}                       Launch instructions for the visual web dashboard
+  ${c.cyan('ui')}                       Launch the bundled visual dashboard (same package, no extra install)
   ${c.cyan('added')}                    Filter: only added events
   ${c.cyan('updated')}                  Filter: only updated events
   ${c.cyan('removed')}                  Filter: only removed events
@@ -161,6 +162,9 @@ ${c.bold('OPTIONS:')}
   ${c.yellow('--clear-cache')}            Wipe cached index and perform fresh scan
   ${c.yellow('--no-cache')}               Force full rescan without cache
   ${c.yellow('--cache-dir <path>')}       Override cache storage location
+  ${c.yellow('-p, --port <n>')}           (ui only) Port to listen on (default: 4321)
+  ${c.yellow('--host <addr>')}            (ui only) Bind address (default: 127.0.0.1)
+  ${c.yellow('--no-open')}                (ui only) Do not open the browser automatically
   ${c.yellow('-v, --version')}            Show version number
   ${c.yellow('-h, --help')}               Show this help message
 
@@ -169,6 +173,7 @@ ${c.bold('EXAMPLES:')}
   $ npx dep-blame pkg react
   $ npx dep-blame calendar
   $ npx dep-blame stats
+  $ npx dep-blame ui --port 4321 --no-open
   $ npx dep-blame ci --since origin/main --fail-on-removal
   $ npx dep-blame list --since 30d --workspace web
   $ npx dep-blame --json
@@ -190,6 +195,9 @@ async function main() {
     'clear-cache': { type: 'boolean' },
     'no-cache': { type: 'boolean' },
     'cache-dir': { type: 'string' },
+    port: { type: 'string', short: 'p' },
+    host: { type: 'string' },
+    'no-open': { type: 'boolean' },
     limit: { type: 'string' },
     page: { type: 'string' },
     months: { type: 'boolean' }
@@ -216,12 +224,33 @@ async function main() {
     process.exit(0);
   }
 
+  const subCommand = positionals[0] || 'list';
+
+  if (values.help && subCommand === 'ui') {
+    console.log(`
+${c.bold('dep-blame ui')} — Visual dashboard for git dependency archaeology
+
+${c.bold('USAGE:')}
+  $ dep-blame ui [options]
+  $ dep-blame-ui [options]   (identical alias, same package)
+
+${c.bold('OPTIONS:')}
+  ${c.yellow('-p, --port <port>')}    Port to listen on (default: 4321, 0 = OS-assigned)
+  ${c.yellow('--host <host>')}        Host interface to bind to (default: 127.0.0.1)
+  ${c.yellow('--no-open')}            Do not open the browser automatically
+
+Serves the bundled zero-framework dashboard for the repository in the
+current directory. Loopback-only by default; LAN binds need
+${c.yellow('DEP_BLAME_ALLOW_LAN=1')}. Set ${c.yellow('DEP_BLAME_AVATARS=0')} for fully offline mode.
+`);
+    process.exit(0);
+  }
+
   if (values.help) {
     showHelp();
     process.exit(0);
   }
 
-  const subCommand = positionals[0] || 'list';
   const filter = {};
 
   if (values['direct-only']) {
@@ -275,20 +304,45 @@ async function main() {
   }
 
   if (subCommand === 'ui') {
-    const localUiPath = path.resolve(__dirname, '../../ui/bin/cli.js');
-    if (fs.existsSync(localUiPath)) {
-      const { pathToFileURL } = await import('node:url');
-      await import(pathToFileURL(localUiPath).href);
-      return;
+    // The dashboard ships inside this same package (./ui) — no separate
+    // download. `dep-blame ui` and the `dep-blame-ui` bin alias are identical.
+    const { startServer } = await import('../ui/server.js');
+
+    const portRaw = values.port ? String(values.port).trim() : '4321';
+    const port = Number(portRaw);
+    if (!/^\d+$/.test(portRaw) || !Number.isInteger(port) || port < 0 || port > 65535) {
+      console.error(c.red(`Invalid --port value: "${values.port}". Use 0-65535.`));
+      process.exit(1);
     }
-    console.log(`
-${c.bold('Launch the dep-blame visual dashboard:')}
+    const host = values.host || '127.0.0.1';
+    if (typeof host !== 'string' || !/^[a-zA-Z0-9.:\[\]-]+$/.test(host) || host.length > 255) {
+      console.error(c.red(`Invalid --host value: "${values.host}".`));
+      process.exit(1);
+    }
 
-  ${c.green('$ npx @dep-blame/ui')}
-
-Runs a zero-config local dashboard (100% offline, zero-framework, sub-30KB).
-`);
-    process.exit(0);
+    try {
+      const { url } = await startServer({ port, host, cwd: process.cwd() });
+      console.log(`\n  ${c.bold(c.cyan('dep-blame UI'))} is running at: ${c.bold(c.green(url))}\n`);
+      console.log(`  Press Ctrl+C to stop the server.\n`);
+      if (!values['no-open']) {
+        // argv only, no shell interpolation, so --host can't inject commands.
+        try {
+          if (process.platform === 'win32') {
+            execFile('cmd', ['/c', 'start', '', url], { windowsHide: true }, () => {});
+          } else if (process.platform === 'darwin') {
+            execFile('open', [url], { windowsHide: true }, () => {});
+          } else {
+            execFile('xdg-open', [url], { windowsHide: true }, () => {});
+          }
+        } catch {
+          // Browser launch is best-effort.
+        }
+      }
+    } catch (err) {
+      console.error(c.red(`Failed to start UI server: ${stripControl(err.message)}`));
+      process.exit(1);
+    }
+    return;
   }
 
   if (subCommand === 'ci') {

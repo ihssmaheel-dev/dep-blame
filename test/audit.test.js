@@ -12,6 +12,7 @@ import { resolveBlobOids } from '../packages/core/dist/git/batch.js';
 import { JsonStore } from '../packages/core/dist/cache/json-store.js';
 import { resolveWorkspaceManifests } from '../packages/core/dist/manifest/detect.js';
 import { renderCsv } from '../packages/core/dist/render/csv.js';
+import { isYamlAvailable } from './helpers/yaml-available.js';
 
 const execFileAsync = promisify(execFile);
 const pkg = (deps) => ({ name: 'app', dependencies: deps });
@@ -218,6 +219,18 @@ test('audit: pnpm workspace deps attributed per importer', async () => {
     );
 
     const res = await runDepBlame({ cwd: repo.repoDir, silent: true });
+    if (!(await isYamlAvailable())) {
+      // --omit=optional contract: without the yaml parser the engine must
+      // emit one low-fidelity lockfile event plus an install hint —
+      // "something happened here", never silence, never fake removals.
+      const lowfi = res.events.find((e) => e.package === '(lockfile)');
+      assert.ok(lowfi, 'missing yaml must degrade to a low-fidelity lockfile event');
+      assert.equal(lowfi.source, 'lockfile');
+      assert.equal(lowfi.manifest, 'pnpm-lock.yaml');
+      assert.ok(res.warnings.some((w) => w.includes('yaml')), 'missing yaml must warn with an install hint');
+      assert.ok(!res.events.some((e) => e.type === 'removed'), 'fallback must not invent removals');
+      return;
+    }
     const b = res.events.find((e) => e.package === 'b');
     assert.ok(b, 'workspace importer dep must not disappear');
     assert.equal(b.manifest, 'packages/app/package.json');

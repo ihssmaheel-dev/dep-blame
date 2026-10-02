@@ -4,13 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { startServer } from '../packages/ui/src/server.js';
+import { startServer } from '../packages/core/ui/server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 test('ui: enforces HTML size budget (<100KB uncompressed, <30KB gzipped)', () => {
-  const htmlPath = path.join(__dirname, '../packages/ui/src/index.html');
+  const htmlPath = path.join(__dirname, '../packages/core/ui/index.html');
   const content = fs.readFileSync(htmlPath);
   const gzipped = zlib.gzipSync(content);
 
@@ -22,16 +22,16 @@ test('ui: enforces HTML size budget (<100KB uncompressed, <30KB gzipped)', () =>
 });
 
 test('ui: served bundle stays small with gzip transfer', async () => {
-  const htmlPath = path.join(__dirname, '../packages/ui/src/index.html');
-  const jsPath = path.join(__dirname, '../packages/ui/src/app.js');
+  const htmlPath = path.join(__dirname, '../packages/core/ui/index.html');
+  const jsPath = path.join(__dirname, '../packages/core/ui/app.js');
   const total = fs.readFileSync(htmlPath).length + fs.readFileSync(jsPath).length;
   const gzipped = zlib.gzipSync(fs.readFileSync(htmlPath)).length + zlib.gzipSync(fs.readFileSync(jsPath)).length;
   assert.ok(gzipped < 40 * 1024, `UI gzip transfer exceeds 40KB: ${gzipped} bytes (raw ${total})`);
 });
 
 test('ui: no inline event handlers remain in served markup or script', () => {
-  const html = fs.readFileSync(path.join(__dirname, '../packages/ui/src/index.html'), 'utf8');
-  const js = fs.readFileSync(path.join(__dirname, '../packages/ui/src/app.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../packages/core/ui/index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '../packages/core/ui/app.js'), 'utf8');
   assert.ok(!/onclick\s*=/.test(html), 'index.html must not contain inline onclick');
   assert.ok(!/onclick\s*=/.test(js), 'app.js must not interpolate inline onclick');
   assert.ok(!/onerror\s*=/.test(js), 'app.js must not interpolate inline onerror');
@@ -40,7 +40,7 @@ test('ui: no inline event handlers remain in served markup or script', () => {
 });
 
 test('ui: bundled fonts stay small and serve correctly', async () => {
-  const fontsDir = path.join(__dirname, '../packages/ui/src/fonts');
+  const fontsDir = path.join(__dirname, '../packages/core/ui/fonts');
   const files = fs.readdirSync(fontsDir).filter((f) => f.endsWith('.woff2')).sort();
   assert.ok(files.length >= 1, 'expected bundled woff2 fonts');
 
@@ -112,7 +112,6 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     assert.ok(Array.isArray(data.events));
     assert.ok(data.workspacePackages && typeof data.workspacePackages === 'object');
     assert.equal(data.workspacePackages['dep-blame'], 'packages/core');
-    assert.equal(data.workspacePackages['@dep-blame/ui'], 'packages/ui');
     assert.ok(data.authors && typeof data.authors === 'object');
     assert.ok(data.authors['Mohamed Ismail S']);
     assert.equal(data.authors['Mohamed Ismail S'].username, '');

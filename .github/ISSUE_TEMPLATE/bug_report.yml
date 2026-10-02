@@ -48,6 +48,6 @@ body:
     attributes:
       label: Pre-checks
       options:
-        - label: Retried with `fetch-depth: 0` (rules out shallow clones)
-        - label: Retried with `--no-cache` or `--clear-cache` (rules out stale cache)
-        - label: No secrets, tokens, or private emails included above
+        - label: "Retried with fetch-depth: 0 (rules out shallow clones)"
+        - label: "Retried with --no-cache or --clear-cache (rules out stale cache)"
+        - label: "No secrets, tokens, or private emails included above"

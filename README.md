@@ -74,7 +74,7 @@ It never writes to `package.json`, never upgrades anything, never phones home. I
 | **Incremental cache** | SQLite (`node:sqlite`) with JSON fallback; warm runs skip re-walking history |
 | **Monorepos** | Root + workspace manifests tracked independently; bulk bumps collapse by default |
 | **Lockfiles** | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock` (see [honesty rules](#package-manager-and-lockfile-support)) |
-| **Dashboard** | Zero-framework local web UI (`@dep-blame/ui`) with table, calendar, drawer, search, and filters |
+| **Dashboard** | Zero-framework local web UI bundled in the same package — `dep-blame ui` for table, calendar, drawer, search, and filters |
 | **Security** | Loopback-only server, strict Host/Origin checks, CSP with no inline scripts, proxied avatars, no emails/tokens in browser payloads |
 
 ---
@@ -100,16 +100,15 @@ No installation is required. Run it directly:
 
 ```bash
 npx dep-blame
-npx @dep-blame/ui      # dashboard, separate package
+npx dep-blame ui       # dashboard, bundled in the same package
 ```
 
 Or install globally for repeated use:
 
 ```bash
 npm install -g dep-blame
-npm install -g @dep-blame/ui
 dep-blame --help
-dep-blame-ui --help
+dep-blame ui --help   # or: dep-blame-ui --help (identical alias, same package)
 ```
 
 Or add as a dev dependency for CI and scripts:
@@ -147,8 +146,8 @@ npx dep-blame ci --since origin/main
 npx dep-blame --json > history.json
 npx dep-blame --csv > history.csv
 
-# Local visual dashboard (separate package)
-npx @dep-blame/ui
+# Local visual dashboard (bundled — no extra install)
+npx dep-blame ui
 ```
 
 Typical table output:
@@ -182,7 +181,7 @@ dep-blame [command] [options]
 | `removed` | Only `removed` events |
 | `changes` | Time-windowed list (use with `--since 30d`) |
 | `ci` | CI summary diffing a ref or time window (see [CI mode](#ci-mode)) |
-| `ui` | Print how to launch the dashboard (`npx @dep-blame/ui`) |
+| `ui` | Launch the bundled visual dashboard (`dep-blame ui --port 4321 --no-open`) |
 
 > Why `pkg <name>` instead of a bare name? A bare positional collides with subcommand names (`list`, `stats`, `calendar`, …). Namespacing removes the ambiguity entirely.
 
@@ -204,6 +203,9 @@ dep-blame [command] [options]
 | `--clear-cache` | Wipe the index and rescan from scratch |
 | `--no-cache` | Scan a throwaway store; never read, write, or duplicate the real cache |
 | `--cache-dir <path>` | Override cache location (useful for read-only `.git` in CI) |
+| `-p, --port <n>` | *(ui only)* Port to listen on (default: 4321) |
+| `--host <addr>` | *(ui only)* Bind address (default: 127.0.0.1) |
+| `--no-open` | *(ui only)* Do not open the browser automatically |
 | `-v, --version` | Print version |
 | `-h, --help` | Print help |
 
@@ -411,11 +413,12 @@ Honesty rules (these are deliberate, not gaps):
 
 ## Web dashboard
 
-The dashboard is a separate package with zero framework, zero bundler, and a sub-40KB gzipped bundle:
+The dashboard ships **bundled in the same `dep-blame` package** — zero framework, zero bundler, sub-40KB gzipped bundle, no extra install. CLI-only users never touch it; visual users launch it with one command:
 
 ```bash
-npx @dep-blame/ui
-npx @dep-blame/ui --port 4321 --host 127.0.0.1 --no-open
+dep-blame ui
+dep-blame ui --port 4321 --host 127.0.0.1 --no-open
+dep-blame-ui --port 4321   # identical alias, same package
 ```
 
 | Flag | Description |
@@ -514,7 +517,7 @@ Large histories: prefer `--limit`/`--page`/`--months` (CLI) and `/api/events/pag
 | `Another scan in progress` | Wait for the other scan (locks release automatically; stale dead-process locks are reclaimed) |
 | `yaml parser isn't installed` | `npm install yaml` (or reinstall without `--omit=optional`) |
 | `binary bun.lockb` warning | Expected: text `bun.lock` is parsed; binary lockb history stays on `package.json` declarations |
-| Pagination footer hidden (mobile) | Fixed: the pager is a pinned card footer with viewport-bound table height on all screen sizes — update `@dep-blame/ui` |
+| Pagination footer hidden (mobile) | Fixed: the pager is a pinned card footer with viewport-bound table height on all screen sizes — update `dep-blame` |
 | Read-only `.git` in CI | Pass `--cache-dir` to a writable path |
 
 ---
@@ -533,20 +536,19 @@ Documented honestly so a limited release stays trustworthy:
 ## Repository layout
 
 ```text
-dep-blame/
+dep-blame/                  # single publishable package: `dep-blame`
 ├── packages/
-│   ├── core/               # published as `dep-blame` — engine + zero-dependency CLI
-│   │   ├── bin/cli.js
-│   │   └── src/
-│   │       ├── engine.ts       # pipeline orchestration
-│   │       ├── git/            # log, batch blob reads, repo state
-│   │       ├── manifest/       # package.json + npm/pnpm/yarn/bun parsers
-│   │       ├── diff/           # snapshot diff → DependencyEvent[]
-│   │       ├── cache/          # SQLite + JSON stores, generation pointer, locks
-│   │       └── render/         # table, calendar, stats, archaeology, json, csv, ci
-│   └── ui/                 # published as `@dep-blame/ui` — vanilla dashboard
-│       ├── bin/cli.js
-│       └── src/server.js, app.js, index.html, forge.js, fonts/
+│   └── core/               # engine + zero-dependency CLI + bundled dashboard
+│       ├── bin/cli.js          # `dep-blame` entrypoint
+│       ├── bin/dep-blame-ui.js # `dep-blame-ui` alias (same package)
+│       ├── ui/                 # dashboard: server.js, app.js, index.html, forge.js, fonts/
+│       └── src/
+│           ├── engine.ts       # pipeline orchestration
+│           ├── git/            # log, batch blob reads, repo state
+│           ├── manifest/       # package.json + npm/pnpm/yarn/bun parsers
+│           ├── diff/           # snapshot diff → DependencyEvent[]
+│           ├── cache/          # SQLite + JSON stores, generation pointer, locks
+│           └── render/         # table, calendar, stats, archaeology, json, csv, ci
 ├── test/                   # 81 real-git-fixture tests (node:test, no mocks of git)
 ├── scripts/test.mjs
 └── dep-blame.md            # full architecture spec and audit log

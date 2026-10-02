@@ -12,6 +12,7 @@ npx dep-blame                 # chronological event list
 npx dep-blame pkg react       # full lifecycle of one package
 npx dep-blame calendar        # terminal month grid
 npx dep-blame stats           # churn statistics
+npx dep-blame ui              # visual dashboard (bundled, no extra install)
 npx dep-blame ci --since origin/main --fail-on-removal
 npx dep-blame list --limit 50 --json
 ```
@@ -31,7 +32,7 @@ Full documentation (CLI reference, CI, cache, monorepos, dashboard, API, trouble
 | `added` / `updated` / `removed` | Type-filtered lists |
 | `changes` | Time-windowed list (with `--since 30d`) |
 | `ci` | PR-scoped summary for review gates |
-| `ui` | Dashboard launch instructions |
+| `ui` | Launch the bundled visual dashboard (`--port`, `--host`, `--no-open`) |
 
 ## Options
 
@@ -48,6 +49,19 @@ Full documentation (CLI reference, CI, cache, monorepos, dashboard, API, trouble
 | `--fail-on-removal` | *(CI)* exit `1` when a removal is detected (exit `2` = unresolvable base) |
 | `--clear-cache` / `--no-cache` | Rebuild index / scan a throwaway store |
 | `--cache-dir <path>` | Override cache location (`<git-common-dir>/dep-blame/` by default) |
+| `-p, --port <n>` / `--host <addr>` / `--no-open` | *(ui only)* Dashboard serve options |
+
+## Dashboard (bundled)
+
+The zero-framework visual dashboard ships inside this same package — timeline table, calendar, per-package archaeology drawer, search, filters, JSON export, dark/light themes. No extra install:
+
+```bash
+dep-blame ui
+dep-blame ui --port 4321 --host 127.0.0.1 --no-open
+dep-blame-ui --port 4321   # identical alias, same package
+```
+
+Loopback-only by default (`DEP_BLAME_ALLOW_LAN=1` for LAN), strict Host/Origin checks, CSP without inline scripts, no emails or tokens in browser payloads. `DEP_BLAME_AVATARS=0` disables all hosting requests for fully offline mode. Full endpoint and configuration reference: [dep-blame on GitHub](https://github.com/ihssmaheel-dev/dep-blame#web-dashboard).
 
 ## Supported formats
 
