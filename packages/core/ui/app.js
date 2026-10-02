@@ -55,7 +55,10 @@
   }
 
   function setTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
+    const root = document.documentElement;
+    // One-frame swap without per-element transitions (the toggle lag).
+    root.classList.add('theme-switching');
+    root.setAttribute('data-theme', theme);
     try { localStorage.setItem('dep-blame-theme', theme); } catch {}
     const darkIcon = document.getElementById('theme-icon-dark');
     const lightIcon = document.getElementById('theme-icon-light');
@@ -66,6 +69,9 @@
     darkIcon.style.display = 'none';
     lightIcon.style.display = 'block';
     }
+    // Flush styles while the guard is on, then lift it next frame.
+    void root.offsetHeight;
+    requestAnimationFrame(() => root.classList.remove('theme-switching'));
   }
 
   function getAuthorDetails(author, commit) {
@@ -1478,6 +1484,37 @@
   }
 
   // Archaeology Drawer
+  // Groups one package's events into per-commit lifecycle nodes (same
+  // semantics as the CLI renderer): a rollout in ten workspaces is one
+  // lifecycle step, not twenty rows. Render-only; allEvents stays complete.
+  function groupLifecycleNodes(pkgEvents) {
+    const nodes = [], byCommit = new Map();
+    const keyOf = ch => ch.type + '|' + (ch.from || '') + '|' + (ch.to || '') + '|' + (ch.depType || '') + '|' + (ch.depTypeFrom || '');
+    for (const ev of pkgEvents) {
+      const key = ev.commitFull || ev.commit;
+      let node = byCommit.get(key);
+      if (!node) {
+        node = { commit: ev.commit, commitFull: ev.commitFull, date: ev.date, author: ev.author, message: ev.message, manifests: [], declared: [], resolved: [], headline: ev.type };
+        byCommit.set(key, node);
+        nodes.push(node);
+      }
+      if (ev.manifest && !node.manifests.includes(ev.manifest)) node.manifests.push(ev.manifest);
+      const list = ev.source === 'lockfile' ? node.resolved : node.declared;
+      const k = keyOf(ev);
+      let ch = list.find(c => c.k === k);
+      if (!ch) {
+        ch = { k, type: ev.type, from: ev.from, to: ev.to, depType: ev.depType, depTypeFrom: ev.depTypeFrom, manifests: [] };
+        list.push(ch);
+      }
+      if (ev.manifest && !ch.manifests.includes(ev.manifest)) ch.manifests.push(ev.manifest);
+    }
+    for (const node of nodes) {
+      const types = new Set([...node.declared, ...node.resolved].map(ch => ch.type));
+      node.headline = types.size === 1 ? [...types][0] : 'mixed';
+    }
+    return nodes;
+  }
+
   function openArchaeology(pkgName) {
     drawerReturnFocus = document.activeElement;
     selectedPkgName = pkgName;
@@ -1607,7 +1644,8 @@
     // Stats strip
     const changesCountElem = document.getElementById('drawer-changes-count');
     if (changesCountElem) {
-    changesCountElem.textContent = `${pkgEvents.length} ${pkgEvents.length === 1 ? 'change' : 'changes'}`;
+    const lifecycleNodes = groupLifecycleNodes(pkgEvents);
+    changesCountElem.textContent = `${pkgEvents.length} ${pkgEvents.length === 1 ? 'change' : 'changes'} across ${lifecycleNodes.length} ${lifecycleNodes.length === 1 ? 'commit' : 'commits'}`;
     }
 
     const firstDateElem = document.getElementById('drawer-first-date');
@@ -1622,37 +1660,38 @@
     }
 
     const timeline = document.getElementById('drawer-timeline');
-    timeline.innerHTML = pkgEvents.map(ev => {
-    const dateStr = eventDateKey(ev);
-    let actionSymbol = '';
-    if (ev.type === 'added') actionSymbol = '+';
-    else if (ev.type === 'removed') actionSymbol = '–';
-    else actionSymbol = '↑';
-
-    let actionText = '';
-    if (ev.type === 'added') actionText = `Added version <span style="color: var(--color-added)">${escapeHtml(ev.to || '')}</span>`;
-    else if (ev.type === 'removed') actionText = `Removed dependency (was ${escapeHtml(ev.from || '')})`;
-    else actionText = `Updated ${escapeHtml(ev.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ev.to || '')}</span>`;
-    if (ev.depTypeFrom && ev.depTypeFrom !== ev.depType) actionText += ` · ${escapeHtml(ev.depTypeFrom)} → ${escapeHtml(ev.depType)}`;
-
-    const authorInfo = getAuthorDetails(ev.author, ev.commitFull);
+    const changeHtml = ch => {
+      const v = ch.type === 'added' ? `Added version <span style="color: var(--color-added)">${escapeHtml(ch.to || '')}</span>`
+        : ch.type === 'removed' ? `Removed dependency (was ${escapeHtml(ch.from || '')})`
+        : `Updated ${escapeHtml(ch.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ch.to || '')}</span>`;
+      const move = ch.depTypeFrom && ch.depTypeFrom !== ch.depType ? ` · ${escapeHtml(ch.depTypeFrom)} → ${escapeHtml(ch.depType)}` : '';
+      const section = ch.depType && ch.depType !== 'dependencies' ? ` <span style="color: var(--color-text-secondary)">(${escapeHtml(ch.depType)})</span>` : '';
+      return `${v}${move}${section}`;
+    };
+    const groupHtml = (label, changes) => changes.length ? changes.map(ch =>
+      `<div class="node-version"><span style="color: var(--color-text-secondary)">${label}:</span> ${changeHtml(ch)} <span style="font-family: var(--font-mono); color: var(--color-text-secondary)">[${ch.manifests.map(escapeHtml).join(', ')}]</span></div>`
+    ).join('') : '';
+    timeline.innerHTML = groupLifecycleNodes(pkgEvents).map(node => {
+    const symbol = node.headline === 'added' ? '+' : node.headline === 'removed' ? '–' : node.headline === 'mixed' ? '±' : '↑';
+    const authorInfo = getAuthorDetails(node.author, node.commitFull);
     const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
+    const sources = [node.declared.length ? 'Declared' : '', node.resolved.length ? 'Resolved' : ''].filter(Boolean).join(' + ') || 'Recorded';
 
     return `
-      <div class="timeline-node ${ev.type}">
-      <div class="node-icon">${actionSymbol}</div>
+      <div class="timeline-node ${node.headline}">
+      <div class="node-icon">${symbol}</div>
       <div class="node-card">
         <div class="node-meta">
-        <span>${dateStr}</span>
-        <button class="commit-tag" data-commit="${escapeHtml(ev.commit)}" data-full="${escapeHtml(ev.commitFull || ev.commit)}" title="${escapeHtml(ev.message || '')} (${remoteUrl ? 'open in repository' : 'click to copy'})">${escapeHtml(ev.commit)}</button>
+        <span>${eventDateKey(node)}</span>
+        <button class="commit-tag" data-commit="${escapeHtml(node.commit)}" data-full="${escapeHtml(node.commitFull || node.commit)}" title="${escapeHtml(node.message || '')} (${remoteUrl ? 'open in repository' : 'click to copy'})">${escapeHtml(node.commit)}</button>
         </div>
-        <div class="node-version">${actionText}</div>
-        <div class="node-msg">${escapeHtml(ev.message || 'No commit message')}</div>
+        ${groupHtml('Declared', node.declared)}${groupHtml('Resolved', node.resolved)}
+        <div class="node-msg">${escapeHtml(node.message || 'No commit message')}</div>
         <div data-author-entry style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 7px;">
-        <div class="author-avatar-wrapper" data-author-commit="${escapeHtml(ev.commitFull || ev.commit)}" style="width: 18px; height: 18px;">
+        <div class="author-avatar-wrapper" data-author-commit="${escapeHtml(node.commitFull || node.commit)}" style="width: 18px; height: 18px;">
           <div class="author-avatar-fallback" style="font-size: 9px; display: flex;">${escapeHtml(authorInitial)}</div>
         </div>
-        <span>by ${renderAuthorName(ev.author, ev.commitFull || ev.commit)} · ${ev.source === 'lockfile' ? 'Resolved' : 'Declared'} in <span style="font-family: var(--font-mono)">${escapeHtml(ev.manifest)}</span></span>
+        <span>by ${renderAuthorName(node.author, node.commitFull || node.commit)} · ${sources} in ${node.manifests.length} ${node.manifests.length === 1 ? 'manifest' : 'manifests'}</span>
         </div>
       </div>
       </div>
@@ -2000,9 +2039,16 @@
     if (historyTruncated || historyWarnings.length) md += 'History contains scan warnings; consult the JSON export for details.\n\n';
     md += `| Date | Action | Source | Manifest | From | To | Commit | Author |\n`;
     md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
-    for (const ev of pkgEvents) {
-    const d = eventDateKey(ev);
-    md += `| ${[d, ev.type, ev.source || 'manifest', ev.manifest, ev.from, ev.to, ev.commitFull || ev.commit, ev.author].map(mdCell).join(' | ')} |\n`;
+    // One row per commit per distinct change (manifests joined): the same
+    // grouping as the drawer timeline, so a ten-workspace rollout is two
+    // rows (declared + resolved), not twenty. Full fidelity stays in JSON.
+    for (const node of groupLifecycleNodes(pkgEvents)) {
+    const d = eventDateKey(node);
+    for (const [source, changes] of [['manifest', node.declared], ['lockfile', node.resolved]]) {
+      for (const ch of changes) {
+        md += `| ${[d, ch.type, source, ch.manifests.join(', '), ch.from, ch.to, node.commitFull || node.commit, node.author].map(mdCell).join(' | ')} |\n`;
+      }
+    }
     }
     copyText(md, `Copied ${selectedPkgName} markdown changelog!`);
   });

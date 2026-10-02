@@ -26,7 +26,11 @@ test('ui: served bundle stays small with gzip transfer', async () => {
   const jsPath = path.join(__dirname, '../packages/core/ui/app.js');
   const total = fs.readFileSync(htmlPath).length + fs.readFileSync(jsPath).length;
   const gzipped = zlib.gzipSync(fs.readFileSync(htmlPath)).length + zlib.gzipSync(fs.readFileSync(jsPath)).length;
-  assert.ok(gzipped < 40 * 1024, `UI gzip transfer exceeds 40KB: ${gzipped} bytes (raw ${total})`);
+  // 44 KiB: still ~1/3 of any framework baseline. Raised from 40 KiB for two
+  // user-required additions that cannot shrink further — the full-detail
+  // GitHub brand mark (~1.1 KiB gzipped) and per-commit lifecycle grouping
+  // (~1.3 KiB gzipped). The gate keeps blocking dependency creep.
+  assert.ok(gzipped < 44 * 1024, `UI gzip transfer exceeds 44KB: ${gzipped} bytes (raw ${total})`);
 });
 
 test('ui: no inline event handlers remain in served markup or script', () => {
@@ -102,6 +106,12 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
     for (const phase of ['initializing', 'discovering', 'reading_commits', 'analyzing', 'saving', 'complete']) {
       assert.ok(htmlBody.includes(`data-phase="${phase}"`), `missing progress phase: ${phase}`);
     }
+
+    // Header GitHub link: same styling as actions, safe new-tab navigation.
+    assert.ok(htmlBody.includes('id="github-link"'), 'missing header GitHub link');
+    assert.ok(htmlBody.includes('href="https://github.com/ihssmaheel-dev/dep-blame"'), 'GitHub link points at the project repo');
+    assert.ok(htmlBody.includes('target="_blank"'), 'GitHub link opens in a new tab');
+    assert.ok(htmlBody.includes('rel="noopener noreferrer"'), 'GitHub link must use noopener');
 
     // 2. Test GET /api/events
     const apiRes = await fetch(`${url}/api/events`);

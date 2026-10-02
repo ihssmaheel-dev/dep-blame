@@ -1,7 +1,7 @@
 export * from './types.js';
 export { runDepBlame } from './engine.js';
 export { renderEventTable } from './render/table.js';
-export { renderArchaeologyView } from './render/archaeology.js';
+export { renderArchaeologyView, groupLifecycleNodes, type LifecycleNode, type LifecycleChange } from './render/archaeology.js';
 export { renderCalendarView, eventDayKey } from './render/calendar.js';
 export { renderStatsView } from './render/stats.js';
 export { renderCiSummary } from './render/ci.js';

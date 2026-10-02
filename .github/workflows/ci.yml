@@ -42,5 +42,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-      - run: npm ci --omit=optional
+      - run: npm ci
+      # Exercise the --omit=optional runtime contract (missing `yaml` parser)
+      # without breaking the build: a bare `npm ci --omit=optional` would also
+      # strip TypeScript's platform binaries (@typescript/typescript-linux-x64),
+      # which `npm run build` (pretest) needs. So install fully, then remove
+      # only the optional dependency under test.
+      - run: rm -rf node_modules/yaml packages/core/node_modules/yaml
       - run: npm test

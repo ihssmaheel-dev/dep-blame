@@ -975,7 +975,8 @@ can exceed one request deadline; this does not block history rendering.
 
 `DEP_BLAME_AVATARS=0` restores fully offline behavior. Private forge origins,
 SSH/web URL differences, subpath deployments and private API access can be
-configured using the settings documented in `packages/ui/README.md`. Tokens
+configured using the settings documented in `README.md` (§Web dashboard,
+§Configuration). Tokens
 stay server-side and require HTTPS. Do not disable TLS verification for a local
 CA; configure Node's trusted CA instead.
 

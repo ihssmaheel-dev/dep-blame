@@ -413,7 +413,7 @@ Honesty rules (these are deliberate, not gaps):
 
 ## Web dashboard
 
-The dashboard ships **bundled in the same `dep-blame` package** — zero framework, zero bundler, sub-40KB gzipped bundle, no extra install. CLI-only users never touch it; visual users launch it with one command:
+The dashboard ships **bundled in the same `dep-blame` package** — zero framework, zero bundler, ~43KB gzipped bundle, no extra install. CLI-only users never touch it; visual users launch it with one command:
 
 ```bash
 dep-blame ui

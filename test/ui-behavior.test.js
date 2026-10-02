@@ -152,3 +152,44 @@ test('ui behavior: manifest selection matches the full path and profiles never g
   ui.run("authorProfiles.set('unsafe', {profile: {profileUrl: 'javascript:alert(1)'}});");
   assert.ok(!ui.run("renderAuthorName('Fixture author', 'unsafe')").includes('<a'));
 });
+
+test('ui behavior: archaeology drawer groups same-commit evidence into one node', () => {
+  const ui = client();
+  const fixture = [
+    { package: '@types/node', type: 'added', to: '^26.6.3', date: '2026-10-02T12:00:00Z', commit: 'abc1234', commitFull: 'a'.repeat(40), author: 'Dev', message: 'add workspaces', manifest: 'package.json', depType: 'devDependencies', source: 'manifest' },
+    { package: '@types/node', type: 'added', to: '^26.6.3', date: '2026-10-02T12:00:00Z', commit: 'abc1234', commitFull: 'a'.repeat(40), author: 'Dev', message: 'add workspaces', manifest: 'packages/app/package.json', depType: 'devDependencies', source: 'manifest' },
+    { package: '@types/node', type: 'added', to: '26.6.3', date: '2026-10-02T12:00:00Z', commit: 'abc1234', commitFull: 'a'.repeat(40), author: 'Dev', message: 'add workspaces', manifest: 'package.json', depType: 'devDependencies', source: 'lockfile' },
+    { package: '@types/node', type: 'added', to: '26.6.3', date: '2026-10-02T12:00:00Z', commit: 'abc1234', commitFull: 'a'.repeat(40), author: 'Dev', message: 'add workspaces', manifest: 'packages/app/package.json', depType: 'devDependencies', source: 'lockfile' },
+    { package: '@types/node', type: 'updated', from: '^26.6.3', to: '^26.7.0', date: '2026-10-03T12:00:00Z', commit: 'def5678', commitFull: 'b'.repeat(40), author: 'Dev', message: 'bump types', manifest: 'package.json', depType: 'devDependencies', source: 'manifest' }
+  ];
+  ui.run(`globalThis.groupFixture = ${JSON.stringify(fixture)};`);
+  assert.equal(ui.run('groupLifecycleNodes(groupFixture).length'), 2);
+  assert.equal(ui.run('groupLifecycleNodes(groupFixture)[0].manifests.length'), 2);
+  assert.equal(ui.run('groupLifecycleNodes(groupFixture)[0].declared.length'), 1);
+  assert.equal(ui.run('groupLifecycleNodes(groupFixture)[0].resolved.length'), 1);
+  assert.equal(ui.run('groupLifecycleNodes(groupFixture)[0].headline'), 'added');
+
+  // The drawer renders one card per node, with both evidence streams inside.
+  ui.run('allEvents = groupFixture; headStateData = []; headStateComplete = true; openArchaeology("@types/node");');
+  const timelineHtml = ui.nodes.get('drawer-timeline').innerHTML;
+  assert.equal(timelineHtml.split('node-card').length - 1, 2);
+  assert.ok(timelineHtml.includes('Declared:'));
+  assert.ok(timelineHtml.includes('Resolved:'));
+  assert.ok(timelineHtml.includes('packages/app/package.json'));
+  assert.equal(ui.nodes.get('drawer-changes-count').textContent, '5 changes across 2 commits');
+});
+
+test('ui behavior: theme toggle swaps in one repaint without transitions', () => {
+  const ui = client();
+  // Adapter localStorage is empty, so the dashboard starts dark.
+  assert.equal(ui.run("document.documentElement.getAttribute('data-theme')"), 'dark');
+  ui.nodes.get('theme-toggle').dispatch('click');
+  assert.equal(ui.run("document.documentElement.getAttribute('data-theme')"), 'light');
+  // The transition guard is applied synchronously around the swap (the rAF
+  // stub never fires here, so it stays on — exactly what we assert).
+  assert.equal(ui.run("document.documentElement.classList.contains('theme-switching')"), true);
+  assert.equal(ui.nodes.get('theme-icon-dark').style.display, 'none');
+  assert.equal(ui.nodes.get('theme-icon-light').style.display, 'block');
+  // And the stylesheet honors the guard instead of animating every element.
+  assert.match(html, /html\.theme-switching[^}]*transition:\s*none/);
+});

@@ -22,6 +22,8 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 
 ### Fixed
 
+- Package archaeology (`dep-blame pkg`, dashboard drawer, Markdown export) groups same-commit manifest + lockfile evidence into one lifecycle node per commit: a dependency added in ten workspaces reads as one step (declared + resolved lines, manifests listed) instead of twenty rows. `--json`/`--csv` stay complete; grouping is render-only.
+
 - Guarded `InvalidBaselineError` retry (single rescan, then a clear `--clear-cache` error) instead of unbounded recursion.
 - Historic discovery: any `node_modules` segment filtered (was only `node_modules/.`); over-long paths mark history `truncated` instead of silently partial.
 - `JsonStore.transaction` deep-copy rollback (was live-reference truncation).
@@ -36,6 +38,7 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 - Cache schema **v3 → v4** (`resolutions`, `ambiguous` columns, new indexes on `type` / `is_direct` / `ambiguous`). Stale caches migrate by rescan.
 - CSV gains `resolutions` and `ambiguous` columns (spreadsheet-safe quoting retained).
 - `test/cache.test.js` asserts the current `CACHE_SCHEMA_VERSION` instead of a hardcoded `'3'`, with a Windows handle-race-tolerant cleanup.
+- Dashboard gzip budget **40 → 44 KiB** (still ~1/3 of any framework baseline): accounts for the full-detail GitHub brand mark and per-commit lifecycle grouping, both irreducible product requirements.
 
 ## [0.1.0] — 2026-09-28
 
