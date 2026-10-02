@@ -9,12 +9,14 @@
   See exactly how your project's dependencies changed over time — what changed, when, by whom, and in which commit.
 </p>
 
-<p align="center">
+<div align="center">
+
 [![npm version](https://img.shields.io/npm/v/dep-blame)](https://www.npmjs.com/package/dep-blame)
 [![node](https://img.shields.io/node/v/dep-blame)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![tests](https://img.shields.io/badge/tests-81%2F81-brightgreen)](#contributing)
-</p>
+
+</div>
 
 ```bash
 npx dep-blame
