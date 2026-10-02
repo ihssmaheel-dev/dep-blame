@@ -10,6 +10,11 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-10-02
+
+First public release: `git blame` for dependencies as a single
+zero-dependency `dep-blame` package (CLI + engine + bundled dashboard).
+
 ### Added
 
 - Single-package distribution: the dashboard now ships bundled inside `dep-blame` (`packages/core/ui/`) — no separate `@dep-blame/ui` download. `dep-blame ui [--port --host --no-open]` launches it, with `dep-blame-ui` as an identical same-package alias bin. The engine is consumed via package self-reference; the tarball carries `bin/`, `dist/`, and `ui/`.
@@ -39,15 +44,6 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 - CSV gains `resolutions` and `ambiguous` columns (spreadsheet-safe quoting retained).
 - `test/cache.test.js` asserts the current `CACHE_SCHEMA_VERSION` instead of a hardcoded `'3'`, with a Windows handle-race-tolerant cleanup.
 - Dashboard gzip budget **40 → 44 KiB** (still ~1/3 of any framework baseline): accounts for the full-detail GitHub brand mark and per-commit lifecycle grouping, both irreducible product requirements.
-
-## [0.1.0] — 2026-09-28
-
-Initial public scaffold:
-
-- `dep-blame` CLI (`list`, `pkg`, `calendar`, `stats`, `ci`, `added`/`updated`/`removed`, `--json`/`--csv`) with zero required runtime dependencies.
-- `@dep-blame/ui` loopback dashboard (vanilla HTML/JS, SSE progress, archaeology drawer, calendar, filters, JSON export).
-- Engine: path-filtered `git log`, single-process `cat-file --batch` with OID skip, incremental SQLite/JSON cache, monorepo workspace tracking, npm/pnpm/yarn/bun parsers with declared-vs-resolved sources.
-- 81 real-git-fixture tests across engine, cache, manifest, CLI, views, UI, forge, and review suites; CI matrix (Ubuntu/Windows/macOS × Node 20/22) plus JSON-fallback and tarball smoke jobs.
 
 [Unreleased]: https://github.com/ihssmaheel-dev/dep-blame/compare/dep-blame-v0.1.0...HEAD
 [0.1.0]: https://github.com/ihssmaheel-dev/dep-blame/releases/tag/dep-blame-v0.1.0
