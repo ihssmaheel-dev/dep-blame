@@ -275,6 +275,35 @@ export async function startServer(options = {}) {
         return;
       }
 
+      // Bundled brand mark (same-origin, immutable). Static artwork with no
+      // scripts — safe to serve as an image under the existing img-src policy.
+      if (req.method === 'GET' && url.pathname === '/logo.svg') {
+        let logoBytes;
+        try {
+          logoBytes = fs.readFileSync(path.join(__dirname, 'logo.svg'));
+        } catch {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Not Found');
+          return;
+        }
+        if (logoBytes.includes('<script')) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('Invalid asset');
+          return;
+        }
+        const { body, headers } = gzipIfAccepted(req, logoBytes, 'image/svg+xml', {
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': CSP
+        });
+        res.writeHead(200, {
+          ...headers,
+          'Content-Length': Buffer.byteLength(body)
+        });
+        res.end(body);
+        return;
+      }
+
       // Bundled Manrope variable font (same-origin, immutable). woff2 is
       // already compressed; served as-is with a year-long cache.
       if (req.method === 'GET' && url.pathname.startsWith('/fonts/')) {

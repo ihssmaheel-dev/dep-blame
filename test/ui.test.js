@@ -26,9 +26,9 @@ test('ui: served bundle stays small with gzip transfer', async () => {
   const jsPath = path.join(__dirname, '../packages/core/ui/app.js');
   const total = fs.readFileSync(htmlPath).length + fs.readFileSync(jsPath).length;
   const gzipped = zlib.gzipSync(fs.readFileSync(htmlPath)).length + zlib.gzipSync(fs.readFileSync(jsPath)).length;
-  // 44 KiB: still ~1/3 of any framework baseline. Raised from 40 KiB for two
-  // user-required additions that cannot shrink further — the full-detail
-  // GitHub brand mark (~1.1 KiB gzipped) and per-commit lifecycle grouping
+  // 44 KiB: still ~1/3 of any framework baseline. Raised from 40 KiB for
+  // irreducible product assets — the full-detail GitHub brand mark and
+  // header logo tile (~1.2 KiB gzipped) and per-commit lifecycle grouping
   // (~1.3 KiB gzipped). The gate keeps blocking dependency creep.
   assert.ok(gzipped < 44 * 1024, `UI gzip transfer exceeds 44KB: ${gzipped} bytes (raw ${total})`);
 });
@@ -107,7 +107,8 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
       assert.ok(htmlBody.includes(`data-phase="${phase}"`), `missing progress phase: ${phase}`);
     }
 
-    // Header GitHub link: same styling as actions, safe new-tab navigation.
+    // Header brand mark + GitHub link.
+    assert.ok(htmlBody.includes('src="/logo.svg"'), 'header must use the bundled brand logo');
     assert.ok(htmlBody.includes('id="github-link"'), 'missing header GitHub link');
     assert.ok(htmlBody.includes('href="https://github.com/ihssmaheel-dev/dep-blame"'), 'GitHub link points at the project repo');
     assert.ok(htmlBody.includes('target="_blank"'), 'GitHub link opens in a new tab');
@@ -131,6 +132,25 @@ test('ui: local server serves HTML page and /api/events JSON endpoint', async ()
       assert.ok(!('email' in author), 'author map must not expose emails');
       assert.ok(!('avatarUrl' in author), 'author map must not contain remote avatars');
     }
+  } finally {
+    await close();
+  }
+});
+
+test('ui: bundled logo serves correctly', async () => {
+  const logoSvg = fs.readFileSync(path.join(__dirname, '../packages/core/ui/logo.svg'), 'utf8');
+  assert.ok(!/<script/i.test(logoSvg), 'logo must not contain scripts');
+  assert.ok(logoSvg.includes('<svg'), 'logo must be an SVG document');
+
+  const { url, close } = await startServer({ port: 0, host: '127.0.0.1', cwd: path.resolve(__dirname, '..') });
+  try {
+    const res = await fetch(`${url}/logo.svg`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/svg+xml');
+    assert.ok((res.headers.get('cache-control') || '').includes('immutable'));
+    const body = await res.text();
+    assert.ok(body.includes('<svg'));
+    assert.ok(!/<script/i.test(body), 'served logo must not contain scripts');
   } finally {
     await close();
   }
