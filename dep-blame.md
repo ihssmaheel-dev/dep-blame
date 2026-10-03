@@ -1261,3 +1261,53 @@ The zero-dependency guarantee is unchanged: the UI adds no entry to the
 core package's `dependencies` (the optional `yaml` parser remains the sole
 `optionalDependencies` entry), and CLI-only installs never execute UI code
 — `../ui/server.js` loads only on the `ui` subcommand path.
+
+
+## 15. Large-history blob batch correction (2026-10-03)
+
+### Reproduced failure
+
+Eight valid workspace manifests with distinct source blobs of slightly more
+than 9 MiB each, separated from a bulk update by a non-manifest commit, produced
+exactly the dashboard SSE error: "Git blob batch exceeds the 64 MiB safety
+limit." The existing main history pass had byte-aware groups, but outside-range
+parent seeding collected all source strings into a map. Incremental seeding and
+HEAD reads had the same aggregate-memory problem. The main pass also rejected
+an individual commit with more than 64 MiB of combined source contents.
+
+### Implemented correction
+
+- Added one-process, incremental Git blob iteration with stdout backpressure.
+  Each yielded file is parsed before the next source body is allocated.
+- Outside-range parent baselines, incremental baselines, and HEAD state now
+  consume this iterator instead of retaining all source strings.
+- Ordinary commits retain 16 MiB byte-packed groups and same-object reuse.
+  Commits larger than that target use the iterator through the same diff logic,
+  processing declarations before lockfiles and preserving first-parent semantics.
+- Seeded snapshots retain resolved object IDs. Multi-importer baseline lockfiles
+  compute their content hash once per file and carry a lock-level identity entry.
+- Consumer cancellation and parser errors close the Git process; timeouts apply
+  to Git I/O stalls rather than time spent parsing yielded contents.
+- Single blobs remain capped at 64 MiB, checked before allocating their body.
+  Oversized-file errors include the manifest path and abbreviated commit.
+  The collecting batchReadBlobs library API remains bounded to 64 MiB in total;
+  streamReadBlobs is exported for consumers with larger aggregate reads.
+
+### Verification and limits
+
+Real Git fixtures cover the previously failing parent batch, a bulk commit
+above 72 MiB, complete cold/warm/incremental HEAD state, dashboard SSE completion
+and JSON, and exact event parity with a CLI --no-cache scan. Reader fixtures
+exercise Unicode, empty/missing objects, duplicate requests, 4,500 request
+backpressure, early cancellation, consumer errors, and a 65 MiB single object.
+
+The source-buffer limit is not a total RSS guarantee: decoded strings, manifest
+parsers, parsed dependency maps, DAG snapshots, events, and cache serialization
+also use memory. A file above 64 MiB still requires a separate parser/large-file
+policy; the scanner reports the limit rather than silently skipping evidence.
+
+Verification on Windows / Node 22.23.2: **89/89 full-suite tests passed**.
+A freshly packed and installed tarball passed the CLI, dashboard, engine, API,
+font, CSP, and LICENSE smoke checks; its compiled engine uses the streamed
+reader and its public package export includes streamReadBlobs. Build and
+whitespace checks passed. This verifies the local build; it is not an npm release.

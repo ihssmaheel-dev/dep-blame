@@ -29,6 +29,11 @@ Zero required runtime dependencies. Node.js ≥ 20. Fully offline — no registr
 
 Full documentation (CLI reference, CI, cache, monorepos, dashboard, API, troubleshooting): [dep-blame on GitHub](https://github.com/ihssmaheel-dev/dep-blame#readme).
 
+Large scans stream baseline and HEAD contents one file at a time; combined
+manifest size may exceed 64 MiB. Individual blobs remain limited to 64 MiB
+before allocation. Library consumers can use the exported `streamReadBlobs`
+async iterator for large totals; `batchReadBlobs` retains a 64 MiB map limit.
+
 ## Commands
 
 | Command | Description |

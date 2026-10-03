@@ -11,150 +11,176 @@ export interface BlobId {
   missing: boolean;
 }
 
+export const MAX_BLOB_BYTES = 64 * 1024 * 1024;
+
+export interface BlobContent {
+  request: BlobRequest;
+  content: string | null;
+  /** Resolved object ID; absent for missing objects. */
+  oid?: string;
+}
+
 /**
- * Batch-reads manifest blobs from git using `git cat-file --batch`.
- * Features chunked stream parsing, backpressure handling, and timeout safeguards.
- *
- * For large histories prefer `resolveBlobOids` + fetching only changed
- * blobs: re-reading an unchanged multi-megabyte lockfile in every commit
- * is the dominant scan cost.
- *
- * @param repoRoot Absolute path to git repository root
- * @param requests Array of commit and path pairs
- * @returns Map of `<commit>:<path>` to file content string (or null if missing)
+ * Collects a small batch into a map. Retained source bytes are capped at
+ * 64 MiB; use streamReadBlobs for arbitrarily large aggregate histories.
  */
 export async function batchReadBlobs(
   repoRoot: string,
   requests: BlobRequest[]
 ): Promise<Map<string, string | null>> {
   const results = new Map<string, string | null>();
-  if (!requests || requests.length === 0) {
-    return results;
+  for await (const { request, content } of readBlobStream(repoRoot, requests, MAX_BLOB_BYTES)) {
+    results.set(request.commit + ':' + request.path, content);
   }
+  return results;
+}
 
-  // To prevent extreme memory pressure, execute in chunks of 4,000 requests if needed
-  const CHUNK_SIZE = 4000;
-  if (requests.length > CHUNK_SIZE) {
-    for (let i = 0; i < requests.length; i += CHUNK_SIZE) {
-      const slice = requests.slice(i, i + CHUNK_SIZE);
-      const partial = await batchReadBlobsChunk(repoRoot, slice);
-      for (const [k, v] of partial) {
-        results.set(k, v);
-      }
-    }
-    return results;
-  }
-
-  return batchReadBlobsChunk(repoRoot, requests);
+/**
+ * Reads one object at a time through one Git process. Awaiting the consumer
+ * applies stdout backpressure; total transfer size does not affect retained
+ * source memory. Individual objects remain limited to 64 MiB. Cancelling or
+ * throwing in a consumer closes the process. The timeout measures Git I/O
+ * stalls, not time spent parsing a yielded manifest.
+ */
+export function streamReadBlobs(repoRoot: string, requests: BlobRequest[]): AsyncGenerator<BlobContent> {
+  return readBlobStream(repoRoot, requests);
 }
 
 function validRequest(req: BlobRequest): boolean {
   return !!req && /^[0-9a-f]{4,64}$/i.test(req.commit) && !!req.path && !/[\r\n\0]/.test(req.path);
 }
 
-function batchReadBlobsChunk(
+async function* readBlobStream(
   repoRoot: string,
-  requests: BlobRequest[]
-): Promise<Map<string, string | null>> {
-  // Repeated requests must not confuse response indexing or duplicate retained strings.
-  if (requests.some(r => !validRequest(r))) return Promise.reject(new Error('Invalid blob request.'));
+  requests: BlobRequest[],
+  maxTotalBytes = Infinity
+): AsyncGenerator<BlobContent> {
+  if (!requests || requests.length === 0) return;
+  if (requests.some(r => !validRequest(r))) throw new Error('Invalid blob request.');
   requests = [...new Map(requests.map(r => [r.commit + ':' + r.path, r])).values()];
-  return new Promise((resolve, reject) => {
-    const child = spawn('git', ['cat-file', '--batch'], {cwd: repoRoot, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']});
-    const results = new Map<string, string | null>();
-    let requestIndex = 0;
-    let headerParts: Buffer[] = [];
-    let headerSize = 0;
-    let body: Buffer | null = null;
-    let bodyOffset = 0;
-    let retainedBytes = 0;
-    let settled = false;
-    let stderr = '';
-    const timeout = setTimeout(() => fail(new Error('git cat-file --batch timed out after 30 seconds.')), 30000);
-    function fail(error: Error) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      child.kill();
-      reject(error);
-    }
-    child.stdout.on('data', (chunk: Buffer) => {
-      if (settled) return;
-      try {
-        let pos = 0;
-        while (pos < chunk.length) {
-          if (requestIndex >= requests.length) throw new Error('Unexpected extra git cat-file response.');
-          if (body === null) {
-            const nl = chunk.indexOf(10, pos);
-            const part = chunk.subarray(pos, nl < 0 ? chunk.length : nl);
-            headerParts.push(part);
-            headerSize += part.length;
-            if (headerSize > 16384) throw new Error('Git object response header is too large.');
-            if (nl < 0) break;
-            const header = Buffer.concat(headerParts, headerSize).toString('utf8');
-            headerParts = [];
-            headerSize = 0;
-            pos = nl + 1;
-            const req = requests[requestIndex];
-            if (header === req.commit + ':' + req.path + ' missing') {
-              results.set(req.commit + ':' + req.path, null);
-              requestIndex++;
-              continue;
-            }
-            const match = /^([0-9a-f]{40,64}) blob (\d+)$/.exec(header);
-            const size = match ? Number(match[2]) : NaN;
-            if (!Number.isSafeInteger(size) || size < 0) throw new Error('Invalid Git blob response.');
-            // A repository must not trigger an unbounded single-object allocation.
-            if (size > 64 * 1024 * 1024) throw new Error('Manifest blob exceeds the 64 MiB safety limit.');
-            retainedBytes += size;
-            if (retainedBytes > 64 * 1024 * 1024) throw new Error('Git blob batch exceeds the 64 MiB safety limit.');
-            body = Buffer.allocUnsafe(size);
-            bodyOffset = 0;
-          }
-          if (bodyOffset < body.length) {
-            const count = Math.min(body.length - bodyOffset, chunk.length - pos);
-            chunk.copy(body, bodyOffset, pos, pos + count);
-            pos += count;
-            bodyOffset += count;
-          }
-          if (bodyOffset === body.length && pos < chunk.length) {
-            if (chunk[pos++] !== 10) throw new Error('Invalid Git blob response terminator.');
-            const req = requests[requestIndex++];
-            results.set(req.commit + ':' + req.path, body.toString('utf8'));
-            body = null;
-          }
-        }
-      } catch (err) { fail(err instanceof Error ? err : new Error(String(err))); }
-    });
-    child.stderr.on('data', (chunk: Buffer) => { if (stderr.length < 8192) stderr += chunk.toString('utf8'); });
-    child.on('error', fail);
-    child.on('close', (code) => {
-      if (settled) return;
-      if (code !== 0 || requestIndex !== requests.length || body !== null || headerSize > 0) {
-        fail(new Error('git cat-file returned an incomplete response (exit ' + code + '): ' + stderr));
-        return;
-      }
-      settled = true;
-      clearTimeout(timeout);
-      resolve(results);
-    });
-    child.stdin.on('error', () => {}); // The close handler reports early process termination.
-    let writeIndex = 0;
-    function writeMore() {
-      if (settled) return;
-      try {
-        while (writeIndex < requests.length) {
-          const req = requests[writeIndex++];
-          if (!child.stdin.write(req.commit + ':' + req.path + '\n')) {
-            child.stdin.once('drain', writeMore);
-            return;
-          }
-        }
-        child.stdin.end();
-      } catch (err) { fail(err instanceof Error ? err : new Error(String(err))); }
-    }
-    writeMore();
+
+  const child = spawn('git', ['cat-file', '--batch'], {
+    cwd: repoRoot, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']
   });
+  const stdout = child.stdout[Symbol.asyncIterator]();
+  let chunk: Buffer = Buffer.alloc(0);
+  let offset = 0;
+  let transferredBytes = 0;
+  let stderr = '';
+  let failure: Error | undefined;
+  let finished = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const closed = new Promise<number | null>(resolve => child.once('close', resolve));
+  function fail(error: Error) {
+    if (finished || failure) return;
+    failure = error;
+    child.kill();
+    child.stdout.destroy(error);
+  }
+  child.on('error', fail);
+  child.stdin.on('error', fail);
+  child.stderr.on('data', (data: Buffer) => {
+    if (stderr.length < 8192) stderr += data.toString('utf8').slice(0, 8192 - stderr.length);
+  });
+
+  async function nextChunk(): Promise<boolean> {
+    if (failure) throw failure;
+    timeout = setTimeout(() => fail(new Error('git cat-file --batch stalled for 30 seconds.')), 30000);
+    try {
+      const next = await stdout.next();
+      if (failure) throw failure;
+      chunk = next.done ? Buffer.alloc(0) : next.value;
+      offset = 0;
+      return !next.done;
+    } finally {
+      clearTimeout(timeout);
+      timeout = undefined;
+    }
+  }
+  async function requireChunk() {
+    if (offset < chunk.length) return;
+    if (!await nextChunk()) throw new Error('git cat-file returned an incomplete response: ' + stderr);
+  }
+  async function readHeader(): Promise<string> {
+    const parts: Buffer[] = [];
+    let size = 0;
+    while (true) {
+      await requireChunk();
+      const nl = chunk.indexOf(10, offset);
+      const end = nl < 0 ? chunk.length : nl;
+      const part = chunk.subarray(offset, end);
+      size += part.length;
+      if (size > 16384) throw new Error('Git object response header is too large.');
+      parts.push(part);
+      offset = nl < 0 ? end : nl + 1;
+      if (nl >= 0) return Buffer.concat(parts, size).toString('utf8');
+    }
+  }
+  async function readBody(size: number): Promise<string> {
+    // Allocate only after validating the size in the Git response header.
+    let body: Buffer | null = Buffer.allocUnsafe(size);
+    let copied = 0;
+    while (copied < size) {
+      await requireChunk();
+      const count = Math.min(size - copied, chunk.length - offset);
+      chunk.copy(body, copied, offset, offset + count);
+      offset += count;
+      copied += count;
+    }
+    await requireChunk();
+    if (chunk[offset++] !== 10) throw new Error('Invalid Git blob response terminator.');
+    const content = body.toString('utf8');
+    body = null;
+    return content;
+  }
+
+  let writeIndex = 0;
+  function writeMore() {
+    if (finished || failure) return;
+    try {
+      while (writeIndex < requests.length) {
+        const req = requests[writeIndex++];
+        if (!child.stdin.write(req.commit + ':' + req.path + '\n')) {
+          child.stdin.once('drain', writeMore);
+          return;
+        }
+      }
+      child.stdin.end();
+    } catch (err) { fail(err instanceof Error ? err : new Error(String(err))); }
+  }
+
+  try {
+    writeMore();
+    for (const request of requests) {
+      const key = request.commit + ':' + request.path;
+      const header = await readHeader();
+      if (header === key + ' missing') {
+        yield { request, content: null };
+        continue;
+      }
+      const match = /^([0-9a-f]{40,64}) blob (\d+)$/.exec(header);
+      const size = match ? Number(match[2]) : NaN;
+      if (!match || !Number.isSafeInteger(size) || size < 0) throw new Error('Invalid Git blob response.');
+      if (size > MAX_BLOB_BYTES) {
+        throw new Error('Manifest blob exceeds the 64 MiB safety limit: ' + request.path + ' at ' + request.commit.slice(0, 7) + '.');
+      }
+      transferredBytes += size;
+      if (transferredBytes > maxTotalBytes) throw new Error('Git blob batch exceeds the 64 MiB safety limit.');
+      yield { request, content: await readBody(size), oid: match[1] };
+    }
+    if (offset < chunk.length || await nextChunk()) throw new Error('Unexpected extra git cat-file response.');
+    const code = await closed;
+    if (failure) throw failure;
+    if (code !== 0) throw new Error('git cat-file exited with code ' + code + ': ' + stderr);
+  } finally {
+    finished = true;
+    clearTimeout(timeout);
+    child.stdin.destroy();
+    child.stdout.destroy();
+    // Also runs when a consumer stops early or its parser throws.
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    await closed;
+  }
 }
 
 /**

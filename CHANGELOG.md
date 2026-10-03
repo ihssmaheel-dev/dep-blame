@@ -10,6 +10,17 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 
 ## [Unreleased]
 
+### Fixed
+
+- Large history scans no longer fail when branch-parent baselines, incremental baselines, HEAD manifests, or one commit total more than 64 MiB. These reads consume one file at a time with Git stdout backpressure; normal history transfers retain the 16 MiB batching target.
+- Streaming blob reads close Git on cancellation or consumer errors, preserve UTF-8 across stream chunks, and apply the timeout to stalled Git I/O. Individual blobs remain capped at 64 MiB before body allocation, with path and commit in the error.
+- Seeded snapshots retain blob IDs, and workspace lockfile baselines hash their source once per file, avoiding repeated transfers and per-importer hashing.
+
+### Added
+
+- Exported `streamReadBlobs` async iterator for library consumers whose aggregate reads exceed the bounded `batchReadBlobs` map API.
+- Real Git regression fixtures above 72 MiB, covering dashboard SSE/JSON, complete HEAD state, cold and incremental scans, CLI parity, reader backpressure, cancellation, and oversized single-object rejection.
+
 ## [0.1.0] — 2026-10-02
 
 First public release: `git blame` for dependencies as a single

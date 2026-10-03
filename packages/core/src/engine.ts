@@ -8,7 +8,7 @@ import {
   isAncestor
 } from './git/repo.js';
 import { getManifestCommits } from './git/log.js';
-import { batchReadBlobs, resolveBlobOids } from './git/batch.js';
+import { batchReadBlobs, streamReadBlobs, resolveBlobOids, MAX_BLOB_BYTES, type BlobContent } from './git/batch.js';
 import { detectPackageManager, discoverHistoricManifests, mergeManifestPaths } from './manifest/detect.js';
 import { parsePackageJson } from './manifest/package-json.js';
 import { parseNpmLockfile } from './manifest/lockfiles/npm.js';
@@ -36,6 +36,7 @@ const MANIFEST_PATHS_CACHE_KEY = 'manifest_paths';
 // Count-limited windows; total retained bytes also depend on manifest sizes.
 const WINDOW_TARGET_BLOBS = 1500;
 const WINDOW_MAX_COMMITS = 300;
+const TRANSFER_TARGET_BYTES = 16 * 1024 * 1024;
 // Historic discovery is a full-history `git log`; only pay it on cold scans.
 const PROGRESS_THRESHOLD = 2000;
 
@@ -154,7 +155,7 @@ async function parseLockfilePerManifest(
 interface SnapEntry {
   map: Map<string, DependencyEntry>;
   hash: string;
-  /** Blob object ID the map was parsed from (absent for seeded baselines). */
+  /** Blob object ID the map was parsed from. */
   oid?: string;
 }
 
@@ -761,14 +762,9 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
   if (sinceCommit) {
     const seedRequests: BlobRequest[] = manifestPaths.map((p) => ({ commit: sinceCommit as string, path: p }));
     const seedState: StateMap = new Map();
-    for (let i = 0; i < seedRequests.length; i += 1000) {
-      const slice = seedRequests.slice(i, i + 1000);
-      const seedBlobs = await batchReadBlobs(repoRoot, slice);
-      for (const req of slice) {
-        const content = seedBlobs.get(`${req.commit}:${req.path}`);
-        if (content !== null && content !== undefined) {
-          await seedStateEntry(seedState, req.path, content, warnOnce, true);
-        }
+    for await (const { request, content, oid } of streamReadBlobs(repoRoot, seedRequests)) {
+      if (content !== null) {
+        await seedStateEntry(seedState, request.path, content, warnOnce, true, oid);
       }
     }
     states.set(sinceCommit, seedState);
@@ -800,9 +796,19 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
     });
   };
 
-  // Blob OID of a snapshot entry's source content (absent for seeded baselines).
+  // Blob OID of a snapshot entry's source content.
   const snapshotOid = (state: StateMap | undefined, key: string): string | undefined =>
     state?.get(key)?.oid;
+
+  const finishCommit = (c: CommitInfo, windowIndex: number, windowTotal: number) => {
+    processed++;
+    for (const parent of c.parents) {
+      const left = (needCount.get(parent) || 1) - 1;
+      if (left <= 0) { needCount.delete(parent); states.delete(parent); }
+      else needCount.set(parent, left);
+    }
+    emitProgress(windowIndex, windowTotal, 'Analyzing commit ' + processed + ' of ' + commits.length + '...', c.commit.slice(0, 7) + ': ' + c.message.slice(0, 60));
+  };
 
   const processWindow = async (window: CommitInfo[], windowIndex: number, windowTotal: number): Promise<void> => {
     if (window.length === 0) return;
@@ -824,9 +830,10 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
       if (!list) { list = []; requestsByCommit.set(req.commit, list); }
       list.push(req);
     }
-    // Pack transfers by unique object bytes; one larger commit can use up to
-    // 64 MiB. Normal batches stay below 16 MiB and retain efficient Git batching.
+    // Keep normal transfers below 16 MiB. Larger commits are streamed one
+    // file at a time through the same diff path, with no aggregate byte cap.
     const groups: CommitInfo[][] = [];
+    const largeCommits = new Set<string>();
     let group: CommitInfo[] = [];
     let groupOids = new Set<string>();
     let groupBytes = 0;
@@ -835,12 +842,19 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
       for (const req of requestsByCommit.get(commit.commit) || []) {
         const id = ids.get(req.commit + ':' + req.path);
         if (!id) throw new Error('Git object sizing response omitted a manifest.');
+        if (id.size > MAX_BLOB_BYTES) throw new Error('Manifest blob exceeds the 64 MiB safety limit: ' + req.path + ' at ' + req.commit.slice(0, 7) + '.');
         if (!id.missing) commitOids.set(id.oid, id.size);
       }
       const commitBytes = [...commitOids.values()].reduce((a, b) => a + b, 0);
-      if (commitBytes > 64 * 1024 * 1024) throw new Error('Manifest contents in one commit exceed the 64 MiB scan safety limit.');
+      if (commitBytes > TRANSFER_TARGET_BYTES) {
+        if (group.length) groups.push(group);
+        groups.push([commit]);
+        largeCommits.add(commit.commit);
+        group = []; groupOids = new Set(); groupBytes = 0;
+        continue;
+      }
       let extra = [...commitOids].reduce((n, [oid, bytes]) => n + (groupOids.has(oid) ? 0 : bytes), 0);
-      if (group.length && groupBytes + extra > 16 * 1024 * 1024) {
+      if (group.length && groupBytes + extra > TRANSFER_TARGET_BYTES) {
         groups.push(group); group = []; groupOids = new Set(); groupBytes = 0; extra = commitBytes;
       }
       group.push(commit);
@@ -849,6 +863,18 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
     }
     if (group.length) groups.push(group);
     for (const chunk of groups) {
+      if (largeCommits.has(chunk[0].commit)) {
+        const c = chunk[0];
+        const base = c.parents.length ? states.get(c.parents[0]) : undefined;
+        const requests = orderedManifestFiles(c).map(f => ({ commit: c.commit, path: f })).filter(req => {
+          const id = ids.get(req.commit + ':' + req.path)!;
+          return id.missing || snapshotOid(base, req.path) !== id.oid;
+        });
+        emitProgress(windowIndex, windowTotal, 'Streaming ' + requests.length + ' file(s) from large commit ' + c.commit.slice(0, 7) + '…');
+        await processCommit(c, streamReadBlobs(repoRoot, requests), states, newEvents, warnOnce);
+        finishCommit(c, windowIndex, windowTotal);
+        continue;
+      }
       const blobs = new Map<string, string | null>();
       const oids = new Map<string, string>();
       const toFetch: BlobRequest[] = [];
@@ -882,15 +908,9 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
         }
       }
       for (const c of chunk) {
-        await processCommit(c, blobs, states, newEvents, warnOnce, oids);
-        processed++;
+        await processCommit(c, bufferedCommitContents(c, blobs, oids), states, newEvents, warnOnce);
         for (const req of requestsByCommit.get(c.commit) || []) blobs.delete(req.commit + ':' + req.path);
-        for (const parent of c.parents) {
-          const left = (needCount.get(parent) || 1) - 1;
-          if (left <= 0) { needCount.delete(parent); states.delete(parent); }
-          else needCount.set(parent, left);
-        }
-        emitProgress(windowIndex, windowTotal, 'Analyzing commit ' + processed + ' of ' + commits.length + '...', c.commit.slice(0, 7) + ': ' + c.message.slice(0, 60));
+        finishCommit(c, windowIndex, windowTotal);
       }
     }
 
@@ -960,7 +980,8 @@ async function seedStateEntry(
   manifestPath: string,
   content: string,
   warnOnce: (key: string, message: string) => void,
-  requireReadable = false
+  requireReadable = false,
+  oid?: string
 ): Promise<void> {
   if (manifestPath.endsWith('pnpm-lock.yaml') || manifestPath.endsWith('bun.lock') || manifestPath.endsWith('bun.lockb')) {
     const multi = await parseLockfilePerManifest(manifestPath, content);
@@ -968,9 +989,11 @@ async function seedStateEntry(
       if (multi && requireReadable) throw new InvalidBaselineError();
       return;
     }
+    const hash = hashContent(content);
     for (const [manifest, map] of multi.maps) {
-      state.set(lockStateKey(manifestPath, manifest), { map, hash: hashContent(content) });
+      state.set(lockStateKey(manifestPath, manifest), { map, hash, oid });
     }
+    state.set(manifestPath, { map: new Map(), hash, oid });
     return;
   }
   const res = await parseAnyManifest(manifestPath, content);
@@ -979,7 +1002,7 @@ async function seedStateEntry(
     if (res && res.note) warnOnce(`seed:${manifestPath}`, `Skipping undecodable ${manifestPath} at baseline (${res.note}).`);
     return;
   }
-  state.set(manifestPath, { map: res.entries, hash: hashContent(content) });
+  state.set(manifestPath, { map: res.entries, hash: hashContent(content), oid });
   if (res.note) warnOnce(`seed-note:${manifestPath}:${res.note}`, `${manifestPath} at baseline: ${res.note}.`);
 }
 
@@ -1015,46 +1038,61 @@ async function seedMissingParents(
 
   const requests: BlobRequest[] = [];
   for (const [parent, files] of needed) {
+    states.set(parent, new Map());
     for (const f of files) requests.push({ commit: parent, path: f });
   }
   // Bound recovery walks: a corrupt parent with hundreds of files must not
   // fan out into unbounded `git log` history walks below.
   const MAX_RECOVERY_COMMITS = 50;
-  const blobs = await batchReadBlobs(repoRoot, requests);
   let recoveryWalks = 0;
-  for (const [parent, files] of needed) {
-    const state: StateMap = new Map();
-    for (const f of files) {
-      const content = blobs.get(`${parent}:${f}`);
-      if (content !== null && content !== undefined) {
-        try {
-          await seedStateEntry(state, f, content, warnOnce, true);
-        } catch (err) {
-          if (!(err instanceof InvalidBaselineError)) throw err;
-          // A non-manifest commit may sit between a corrupt blob and its repair.
-          // Recover the last readable version along this parent's first-parent history.
-          if (++recoveryWalks > MAX_RECOVERY_COMMITS) {
-            warnOnce(`parent-corrupt:${f}`, `Too many corrupt baselines; skipping recovery for ${f} at parent ${parent.slice(0, 7)}.`);
-            continue;
-          }
-          const { stdout } = await execGit(['log', '--first-parent', '--format=%H', '-n', '50', parent, '--', f], repoRoot);
-          let restored = false;
-          for (const sha of stdout.trim().split('\n').filter(Boolean)) {
-            const prior = (await batchReadBlobs(repoRoot, [{commit: sha, path: f}])).get(`${sha}:${f}`);
-            if (prior === null || prior === undefined) { restored = true; break; }
-            try {
-              await seedStateEntry(state, f, prior, warnOnce, true);
-              restored = true;
-              break;
-            } catch (err) { if (!(err instanceof InvalidBaselineError)) throw err; }
-          }
-          warnOnce(`parent-corrupt:${f}`, restored
-            ? `Recovered last readable ${f} before corrupt parent ${parent.slice(0, 7)}.`
-            : `No readable baseline for ${f} at parent ${parent.slice(0, 7)}; changes may be incomplete.`);
+  for await (const { request, content, oid } of streamReadBlobs(repoRoot, requests)) {
+    const parent = request.commit;
+    const f = request.path;
+    const state = states.get(parent)!;
+    if (content !== null) {
+      try {
+        await seedStateEntry(state, f, content, warnOnce, true, oid);
+      } catch (err) {
+        if (!(err instanceof InvalidBaselineError)) throw err;
+        // A non-manifest commit may sit between a corrupt blob and its repair.
+        // Recover the last readable version along this parent's first-parent history.
+        if (++recoveryWalks > MAX_RECOVERY_COMMITS) {
+          warnOnce(`parent-corrupt:${f}`, `Too many corrupt baselines; skipping recovery for ${f} at parent ${parent.slice(0, 7)}.`);
+          continue;
         }
+        const { stdout } = await execGit(['log', '--first-parent', '--format=%H', '-n', '50', parent, '--', f], repoRoot);
+        let restored = false;
+        for (const sha of stdout.trim().split('\n').filter(Boolean)) {
+          const prior = (await batchReadBlobs(repoRoot, [{commit: sha, path: f}])).get(`${sha}:${f}`);
+          if (prior === null || prior === undefined) { restored = true; break; }
+          try {
+            await seedStateEntry(state, f, prior, warnOnce, true);
+            restored = true;
+            break;
+          } catch (err) { if (!(err instanceof InvalidBaselineError)) throw err; }
+        }
+        warnOnce(`parent-corrupt:${f}`, restored
+          ? `Recovered last readable ${f} before corrupt parent ${parent.slice(0, 7)}.`
+          : `No readable baseline for ${f} at parent ${parent.slice(0, 7)}; changes may be incomplete.`);
       }
     }
-    states.set(parent, state);
+  }
+}
+
+function orderedManifestFiles(c: CommitInfo): string[] {
+  return [...c.files.filter(f => f.endsWith('package.json')), ...c.files.filter(isLockfilePath)];
+}
+
+async function* bufferedCommitContents(
+  c: CommitInfo,
+  blobs: Map<string, string | null>,
+  oids: Map<string, string>
+): AsyncGenerator<BlobContent> {
+  for (const f of orderedManifestFiles(c)) {
+    const key = c.commit + ':' + f;
+    // OID-identical to the parent: carry shared state forward untouched.
+    if (!blobs.has(key)) continue;
+    yield { request: { commit: c.commit, path: f }, content: blobs.get(key)!, oid: oids.get(key) };
   }
 }
 
@@ -1063,70 +1101,57 @@ async function seedMissingParents(
  * Corrupt blobs keep the parent state and warn; lockfile deletion
  * warns (resolution lost) instead of inventing removals.
  */
-function processCommitSyncPlaceholder(): void {
-  // (async work happens in processCommit below; kept separate for clarity)
-}
-
 async function processCommit(
   c: CommitInfo,
-  blobs: Map<string, string | null>,
+  contents: AsyncIterable<BlobContent>,
   states: Map<string, StateMap>,
   newEvents: DependencyEvent[],
-  warnOnce: (key: string, message: string) => void,
-  oids: Map<string, string>
+  warnOnce: (key: string, message: string) => void
 ): Promise<void> {
-  void processCommitSyncPlaceholder;
   const short = c.commit.length > 7 ? c.commit.slice(0, 7) : c.commit;
   const firstParent = c.parents.length > 0 ? c.parents[0] : null;
   const base: StateMap = (firstParent && states.get(firstParent)) || new Map();
   const next: StateMap = new Map(base);
   const directPackagesInCommit = new Set<string>();
 
-  // Declared and resolved histories are independent, even within one commit.
-  for (const f of c.files) {
-    if (!f.endsWith('package.json')) continue;
-    const key = `${c.commit}:${f}`;
-    // Absent from the fetch set means OID-identical to the parent
-    // snapshot: carry the shared state forward untouched.
-    if (!blobs.has(key)) continue;
-    const content = blobs.get(key);
-    const prev = base.get(f);
-    if (content === null || content === undefined) {
-      if (prev && prev.map.size > 0) {
-        const events = diffSnapshots(prev.map, new Map(), c, f, { source: 'manifest' });
-        for (const ev of events) {
-          directPackagesInCommit.add(ev.package);
-          newEvents.push(ev);
+  // Contents arrive with declarations first, then resolved lockfiles.
+  // Both paths use this same diff logic, including streamed large commits.
+  for await (const { request, content, oid } of contents) {
+    const f = request.path;
+    if (f.endsWith('package.json')) {
+      const prev = base.get(f);
+      if (content === null || content === undefined) {
+        if (prev && prev.map.size > 0) {
+          const events = diffSnapshots(prev.map, new Map(), c, f, { source: 'manifest' });
+          for (const ev of events) {
+            directPackagesInCommit.add(ev.package);
+            newEvents.push(ev);
+          }
         }
+        next.set(f, { map: new Map(), hash: '' });
+        continue;
       }
-      next.set(f, { map: new Map(), hash: '' });
+      const h = hashContent(content);
+      if (prev && h === prev.hash) {
+        continue; // unchanged (merge/mode-only change)
+      }
+      const res = parsePackageJsonSync(content);
+      if (!res.ok) {
+        warnOnce(`corrupt:${f}:${res.note || 'invalid'}`, `Skipping undecodable ${f} at ${short} (${res.note || 'invalid'}); keeping previous state.`);
+        continue;
+      }
+      const currMap = res.entries;
+      const prevMap = prev ? prev.map : new Map<string, DependencyEntry>();
+      const events = diffSnapshots(prevMap, currMap, c, f, { source: 'manifest' });
+      for (const ev of events) {
+        directPackagesInCommit.add(ev.package);
+        newEvents.push(ev);
+      }
+      next.set(f, { map: currMap, hash: h, oid });
       continue;
     }
-    const h = hashContent(content);
-    if (prev && h === prev.hash) {
-      continue; // unchanged (merge/mode-only change)
-    }
-    const res = parsePackageJsonSync(content);
-    if (!res.ok) {
-      warnOnce(`corrupt:${f}:${res.note || 'invalid'}`, `Skipping undecodable ${f} at ${short} (${res.note || 'invalid'}); keeping previous state.`);
-      continue;
-    }
-    const currMap = res.entries;
-    const prevMap = prev ? prev.map : new Map<string, DependencyEntry>();
-    const events = diffSnapshots(prevMap, currMap, c, f, { source: 'manifest' });
-    for (const ev of events) {
-      directPackagesInCommit.add(ev.package);
-      newEvents.push(ev);
-    }
-    next.set(f, { map: currMap, hash: h, oid: oids.get(key) });
-  }
 
-  // Resolved lockfiles second.
-  for (const f of c.files) {
     if (!isLockfilePath(f)) continue;
-    const key = `${c.commit}:${f}`;
-    if (!blobs.has(key)) continue;
-    const content = blobs.get(key);
     if (content === null || content === undefined) {
       // Resolution info lost — never removals of declared packages.
       const had = baseHasLockData(base, f);
@@ -1137,7 +1162,7 @@ async function processCommit(
       continue;
     }
     if (f.endsWith('pnpm-lock.yaml') || f.endsWith('bun.lock') || f.endsWith('bun.lockb')) {
-      await processMultiManifestLockfile(c, f, content, base, next, newEvents, directPackagesInCommit, warnOnce, oids.get(key));
+      await processMultiManifestLockfile(c, f, content, base, next, newEvents, directPackagesInCommit, warnOnce, oid);
       continue;
     }
     const h = hashContent(content);
@@ -1164,7 +1189,7 @@ async function processCommit(
     for (const ev of lockEvents) {
       newEvents.push(ev);
     }
-    next.set(f, { map: currMap, hash: h, oid: oids.get(key) });
+    next.set(f, { map: currMap, hash: h, oid });
   }
 
   states.set(c.commit, next);
@@ -1275,23 +1300,19 @@ async function readHeadState(repoRoot: string, manifestPaths: string[], pinnedHe
     return {entries: [], complete: false};
   }
   const requests: BlobRequest[] = pkgPaths.map((p) => ({ commit: head, path: p }));
-  let blobs: Map<string, string | null>;
-  try {
-    blobs = await batchReadBlobs(repoRoot, requests);
-  } catch {
-    return {entries: [], complete: false};
-  }
   const out: HeadEntry[] = [];
   let complete = true;
-  for (const p of pkgPaths) {
-    const content = blobs.get(`${head}:${p}`);
-    if (content === null) continue;
-    if (content === undefined) { complete = false; continue; }
-    const res = parsePackageJson(content);
-    if (!res.ok) { complete = false; continue; }
-    for (const [pkg, entry] of res.entries) {
-      out.push({ manifest: p, package: pkg, version: entry.version, depType: entry.depType });
+  try {
+    for await (const { request, content } of streamReadBlobs(repoRoot, requests)) {
+      if (content === null) continue;
+      const res = parsePackageJson(content);
+      if (!res.ok) { complete = false; continue; }
+      for (const [pkg, entry] of res.entries) {
+        out.push({ manifest: request.path, package: pkg, version: entry.version, depType: entry.depType });
+      }
     }
+  } catch {
+    return {entries: [], complete: false};
   }
   return {entries: out, complete};
 }

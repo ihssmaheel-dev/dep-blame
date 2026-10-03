@@ -506,8 +506,9 @@ Also exported: `renderEventTable`, `renderCalendarView`, `renderStatsView`, `ren
 Design decisions that keep scans fast:
 
 - **Path-filtered `git log`** — git itself skips commits that never touch manifests.
-- **Single `git cat-file --batch` process** with an OID sizing pass — unchanged multi-megabyte lockfiles cost one short line, not a re-download.
-- **Byte-packed windows** (16 MiB target / 64 MiB safety cap) with frontier state pruning.
+- **Batched `git cat-file` reads** with an OID sizing pass — unchanged multi-megabyte lockfiles cost one short line, not a re-download.
+- **Byte-packed windows** (16 MiB target) with frontier state pruning. Larger commits, branch baselines, incremental baselines, and HEAD manifests stream one file at a time, so their combined size can exceed 64 MiB.
+- **Per-file protection:** a single blob above 64 MiB is rejected before its body is allocated, with its path and commit in the error. This bounds source-buffer allocations; parsed dependencies, events, and cache data still contribute to total process memory.
 - **One transaction per scan** (SQLite) / one write per scan (JSON).
 
 Measured snapshot (single run, Windows / Node 22, 3 commits / 1,000 deps / 1,100 events): **~556 ms cold / ~61 MiB RSS, ~234 ms warm / ~60 MiB RSS**. Treat these as a data point, not a guarantee — publish only targets backed by repeatable benchmarks across your own commit/event/manifest sizes and both cache backends.
@@ -517,6 +518,13 @@ Large histories: prefer `--limit`/`--page`/`--months` (CLI) and `/api/events/pag
 ---
 
 ## Troubleshooting
+
+**`Git blob batch exceeds the 64 MiB safety limit.`** Earlier versions collected
+some baseline reads into one map. Large histories now use streamed reads for
+these paths; restart the dashboard after updating to a build containing this
+fix. Clearing the cache or repeatedly pressing Sync does not fix the old reader.
+For library users, `batchReadBlobs` intentionally caps a collected map at
+64 MiB; use the exported `streamReadBlobs` async iterator for larger totals.
 
 | Symptom | Fix |
 |---|---|
