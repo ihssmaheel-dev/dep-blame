@@ -176,7 +176,8 @@ test('ui behavior: archaeology drawer groups same-commit evidence into one node'
   assert.ok(timelineHtml.includes('Declared:'));
   assert.ok(timelineHtml.includes('Resolved:'));
   assert.ok(timelineHtml.includes('packages/app/package.json'));
-  assert.equal(ui.nodes.get('drawer-changes-count').textContent, '5 changes across 2 commits');
+  assert.equal(ui.nodes.get('drawer-changes-count').textContent, '2 commits');
+  assert.equal(ui.nodes.get('drawer-evidence-count').textContent, '5 file events');
 });
 
 test('ui behavior: theme toggle swaps in one repaint without transitions', () => {
@@ -192,4 +193,48 @@ test('ui behavior: theme toggle swaps in one repaint without transitions', () =>
   assert.equal(ui.nodes.get('theme-icon-light').style.display, 'block');
   // And the stylesheet honors the guard instead of animating every element.
   assert.match(html, /html\.theme-switching[^}]*transition:\s*none/);
+});
+
+test('ui behavior: archaeology separates direct changes, integrations, author roles, and export context', async () => {
+  const ui = client();
+  const original = { package: 'alpha', type: 'added', to: '^1', date: '2026-09-22T12:17:43+05:30',
+    commit: 'aaaaaaa', commitFull: 'a'.repeat(40), author: 'Alice', message: 'Merge-looking subject',
+    manifest: 'package.json', depType: 'devDependencies', source: 'manifest', commitParents: ['0'.repeat(40)], changeOrigin: 'direct' };
+  const nodes = [original, { ...original, commit: 'bbbbbbb', commitFull: 'b'.repeat(40), author: 'Bob',
+    date: '2026-09-22T12:28:50+05:30', commitParents: ['0'.repeat(40), 'a'.repeat(40)], changeOrigin: 'merge-integration' },
+  { ...original, commit: 'ccccccc', commitFull: 'c'.repeat(40), author: '<Carol>', date: '2026-09-24T10:24:43+05:30',
+    commitParents: ['0'.repeat(40), 'b'.repeat(40)], changeOrigin: 'merge-integration' }];
+  const events = nodes.flatMap(e => [e, { ...e, source: 'lockfile', manifest: 'package-lock.json', to: '1' }]).reverse();
+  ui.run(`allEvents = ${JSON.stringify(events)}; headStateData = [{package:'alpha',version:'^1',manifest:'package.json',depType:'devDependencies'}]; openArchaeology('alpha');`);
+  assert.equal(ui.nodes.get('drawer-changes-count').textContent, '3 commits');
+  assert.equal(ui.nodes.get('drawer-evidence-count').textContent, '6 file events');
+  assert.equal(ui.nodes.get('drawer-history-summary').textContent, '1 direct change · 2 merge integrations');
+  assert.equal(ui.nodes.get('drawer-first-author').textContent, 'Commit author: Alice');
+  assert.equal(ui.nodes.get('drawer-manifest-summary').textContent, '2 evidence files');
+  assert.equal(ui.nodes.get('drawer-authors-count').textContent, '3 authors');
+  assert.equal(ui.nodes.get('drawer-history-note').hidden, false);
+  const timeline = ui.nodes.get('drawer-timeline').innerHTML;
+  assert.equal(timeline.split('Merged existing dependency').length - 1, 2);
+  assert.equal(timeline.split('Merged by').length - 1, 2);
+  assert.equal(timeline.split('Commit by').length - 1, 1);
+  assert.ok(timeline.indexOf('aaaaaaa') < timeline.indexOf('bbbbbbb'));
+  assert.ok(timeline.includes('&lt;Carol&gt;'));
+  assert.ok(!timeline.includes('<Carol>'));
+  ui.run("globalThis.copied = ''; globalThis.navigator = {clipboard: {writeText: async value => { globalThis.copied = value; }}};");
+  ui.nodes.get('drawer-copy-md').dispatch('click');
+  await flush();
+  assert.match(ui.run('copied'), /Merge integration/);
+  assert.match(ui.run('copied'), /Merge author/);
+  assert.match(ui.run('copied'), /3 commits · 6 file events/);
+});
+
+test('ui behavior: generic merge changes and missing metadata never claim an existing integration', () => {
+  const ui = client();
+  const e = event('2026-09-28');
+  ui.run(`allEvents = [${JSON.stringify({ ...e, changeOrigin: 'merge-change', commitParents: ['a'.repeat(40), 'b'.repeat(40)] })}]; openArchaeology('alpha');`);
+  assert.match(ui.nodes.get('drawer-timeline').innerHTML, /Merge dependency changes/);
+  assert.ok(!ui.nodes.get('drawer-timeline').innerHTML.includes('Merged existing'));
+  ui.run(`allEvents = [${JSON.stringify({ ...e, message: 'Merge feature but metadata is unavailable' })}]; openArchaeology('alpha');`);
+  assert.ok(!ui.nodes.get('drawer-timeline').innerHTML.includes('Merged by'));
+  assert.equal(ui.nodes.get('drawer-history-summary').textContent, '1 commit without merge metadata');
 });

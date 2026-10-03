@@ -92,7 +92,10 @@ The optional `yaml` dependency (installed by default) powers pnpm/Yarn parsing. 
 
 ## History semantics
 
-- Each commit diffs against **its own first parent** — merges report exactly what the merge introduced.
+- Each commit diffs against **its own first parent** — merges report exactly what the merge introduced into that parent’s history.
+- Archaeology shows original commit authors and merge commit authors separately. A readable incoming snapshot matching the result earns a verified integration label; other merge results use a general merge-change label.
+- Summaries distinguish commits from file events and evidence files. "First recorded" describes the scanned history, not a guaranteed original introduction. Git author metadata is not identity authentication.
+- JSON adds optional `commitParents` and `changeOrigin` fields; CSV appends both columns. Cache schema v5 rebuilds older caches once to populate them.
 - Corrupt manifests keep the last-good snapshot and warn; they never invent churn.
 - Warnings plus a `truncated` flag ship on every human-readable command and in `--json`. Incomplete scans never look complete.
 

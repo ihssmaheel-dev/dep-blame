@@ -1489,21 +1489,25 @@
   // lifecycle step, not twenty rows. Render-only; allEvents stays complete.
   function groupLifecycleNodes(pkgEvents) {
     const nodes = [], byCommit = new Map();
-    const keyOf = ch => ch.type + '|' + (ch.from || '') + '|' + (ch.to || '') + '|' + (ch.depType || '') + '|' + (ch.depTypeFrom || '');
+    const keyOf = ch => JSON.stringify([ch.type, ch.from, ch.to, ch.depType, ch.depTypeFrom, ch.changeOrigin]);
     for (const ev of pkgEvents) {
       const key = ev.commitFull || ev.commit;
       let node = byCommit.get(key);
       if (!node) {
-        node = { commit: ev.commit, commitFull: ev.commitFull, date: ev.date, author: ev.author, message: ev.message, manifests: [], declared: [], resolved: [], headline: ev.type };
+        node = { commit: ev.commit, commitFull: ev.commitFull, date: ev.date, author: ev.author, message: ev.message, manifests: [], files: [], declared: [], resolved: [], headline: ev.type, isMerge: false, metadataKnown: false };
         byCommit.set(key, node);
         nodes.push(node);
       }
+      node.isMerge ||= (ev.commitParents?.length || 0) > 1 || ev.changeOrigin === 'merge-integration' || ev.changeOrigin === 'merge-change';
+      node.metadataKnown ||= Array.isArray(ev.commitParents) || !!ev.changeOrigin;
+      const file = ev.lockfile || ev.manifest;
+      if (file && !node.files.includes(file)) node.files.push(file);
       if (ev.manifest && !node.manifests.includes(ev.manifest)) node.manifests.push(ev.manifest);
       const list = ev.source === 'lockfile' ? node.resolved : node.declared;
       const k = keyOf(ev);
       let ch = list.find(c => c.k === k);
       if (!ch) {
-        ch = { k, type: ev.type, from: ev.from, to: ev.to, depType: ev.depType, depTypeFrom: ev.depTypeFrom, manifests: [] };
+        ch = { k, type: ev.type, from: ev.from, to: ev.to, depType: ev.depType, depTypeFrom: ev.depTypeFrom, changeOrigin: ev.changeOrigin, manifests: [] };
         list.push(ch);
       }
       if (ev.manifest && !ch.manifests.includes(ev.manifest)) ch.manifests.push(ev.manifest);
@@ -1511,8 +1515,29 @@
     for (const node of nodes) {
       const types = new Set([...node.declared, ...node.resolved].map(ch => ch.type));
       node.headline = types.size === 1 ? [...types][0] : 'mixed';
+      const changes = [...node.declared, ...node.resolved];
+      node.changeOrigin = node.isMerge
+        ? (changes.every(ch => ch.changeOrigin === 'merge-integration') ? 'merge-integration' : 'merge-change')
+        : (node.metadataKnown ? 'direct' : undefined);
     }
-    return nodes;
+    return nodes.sort((a, b) => { const diff = Date.parse(a.date) - Date.parse(b.date); return Number.isFinite(diff) ? diff : 0; });
+  }
+
+  function lifecycleNodeTitle(node) {
+    if (node.isMerge) {
+      if (node.changeOrigin !== 'merge-integration') return 'Merge dependency changes';
+      return node.headline === 'added' ? 'Merged existing dependency'
+        : node.headline === 'updated' ? 'Merged dependency update'
+        : node.headline === 'removed' ? 'Merged dependency removal' : 'Merged dependency changes';
+    }
+    return node.headline === 'added' ? 'Added dependency' : node.headline === 'updated' ? 'Updated dependency'
+      : node.headline === 'removed' ? 'Removed dependency' : 'Dependency changes';
+  }
+
+  function lifecycleAction(ch) {
+    if (ch.changeOrigin === 'merge-integration') return ch.type === 'added' ? 'Merged existing version'
+      : ch.type === 'updated' ? 'Merged update' : 'Merged removal';
+    return ch.type === 'added' ? 'Added version' : ch.type === 'updated' ? 'Updated' : 'Removed dependency';
   }
 
   function openArchaeology(pkgName) {
@@ -1520,6 +1545,7 @@
     selectedPkgName = pkgName;
     const pkgEvents = allEvents.filter(e => e.package === pkgName);
     if (pkgEvents.length === 0) return;
+    const lifecycleNodes = groupLifecycleNodes(pkgEvents);
 
     document.getElementById('drawer-title').textContent = pkgName;
 
@@ -1631,39 +1657,57 @@
     // Deptype badge
     const depTypeElem = document.getElementById('drawer-deptype');
     if (depTypeElem) {
-    depTypeElem.textContent = latest.depType || pkgEvents[0].depType || 'dependencies';
+    depTypeElem.textContent = headEntries.length ? [...new Set(headEntries.map(h => h.depType))].join(', ') : latest.depType || 'dependencies';
     }
 
     // Manifest summary
     const manifestElem = document.getElementById('drawer-manifest-summary');
     if (manifestElem) {
-    const manifests = Array.from(new Set(pkgEvents.map(e => e.manifest).filter(Boolean)));
-    manifestElem.textContent = manifests.length === 1 ? manifests[0] : `${manifests.length} manifests`;
+    const files = [...new Set(pkgEvents.map(e => e.lockfile || e.manifest).filter(Boolean))];
+    manifestElem.textContent = `${files.length} evidence ${files.length === 1 ? 'file' : 'files'}`;
+    manifestElem.title = files.join(', ');
     }
 
     // Stats strip
     const changesCountElem = document.getElementById('drawer-changes-count');
     if (changesCountElem) {
-    const lifecycleNodes = groupLifecycleNodes(pkgEvents);
-    changesCountElem.textContent = `${pkgEvents.length} ${pkgEvents.length === 1 ? 'change' : 'changes'} across ${lifecycleNodes.length} ${lifecycleNodes.length === 1 ? 'commit' : 'commits'}`;
+    changesCountElem.textContent = `${lifecycleNodes.length} ${lifecycleNodes.length === 1 ? 'commit' : 'commits'}`;
+    document.getElementById('drawer-evidence-count').textContent = `${pkgEvents.length} file ${pkgEvents.length === 1 ? 'event' : 'events'}`;
     }
+    const direct = lifecycleNodes.filter(n => n.changeOrigin === 'direct').length;
+    const unknown = lifecycleNodes.filter(n => !n.metadataKnown).length;
+    const integrations = lifecycleNodes.filter(n => n.changeOrigin === 'merge-integration').length;
+    const otherMerges = lifecycleNodes.length - direct - integrations - unknown;
+    document.getElementById('drawer-history-summary').textContent = [
+      direct ? `${direct} direct ${direct === 1 ? 'change' : 'changes'}` : '',
+      integrations ? `${integrations} merge ${integrations === 1 ? 'integration' : 'integrations'}` : '',
+      otherMerges ? `${otherMerges} other merge ${otherMerges === 1 ? 'change' : 'changes'}` : '',
+      unknown ? `${unknown} ${unknown === 1 ? 'commit' : 'commits'} without merge metadata` : ''
+    ].filter(Boolean).join(' · ');
+    const note = document.getElementById('drawer-history-note');
+    const hasMerges = integrations + otherMerges > 0;
+    note.hidden = !hasMerges && !historyTruncated && !historyWarnings.length;
+    note.textContent = [hasMerges ? 'Includes merged branches. Integration entries show existing changes brought into the receiving history.' : '',
+      historyTruncated || historyWarnings.length ? 'Scan warnings may affect the first recorded date.' : ''].filter(Boolean).join(' ');
 
     const firstDateElem = document.getElementById('drawer-first-date');
     if (firstDateElem) {
-    firstDateElem.textContent = eventDateKey(pkgEvents[0]);
+    firstDateElem.textContent = eventDateKey(lifecycleNodes[0]);
+    document.getElementById('drawer-first-author').textContent = `${lifecycleNodes[0].isMerge ? 'Merge author' : 'Commit author'}: ${lifecycleNodes[0].author || 'Unknown'}`;
     }
 
     const authorsCountElem = document.getElementById('drawer-authors-count');
     if (authorsCountElem) {
-    const authors = new Set(pkgEvents.map(e => e.author).filter(Boolean));
+    const authors = new Set(lifecycleNodes.map(e => e.author).filter(Boolean));
     authorsCountElem.textContent = `${authors.size} ${authors.size === 1 ? 'author' : 'authors'}`;
     }
 
     const timeline = document.getElementById('drawer-timeline');
     const changeHtml = ch => {
-      const v = ch.type === 'added' ? `Added version <span style="color: var(--color-added)">${escapeHtml(ch.to || '')}</span>`
-        : ch.type === 'removed' ? `Removed dependency (was ${escapeHtml(ch.from || '')})`
-        : `Updated ${escapeHtml(ch.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ch.to || '')}</span>`;
+      const action = lifecycleAction(ch);
+      const v = ch.type === 'added' ? `${action} <span style="color: var(--color-added)">${escapeHtml(ch.to || '')}</span>`
+        : ch.type === 'removed' ? `${action} (was ${escapeHtml(ch.from || '')})`
+        : `${action} ${escapeHtml(ch.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ch.to || '')}</span>`;
       const move = ch.depTypeFrom && ch.depTypeFrom !== ch.depType ? ` · ${escapeHtml(ch.depTypeFrom)} → ${escapeHtml(ch.depType)}` : '';
       const section = ch.depType && ch.depType !== 'dependencies' ? ` <span style="color: var(--color-text-secondary)">(${escapeHtml(ch.depType)})</span>` : '';
       return `${v}${move}${section}`;
@@ -1671,27 +1715,28 @@
     const groupHtml = (label, changes) => changes.length ? changes.map(ch =>
       `<div class="node-version"><span style="color: var(--color-text-secondary)">${label}:</span> ${changeHtml(ch)} <span style="font-family: var(--font-mono); color: var(--color-text-secondary)">[${ch.manifests.map(escapeHtml).join(', ')}]</span></div>`
     ).join('') : '';
-    timeline.innerHTML = groupLifecycleNodes(pkgEvents).map(node => {
+    timeline.innerHTML = lifecycleNodes.map(node => {
     const symbol = node.headline === 'added' ? '+' : node.headline === 'removed' ? '–' : node.headline === 'mixed' ? '±' : '↑';
     const authorInfo = getAuthorDetails(node.author, node.commitFull);
     const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
     const sources = [node.declared.length ? 'Declared' : '', node.resolved.length ? 'Resolved' : ''].filter(Boolean).join(' + ') || 'Recorded';
 
     return `
-      <div class="timeline-node ${node.headline}">
-      <div class="node-icon">${symbol}</div>
+      <div class="timeline-node ${node.isMerge ? 'merge' : node.headline}">
+      <div class="node-icon" aria-hidden="true">${node.isMerge ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="5" r="3"/><circle cx="18" cy="5" r="3"/><circle cx="6" cy="19" r="3"/><path d="M6 8v8M18 8a8 8 0 0 1-8 8H6"/></svg>' : symbol}</div>
       <div class="node-card">
         <div class="node-meta">
         <span>${eventDateKey(node)}</span>
         <button class="commit-tag" data-commit="${escapeHtml(node.commit)}" data-full="${escapeHtml(node.commitFull || node.commit)}" title="${escapeHtml(node.message || '')} (${remoteUrl ? 'open in repository' : 'click to copy'})">${escapeHtml(node.commit)}</button>
         </div>
+        <div class="node-heading">${lifecycleNodeTitle(node)}</div>
         ${groupHtml('Declared', node.declared)}${groupHtml('Resolved', node.resolved)}
         <div class="node-msg">${escapeHtml(node.message || 'No commit message')}</div>
-        <div data-author-entry style="font-size: 11px; color: var(--color-text-secondary); margin-top: 6px; display: flex; align-items: center; gap: 7px;">
+        <div data-author-entry class="node-author">
         <div class="author-avatar-wrapper" data-author-commit="${escapeHtml(node.commitFull || node.commit)}" style="width: 18px; height: 18px;">
           <div class="author-avatar-fallback" style="font-size: 9px; display: flex;">${escapeHtml(authorInitial)}</div>
         </div>
-        <span>by ${renderAuthorName(node.author, node.commitFull || node.commit)} · ${sources} in ${node.manifests.length} ${node.manifests.length === 1 ? 'manifest' : 'manifests'}</span>
+        <span>${node.isMerge ? 'Merged by' : 'Commit by'} ${renderAuthorName(node.author, node.commitFull || node.commit)} <span class="node-evidence">· ${sources} · ${node.files.length} evidence ${node.files.length === 1 ? 'file' : 'files'}</span></span>
         </div>
       </div>
       </div>
@@ -2037,16 +2082,19 @@
     const mdCell = value => String(value ?? '-').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ').replace(/`/g, '\\`');
     let md = `### Dependency history: ${mdCell(selectedPkgName)}\n\n`;
     if (historyTruncated || historyWarnings.length) md += 'History contains scan warnings; consult the JSON export for details.\n\n';
-    md += `| Date | Action | Source | Manifest | From | To | Commit | Author |\n`;
-    md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+    const nodes = groupLifecycleNodes(pkgEvents);
+    md += `${nodes.length} commits · ${pkgEvents.length} file events · ${nodes.filter(n => n.isMerge).length} merge commits. Dates include changes from merged branches.\n\n`;
+    md += `| Date | Action | Context | Source | Manifest | From | To | Commit | Author role | Commit author |\n`;
+    md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
     // One row per commit per distinct change (manifests joined): the same
     // grouping as the drawer timeline, so a ten-workspace rollout is two
     // rows (declared + resolved), not twenty. Full fidelity stays in JSON.
-    for (const node of groupLifecycleNodes(pkgEvents)) {
+    for (const node of nodes) {
     const d = eventDateKey(node);
     for (const [source, changes] of [['manifest', node.declared], ['lockfile', node.resolved]]) {
       for (const ch of changes) {
-        md += `| ${[d, ch.type, source, ch.manifests.join(', '), ch.from, ch.to, node.commitFull || node.commit, node.author].map(mdCell).join(' | ')} |\n`;
+        const context = ch.changeOrigin === 'merge-integration' ? 'Merge integration' : node.isMerge ? 'Merge change' : node.metadataKnown ? 'Direct commit' : 'Merge status unknown';
+        md += `| ${[d, ch.type, context, source, ch.manifests.join(', '), ch.from, ch.to, node.commitFull || node.commit, node.isMerge ? 'Merge author' : 'Commit author', node.author].map(mdCell).join(' | ')} |\n`;
       }
     }
     }

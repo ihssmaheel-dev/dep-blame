@@ -13,6 +13,9 @@ export type DepType =
  */
 export type EventSource = 'manifest' | 'lockfile';
 
+/** Integration is verified against a readable non-first-parent snapshot. */
+export type ChangeOrigin = 'direct' | 'merge-integration' | 'merge-change';
+
 export interface DependencyEntry {
   version: string;
   depType: DepType;
@@ -45,6 +48,10 @@ export interface DependencyEvent {
   date: string; // ISO 8601
   commit: string; // short SHA (7 characters)
   commitFull?: string; // full 40-character SHA for exact range membership
+  /** Direct Git parents; empty for a root commit. */
+  commitParents?: string[];
+  /** Direct commit, verified incoming-parent change, or other merge result. */
+  changeOrigin?: ChangeOrigin;
   author: string;
   message: string;
   manifest: string;

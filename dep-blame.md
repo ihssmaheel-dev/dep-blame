@@ -1311,3 +1311,84 @@ A freshly packed and installed tarball passed the CLI, dashboard, engine, API,
 font, CSP, and LICENSE smoke checks; its compiled engine uses the streamed
 reader and its public package export includes streamReadBlobs. Build and
 whitespace checks passed. This verifies the local build; it is not an npm release.
+
+
+## 16. Archaeology provenance and presentation correction (2026-10-03)
+
+### Finding and verified example
+
+First-parent events were correct, but the drawer presented a direct addition
+and later integrations as three indistinguishable additions. It also called
+manifest/lockfile evidence "manifests" and called all recorded commit authors
+"contributors", which implied authorship of the original change.
+
+Read-only inspection of the reported mongodb-memory-server history verified
+one original addition and two later integrations. Each integration's first
+parent lacked the package, while its incoming parent contained the resulting
+version. The rebuilt API preserves six file events: declared and resolved
+entries for each of the three commits. The drawer now displays **one direct
+change, two merge integrations, three commits, six file events, and two
+evidence files**. HEAD remains active at the declared range ^11.2.0.
+
+### Implemented behavior
+
+- Events carry commitParents and changeOrigin. Non-merge commits are direct;
+  a merge gets merge-integration only when its resulting dependency state
+  matches a readable non-first-parent snapshot. Other merges use merge-change.
+- Last-good snapshots retained after corrupt evidence are marked unreadable
+  for provenance. They still prevent invented churn, but cannot prove that
+  the incoming parent contained an integration. Successful repairs clear the
+  marker; missing importer evidence remains uncertain.
+- The drawer uses "Added dependency" for the direct addition and "Merged
+  existing dependency" for the two integrations, with separate icons and
+  recorded commit/merge author roles. Version, section, declared/resolved
+  source, commit, and message remain visible.
+- Summary counts distinguish commits, individual file events, and actual
+  evidence paths. "First recorded" describes the earliest scanned event;
+  "Commit authors" explicitly includes merge authors. Warnings qualify
+  the first recorded date when evidence is incomplete.
+- CLI archaeology and Markdown exports retain the same provenance semantics.
+  JSON adds the two optional fields; CSV appends them while retaining formula
+  neutralization. Missing legacy metadata is presented without a guess from
+  the commit message.
+- Both cache backends and paged reads persist provenance. Cache schema v5
+  triggers a one-time rebuild of older caches; JSON output remains schemaVersion 1.
+- Mobile headers leave room for long package names, stats stack, and version
+  evidence wraps. The close button retains an accessible name.
+
+### Performance, verification, and limits
+
+Classification reuses the parent snapshots already read for first-parent
+scanning. It runs only over the current commit's new events and available
+incoming parents. The existing DAG frontier pruning remains in place; warm
+reads use persisted metadata. No new runtime dependency or hosting request
+was added. This is not a measured total RSS or throughput guarantee.
+
+Windows / Node 22.23.2 verification:
+
+- **95/95 full-suite tests passed**; the latest provenance, UI behavior, view,
+  and server checks passed **26/26**. After the final CSS adjustment, all
+  **10/10 UI/security/bundle checks** passed again.
+- Real Git fixtures cover nested integrations, merge-looking non-merge
+  subjects, conflict resolution with a version absent from incoming parents,
+  corrupt incoming manifests, warm/paged cache parity, and v4 migration in
+  SQLite and JSON stores.
+- Browser verification used the reported repository and actual bundled UI
+  at desktop and 375px mobile widths. The drawer's six events, three nodes,
+  roles, versions, first date, and copied Markdown agree with Git evidence;
+  no browser console errors were reported.
+- HTML + JS gzip transfer is **43,935 bytes**, within the 44 KiB budget.
+  Build, syntax, and whitespace checks passed. A fresh tarball installed and
+  passed CLI/UI bins, engine, API, font, CSP, and LICENSE smoke checks.
+
+Git author metadata does not authenticate a person or hosting account.
+Integration classification identifies a matching incoming state, not a
+unique originating commit or original author. Squashed/cherry-picked work
+has no merge-parent provenance and remains a direct commit. Missing,
+truncated, shallow, or corrupt history can limit what is known; the UI does
+not manufacture an original introduction date. This correction does not
+claim a new full-codebase security audit or an npm release.
+
+Existing UI server processes must be restarted to load the rebuilt engine
+and cached HTML/JS. A replacement preview was verified separately; the
+user-owned server on port 3333 was left running.

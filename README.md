@@ -419,6 +419,16 @@ Honesty rules (these are deliberate, not gaps):
 - **Missing `yaml` parser.** `pnpm`/`yarn` parsing needs the optional `yaml` dependency (installed by default). With `--omit=optional` installs you get a low-fidelity `(lockfile)` event plus a one-line install hint — never silence, never a stack trace.
 - `--direct-only` excludes resolved-only entries (including all yarn entries, which record the whole tree).
 
+### Reading package archaeology
+
+The CLI and dashboard group evidence into one node per commit. The summary separates commit counts from file events and lists actual evidence files (including lockfiles). "First recorded" is the earliest event in the scanned history, using the viewer’s local calendar date. It is not proof of the package’s original introduction when history is incomplete.
+
+- **Added / updated / removed dependency:** a change in a non-merge commit. The displayed person is its recorded Git commit author.
+- **Merged existing dependency / update / removal:** the result matches readable dependency evidence from an incoming parent. The person is the merge commit’s author; this is an integration of an existing state.
+- **Merge dependency changes:** a merge result without that matching evidence, including conflict resolutions or unavailable incoming snapshots. No original author is inferred.
+
+These labels use Git parent data and parsed snapshots, never guesses from names or commit messages. Git author metadata does not authenticate a person or a hosting account. JSON preserves the full event stream with optional `commitParents` (full parent SHAs) and `changeOrigin` (`direct`, `merge-integration`, or `merge-change`); CSV includes the same fields. Cache schema v5 rebuilds older indexes once to populate them.
+
 ---
 
 ## Web dashboard

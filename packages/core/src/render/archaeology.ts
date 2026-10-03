@@ -1,9 +1,10 @@
 import { c, stripControl } from './ansi.js';
-import type { DependencyEvent, HeadEntry } from '../types.js';
+import type { DependencyEvent, HeadEntry, ChangeOrigin } from '../types.js';
+import { eventDayKey } from './calendar.js';
 
 function formatDate(isoString?: string): string {
   if (!isoString) return '';
-  return isoString.split('T')[0] || isoString.slice(0, 10);
+  return eventDayKey(isoString) || isoString.slice(0, 10);
 }
 
 function formatRelativeTime(isoString?: string): string {
@@ -32,6 +33,7 @@ export interface LifecycleChange {
   to?: string;
   depType?: string;
   depTypeFrom?: string;
+  changeOrigin?: ChangeOrigin;
   manifests: string[];
 }
 
@@ -44,11 +46,15 @@ export interface LifecycleChange {
 export interface LifecycleNode {
   commit: string;
   commitFull?: string;
+  isMerge: boolean;
+  metadataKnown: boolean;
+  changeOrigin?: ChangeOrigin;
   date: string;
   author: string;
   message: string;
   /** Distinct manifests touched, first-seen order. */
   manifests: string[];
+  files: string[];
   /** Declared (`package.json`) changes, grouped by type/version/section. */
   declared: LifecycleChange[];
   /** Resolved (lockfile) changes, grouped the same way. */
@@ -74,10 +80,13 @@ export function groupLifecycleNodes(
       node = {
         commit: ev.commit,
         commitFull: ev.commitFull,
+        isMerge: (ev.commitParents?.length || 0) > 1 || ev.changeOrigin === 'merge-integration' || ev.changeOrigin === 'merge-change',
+        metadataKnown: Array.isArray(ev.commitParents) || !!ev.changeOrigin,
         date: ev.date,
         author: ev.author,
         message: ev.message,
         manifests: [],
+        files: [],
         declared: [],
         resolved: [],
         headline: ev.type,
@@ -85,6 +94,10 @@ export function groupLifecycleNodes(
       byCommit.set(key, node);
       nodes.push(node);
     }
+    node.isMerge ||= (ev.commitParents?.length || 0) > 1 || ev.changeOrigin === 'merge-integration' || ev.changeOrigin === 'merge-change';
+    node.metadataKnown ||= Array.isArray(ev.commitParents) || !!ev.changeOrigin;
+    const file = ev.lockfile || ev.manifest;
+    if (file && !node.files.includes(file)) node.files.push(file);
     if (ev.manifest && !node.manifests.includes(ev.manifest)) {
       node.manifests.push(ev.manifest);
     }
@@ -95,6 +108,7 @@ export function groupLifecycleNodes(
         (ch.from || '') === (ev.from || '') &&
         (ch.to || '') === (ev.to || '') &&
         (ch.depType || '') === (ev.depType || '') &&
+        ch.changeOrigin === ev.changeOrigin &&
         (ch.depTypeFrom || '') === (ev.depTypeFrom || '')
     );
     if (existing) {
@@ -108,6 +122,7 @@ export function groupLifecycleNodes(
         to: ev.to,
         depType: ev.depType,
         depTypeFrom: ev.depTypeFrom,
+        changeOrigin: ev.changeOrigin,
         manifests: ev.manifest ? [ev.manifest] : [],
       });
     }
@@ -116,8 +131,23 @@ export function groupLifecycleNodes(
     const types = new Set<string>();
     for (const ch of [...node.declared, ...node.resolved]) types.add(ch.type);
     node.headline = types.size === 1 ? ([...types][0] as LifecycleNode['headline']) : 'mixed';
+    const changes = [...node.declared, ...node.resolved];
+    node.changeOrigin = node.isMerge
+      ? (changes.every(ch => ch.changeOrigin === 'merge-integration') ? 'merge-integration' : 'merge-change')
+      : (node.metadataKnown ? 'direct' : undefined);
   }
-  return nodes;
+  return nodes.sort((a, b) => { const diff = Date.parse(a.date) - Date.parse(b.date); return Number.isFinite(diff) ? diff : 0; });
+}
+
+export function lifecycleNodeTitle(node: LifecycleNode): string {
+  if (node.isMerge) {
+    if (node.changeOrigin !== 'merge-integration') return 'Merge dependency changes';
+    return node.headline === 'added' ? 'Merged existing dependency'
+      : node.headline === 'updated' ? 'Merged dependency update'
+      : node.headline === 'removed' ? 'Merged dependency removal' : 'Merged dependency changes';
+  }
+  return node.headline === 'added' ? 'Added dependency' : node.headline === 'updated' ? 'Updated dependency'
+    : node.headline === 'removed' ? 'Removed dependency' : 'Dependency changes';
 }
 
 /**
@@ -175,7 +205,10 @@ export function renderArchaeologyView(
   const lines = [
     c.bold('Archaeology for ') + c.bold(c.cyan(safeName)),
     `Status: ${statusBanner}`,
-    `Total modifications: ${c.bold(pkgEvents.length)} events across ${c.bold(nodes.length)} commits`,
+    `Evidence: ${c.bold(pkgEvents.length)} events across ${c.bold(nodes.length)} commits`,
+    `History: ${nodes.filter(n => n.changeOrigin === 'direct').length} direct commits · ${nodes.filter(n => n.isMerge).length} merge commits${nodes.some(n => !n.metadataKnown) ? ' · ' + nodes.filter(n => !n.metadataKnown).length + ' commits without merge metadata' : ''}`,
+    `Commit authors: ${new Set(nodes.map(n => n.author)).size} (includes merge authors)`,
+    `First recorded: ${formatDate(nodes[0].date)}`,
     '',
     c.dim('Timeline (chronological order, one node per commit):'),
     c.dim('──────────────────────────────────────────────────────────────────')
@@ -193,13 +226,14 @@ export function renderArchaeologyView(
     else if (node.headline === 'removed') typeStr = c.red('- removed');
     else typeStr = c.yellow('± mixed  ');
 
-    const nodeSymbol =
+    const nodeSymbol = node.isMerge ? c.cyan('◇') :
       node.headline === 'added' ? c.green('●') : node.headline === 'removed' ? c.red('●') : c.yellow('●');
     const timeLabel = rel ? `${date} (${rel})` : date;
 
     lines.push(
-      `${nodeSymbol}  ${c.dim(timeLabel.padEnd(20))}  ${typeStr}  ${c.cyan(stripControl(node.commit))}  ${c.dim(stripControl(node.author))}`
+      `${nodeSymbol}  ${c.dim(timeLabel.padEnd(20))}  ${node.isMerge ? c.cyan('merge    ') : typeStr}  ${c.cyan(stripControl(node.commit))}  ${c.dim((node.isMerge ? 'Merge author: ' : 'Commit author: ') + stripControl(node.author))}`
     );
+    lines.push(`   ${c.bold(lifecycleNodeTitle(node))}`);
     for (const [label, changes] of [['declared', node.declared], ['resolved', node.resolved]] as const) {
       for (const ch of changes) {
         lines.push(`   ${c.dim(label)} ${formatLifecycleChange(ch)}`);
@@ -223,14 +257,15 @@ function formatManifestList(manifests: string[]): string {
 
 function formatLifecycleChange(ch: LifecycleChange): string {
   let changeStr = '';
+  const integration = ch.changeOrigin === 'merge-integration';
   if (ch.type === 'added') {
-    changeStr = `+added ${c.bold(stripControl(ch.to || ''))}`;
+    changeStr = `${integration ? 'merged existing' : '+added'} ${c.bold(stripControl(ch.to || ''))}`;
   } else if (ch.type === 'updated') {
     const move =
       ch.depTypeFrom && ch.depTypeFrom !== ch.depType ? c.dim(` [${ch.depTypeFrom} → ${ch.depType}]`) : '';
-    changeStr = `${stripControl(ch.from || '?')} -> ${c.bold(stripControl(ch.to || '?'))}${move}`;
+    changeStr = `${integration ? 'merged update ' : ''}${stripControl(ch.from || '?')} -> ${c.bold(stripControl(ch.to || '?'))}${move}`;
   } else if (ch.type === 'removed') {
-    changeStr = `-removed ${c.dim(`was ${stripControl(ch.from || 'installed')}`)}`;
+    changeStr = `${integration ? 'merged removal' : '-removed'} ${c.dim(`was ${stripControl(ch.from || 'installed')}`)}`;
   }
   const section =
     ch.depType && ch.depType !== 'dependencies' ? c.dim(` (${stripControl(ch.depType)})`) : '';

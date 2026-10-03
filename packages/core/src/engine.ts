@@ -157,9 +157,17 @@ interface SnapEntry {
   hash: string;
   /** Blob object ID the map was parsed from. */
   oid?: string;
+  /** Last-good data retained after unreadable or missing importer evidence. */
+  unreadable?: boolean;
 }
 
 type StateMap = Map<string, SnapEntry>;
+
+function markUnreadable(state: StateMap, filePath: string): void {
+  for (const [key, entry] of state) {
+    if (key === filePath || key.startsWith(filePath + '::')) state.set(key, { ...entry, unreadable: true });
+  }
+}
 
 /** Snapshot key for a lockfile's per-manifest resolved map. */
 function lockStateKey(lockPath: string, manifest: string): string {
@@ -555,7 +563,7 @@ function readGeneration(baseDir?: string): number | null {
 
 function writeGenerationPointer(baseDir: string, head: string): void {
   try {
-    const active = { generation: Date.now(), head, schema: 4, updatedAt: new Date().toISOString() };
+    const active = { generation: Date.now(), head, schema: 5, updatedAt: new Date().toISOString() };
     const tmp = path.join(baseDir, `.active-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
     fs.writeFileSync(tmp, JSON.stringify(active), 'utf8');
     fs.renameSync(tmp, path.join(baseDir, 'active.json'));
@@ -612,7 +620,7 @@ function promoteTempStore(baseDir: string, tempDir: string): void {
   // Write an atomic generation pointer so readers can pin one generation.
   try {
     const head = tryReadJsonMeta(path.join(baseDir, 'cache.json'), 'cached_head') ?? '';
-    const active = { generation: Date.now(), head, schema: 4, updatedAt: new Date().toISOString() };
+    const active = { generation: Date.now(), head, schema: 5, updatedAt: new Date().toISOString() };
     const tmp = path.join(baseDir, `.active-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
     fs.writeFileSync(tmp, JSON.stringify(active), 'utf8');
     fs.renameSync(tmp, path.join(baseDir, 'active.json'));
@@ -798,7 +806,7 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
 
   // Blob OID of a snapshot entry's source content.
   const snapshotOid = (state: StateMap | undefined, key: string): string | undefined =>
-    state?.get(key)?.oid;
+    state?.get(key)?.unreadable ? undefined : state?.get(key)?.oid;
 
   const finishCommit = (c: CommitInfo, windowIndex: number, windowTotal: number) => {
     processed++;
@@ -1074,7 +1082,10 @@ async function seedMissingParents(
         warnOnce(`parent-corrupt:${f}`, restored
           ? `Recovered last readable ${f} before corrupt parent ${parent.slice(0, 7)}.`
           : `No readable baseline for ${f} at parent ${parent.slice(0, 7)}; changes may be incomplete.`);
+        markUnreadable(state, f);
       }
+    } else if (f.endsWith('package.json')) {
+      state.set(f, { map: new Map(), hash: '' });
     }
   }
 }
@@ -1113,6 +1124,7 @@ async function processCommit(
   const base: StateMap = (firstParent && states.get(firstParent)) || new Map();
   const next: StateMap = new Map(base);
   const directPackagesInCommit = new Set<string>();
+  const eventStart = newEvents.length;
 
   // Contents arrive with declarations first, then resolved lockfiles.
   // Both paths use this same diff logic, including streamed large commits.
@@ -1133,10 +1145,12 @@ async function processCommit(
       }
       const h = hashContent(content);
       if (prev && h === prev.hash) {
+        if (prev.unreadable) next.set(f, { ...prev, oid, unreadable: false });
         continue; // unchanged (merge/mode-only change)
       }
       const res = parsePackageJsonSync(content);
       if (!res.ok) {
+        markUnreadable(next, f);
         warnOnce(`corrupt:${f}:${res.note || 'invalid'}`, `Skipping undecodable ${f} at ${short} (${res.note || 'invalid'}); keeping previous state.`);
         continue;
       }
@@ -1167,9 +1181,13 @@ async function processCommit(
     }
     const h = hashContent(content);
     const prev = base.get(f);
-    if (prev && h === prev.hash) continue;
+    if (prev && h === prev.hash) {
+      if (prev.unreadable) next.set(f, { ...prev, oid, unreadable: false });
+      continue;
+    }
     const res = await parseAnyManifest(f, content);
     if (res === null) {
+      markUnreadable(next, f);
       if (directPackagesInCommit.size === 0) {
         newEvents.push(createLockfileLowFiEvent(c, f));
       }
@@ -1177,6 +1195,7 @@ async function processCommit(
       continue;
     }
     if (!res.ok) {
+      markUnreadable(next, f);
       warnOnce(`corrupt:${f}:${res.note || 'invalid'}`, `Skipping undecodable ${f} at ${short} (${res.note || 'invalid'}); keeping previous state.`);
       continue;
     }
@@ -1192,7 +1211,29 @@ async function processCommit(
     next.set(f, { map: currMap, hash: h, oid });
   }
 
+  for (let i = eventStart; i < newEvents.length; i++) {
+    newEvents[i].changeOrigin = classifyChangeOrigin(newEvents[i], c, states);
+  }
   states.set(c.commit, next);
+}
+
+/** A matching incoming snapshot proves integration; messages and names do not. */
+function classifyChangeOrigin(event: DependencyEvent, c: CommitInfo, states: Map<string, StateMap>): DependencyEvent['changeOrigin'] {
+  if (c.parents.length < 2) return 'direct';
+  const key = event.lockfile ? lockStateKey(event.lockfile, event.manifest) : event.manifest;
+  for (const parent of c.parents.slice(1)) {
+    const snapshot = states.get(parent)?.get(key);
+    if (!snapshot || snapshot.unreadable) continue;
+    const incoming = snapshot.map.get(event.package);
+    if (event.type === 'removed') {
+      if (!incoming) return 'merge-integration';
+    } else if (incoming && incoming.version === event.to && incoming.depType === event.depType &&
+      Boolean(incoming.ambiguous) === Boolean(event.ambiguous) &&
+      JSON.stringify(incoming.resolutions || null) === JSON.stringify(event.resolutions || null)) {
+      return 'merge-integration';
+    }
+  }
+  return 'merge-change';
 }
 
 function parsePackageJsonSync(content: string): ParseResult {
@@ -1232,6 +1273,7 @@ async function processMultiManifestLockfile(
   const h = hashContent(content);
   const multi = await parseLockfilePerManifest(lockPath, content);
   if (multi === null) {
+    markUnreadable(next, lockPath);
     if (directPackagesInCommit.size === 0) {
       newEvents.push(createLockfileLowFiEvent(c, lockPath));
     }
@@ -1239,6 +1281,7 @@ async function processMultiManifestLockfile(
     return;
   }
   if (!multi.ok) {
+    markUnreadable(next, lockPath);
     warnOnce(`corrupt:${lockPath}:${multi.note || 'invalid'}`, `Skipping undecodable ${lockPath} at ${short} (${multi.note || 'invalid'}); keeping previous state.`);
     return;
   }
@@ -1253,7 +1296,7 @@ async function processMultiManifestLockfile(
     if (prev && h === prev.hash) {
       // Carry the recorded blob OID forward so later commits keep
       // skipping this importer without re-fetching.
-      if (prev.oid === undefined && lockOid !== undefined) {
+      if (prev.unreadable || (prev.oid === undefined && lockOid !== undefined)) {
         next.set(key, { map: prev.map, hash: prev.hash, oid: lockOid });
       }
       continue;
@@ -1278,7 +1321,7 @@ async function processMultiManifestLockfile(
     const manifest = key.slice(prefix.length);
     if (!seenManifests.has(manifest)) {
       warnOnce(`lockfile-importer-lost:${lockPath}:${manifest}`, `${manifest} no longer resolved by ${lockPath} at ${short}; keeping last resolved state.`);
-      next.set(key, entry);
+      next.set(key, { ...entry, unreadable: true });
     }
   }
 }

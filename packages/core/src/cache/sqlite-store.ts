@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import type { DependencyEvent, FilterOptions, StoreInterface } from '../types.js';
 
-export const CACHE_SCHEMA_VERSION = '4';
+export const CACHE_SCHEMA_VERSION = '5';
 
 function loadDatabaseSync(): any {
   try {
@@ -192,7 +192,9 @@ export class SqliteStore implements StoreInterface {
       'ALTER TABLE events ADD COLUMN dep_type_from TEXT',
       'ALTER TABLE events ADD COLUMN lockfile TEXT',
       'ALTER TABLE events ADD COLUMN resolutions TEXT',
-      'ALTER TABLE events ADD COLUMN ambiguous INTEGER NOT NULL DEFAULT 0'
+      'ALTER TABLE events ADD COLUMN ambiguous INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE events ADD COLUMN commit_parents TEXT',
+      'ALTER TABLE events ADD COLUMN change_origin TEXT'
     ];
     for (const sql of additions) {
       try {
@@ -238,8 +240,8 @@ export class SqliteStore implements StoreInterface {
             package, type, from_version, to_version,
             date, commit_sha, commit_full, author, message, manifest,
             dep_type, dep_type_from, source, lockfile, is_direct,
-            resolutions, ambiguous
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            resolutions, ambiguous, commit_parents, change_origin
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
       }
       const stmt = this.stmtInsertEvent;
@@ -262,7 +264,9 @@ export class SqliteStore implements StoreInterface {
           ev.lockfile || null,
           ev.isDirect === false ? 0 : 1,
           ev.resolutions ? JSON.stringify(ev.resolutions) : null,
-          ev.ambiguous ? 1 : 0
+          ev.ambiguous ? 1 : 0,
+          ev.commitParents ? JSON.stringify(ev.commitParents) : null,
+          ev.changeOrigin || null
         );
       }
       this.commitTx();
@@ -359,6 +363,13 @@ export class SqliteStore implements StoreInterface {
         isDirect: row.is_direct === 1
       };
       if (row.commit_full) ev.commitFull = row.commit_full;
+      if (row.commit_parents) {
+        try {
+          const parents = JSON.parse(row.commit_parents);
+          if (Array.isArray(parents) && parents.every((p: unknown) => typeof p === 'string' && /^[0-9a-f]{40,64}$/i.test(p))) ev.commitParents = parents;
+        } catch { /* Ignore corrupt optional metadata. */ }
+      }
+      if (['direct', 'merge-integration', 'merge-change'].includes(row.change_origin)) ev.changeOrigin = row.change_origin;
       if (row.from_version) ev.from = row.from_version;
       if (row.to_version) ev.to = row.to_version;
       if (row.dep_type_from) ev.depTypeFrom = row.dep_type_from;
@@ -410,6 +421,13 @@ export class SqliteStore implements StoreInterface {
         isDirect: row.is_direct === 1,
       };
       if (row.commit_full) ev.commitFull = row.commit_full;
+      if (row.commit_parents) {
+        try {
+          const parents = JSON.parse(row.commit_parents);
+          if (Array.isArray(parents) && parents.every((p: unknown) => typeof p === 'string' && /^[0-9a-f]{40,64}$/i.test(p))) ev.commitParents = parents;
+        } catch { /* Ignore corrupt optional metadata. */ }
+      }
+      if (['direct', 'merge-integration', 'merge-change'].includes(row.change_origin)) ev.changeOrigin = row.change_origin;
       if (row.from_version) ev.from = row.from_version;
       if (row.to_version) ev.to = row.to_version;
       if (row.dep_type_from) ev.depTypeFrom = row.dep_type_from;
