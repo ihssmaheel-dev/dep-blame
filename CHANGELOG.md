@@ -10,6 +10,8 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-04
+
 ### Fixed
 
 - Archaeology distinguishes direct commits from verified merge integrations using incoming-parent snapshots. Original additions and merge authors have separate labels in the dashboard, CLI, and Markdown export. Unreadable incoming evidence uses a general merge-change label.
@@ -62,5 +64,6 @@ zero-dependency `dep-blame` package (CLI + engine + bundled dashboard).
 - `test/cache.test.js` asserts the current `CACHE_SCHEMA_VERSION` instead of a hardcoded `'3'`, with a Windows handle-race-tolerant cleanup.
 - Dashboard gzip budget **40 → 44 KiB** (still ~1/3 of any framework baseline): accounts for the full-detail GitHub brand mark and per-commit lifecycle grouping, both irreducible product requirements.
 
-[Unreleased]: https://github.com/ihssmaheel-dev/dep-blame/compare/dep-blame-v0.1.0...HEAD
+[Unreleased]: https://github.com/ihssmaheel-dev/dep-blame/compare/dep-blame-v0.2.0...HEAD
+[0.2.0]: https://github.com/ihssmaheel-dev/dep-blame/releases/tag/dep-blame-v0.2.0
 [0.1.0]: https://github.com/ihssmaheel-dev/dep-blame/releases/tag/dep-blame-v0.1.0

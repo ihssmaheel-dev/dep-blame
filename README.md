@@ -9,14 +9,12 @@
   See exactly how your project's dependencies changed over time — what changed, when, by whom, and in which commit.
 </p>
 
-<div align="center">
-
-[![npm version](https://img.shields.io/npm/v/dep-blame)](https://www.npmjs.com/package/dep-blame)
-[![node](https://img.shields.io/node/v/dep-blame)](https://nodejs.org)
-[![license: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
-[![tests](https://img.shields.io/badge/tests-81%2F81-brightgreen)](#contributing)
-
-</div>
+<p align="center">
+  <a href="https://www.npmjs.com/package/dep-blame"><img alt="npm version" src="https://img.shields.io/npm/v/dep-blame"></a>
+  <a href="https://nodejs.org"><img alt="node" src="https://img.shields.io/node/v/dep-blame"></a>
+  <a href="./LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="#contributing"><img alt="tests" src="https://img.shields.io/badge/tests-85%2F85-brightgreen"></a>
+</p>
 
 ```bash
 npx dep-blame
@@ -591,7 +589,7 @@ Deep technical spec, decisions, and roadmap: [`dep-blame.md`](./dep-blame.md).
 ```bash
 npm install
 npm run build
-npm test        # 81/81 via node:test with real disposable git repos
+npm test        # 85/85 via node:test with real disposable git repos
 ```
 
 - Keep the core CLI at **zero required runtime dependencies**.

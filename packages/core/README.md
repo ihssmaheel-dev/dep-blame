@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-[![npm version](https://img.shields.io/npm/v/dep-blame)](https://www.npmjs.com/package/dep-blame)
-[![node](https://img.shields.io/node/v/dep-blame)](https://nodejs.org)
-[![license: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+  <a href="https://www.npmjs.com/package/dep-blame"><img alt="npm version" src="https://img.shields.io/npm/v/dep-blame"></a>
+  <a href="https://nodejs.org"><img alt="node" src="https://img.shields.io/node/v/dep-blame"></a>
+  <a href="./LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 ```bash
