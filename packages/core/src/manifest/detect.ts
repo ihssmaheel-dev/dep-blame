@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
+import type { Readable, Writable } from 'node:stream';
 import type { DetectedPackageManager } from '../types.js';
-
-const execFileAsync = promisify(execFile);
 
 function toPosixPath(p: string): string {
   return p.split(path.sep).join('/');
@@ -296,52 +295,112 @@ export interface HistoricDiscovery {
 export async function discoverHistoricManifests(
   repoRoot: string,
   maxPaths = 300,
-  range?: string
+  range?: string,
+  onProgress?: (found: number) => void
 ): Promise<HistoricDiscovery> {
-  try {
-    const { stdout } = await execFileAsync(
-      'git',
-      [
-        'log',
-        ...(range ? [range] : ['--all']),
-        '--full-history',
-        '--format=',
-        '--name-only',
-        '-z',
-        '--diff-filter=AMR',
-        '--',
-        '*package.json',
-        '*package-lock.json',
-        '*pnpm-lock.yaml',
-        '*yarn.lock',
-        '*bun.lock*'
-      ],
-      { cwd: repoRoot, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }
-    );
+  // Streamed (not buffered): full-history walks on huge repositories emit
+  // tens of megabytes of paths. Buffering that in one execFile both hides
+  // progress for the whole walk and risks maxBuffer failure; streaming
+  // reports live counts, has no buffer cap, and exits early on the path cap.
+  const args = [
+    'log',
+    ...(range ? [range] : ['--all']),
+    '--full-history',
+    '--format=',
+    '--name-only',
+    '-z',
+    '--diff-filter=AMR',
+    '--',
+    '*package.json',
+    '*package-lock.json',
+    '*pnpm-lock.yaml',
+    '*yarn.lock',
+    '*bun.lock*'
+  ];
+  // Pathological guard: never retain more than this from one discovery walk.
+  const MAX_STREAM_BYTES = 128 * 1024 * 1024;
+  return new Promise((resolve) => {
     const found = new Set<string>();
     let truncated = false;
     let skippedLong = 0;
-    for (const f of stdout.split('\0')) {
-      if (!f) continue;
+    let settled = false;
+    let stderr = '';
+    let streamedBytes = 0;
+    let pending = '';
+    let lastEmit = 0;
+    const finish = (result: HistoricDiscovery) => {
+      if (settled) return;
+      settled = true;
+      try { child.kill(); } catch { /* already exited */ }
+      resolve(result);
+    };
+    const emit = () => {
+      const now = Date.now();
+      if (onProgress && now - lastEmit > 500) {
+        lastEmit = now;
+        try { onProgress(found.size); } catch { /* progress must never break scans */ }
+      }
+    };
+    const consider = (f: string): void => {
+      if (!f) return;
       const base = f.split('/').pop() || '';
-      if (!isManifestBasename(base)) continue;
+      if (!isManifestBasename(base)) return;
       // Skip absurd paths (submodule dumps, generated fixtures) but record
       // it so callers surface incompleteness instead of silent partial history.
       // Match any node_modules segment (not just `node_modules/.`).
-      const segments = f.split('/');
-      if (segments.includes('node_modules')) continue;
-      if (f.length > 256) { skippedLong++; continue; }
+      if (f.split('/').includes('node_modules')) return;
+      if (f.length > 256) { skippedLong++; return; }
       found.add(f);
       if (found.size >= maxPaths) {
         truncated = true;
-        break;
+        onProgress?.(found.size);
+        finish({ paths: Array.from(found).sort(), truncated: true });
+        return;
       }
-    }
-    if (skippedLong > 0) truncated = true;
-    return { paths: Array.from(found).sort(), truncated };
-  } catch (err: any) {
-    return { paths: [], truncated: false, error: err?.message || 'git log failed' };
-  }
+      if (found.size % 500 === 0) emit();
+    };
+    let child: ChildProcessByStdio<Writable, Readable, Readable>;
+    child = spawn('git', args, { cwd: repoRoot, windowsHide: true });
+    const decoder = new StringDecoder('utf8');
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (settled) return;
+      streamedBytes += chunk.length;
+      if (streamedBytes > MAX_STREAM_BYTES) {
+        truncated = true;
+        finish({ paths: Array.from(found).sort(), truncated, error: 'manifest discovery exceeded its 128 MiB scan cap' });
+        return;
+      }
+      pending += decoder.write(chunk);
+      let pos: number;
+      while ((pos = pending.indexOf('\0')) !== -1) {
+        consider(pending.slice(0, pos));
+        if (settled) return;
+        pending = pending.slice(pos + 1);
+      }
+    });
+    child.stderr.on('data', (chunk: Buffer) => { if (stderr.length < 8192) stderr += chunk.toString('utf8'); });
+    child.on('error', (err) => {
+      finish({ paths: [], truncated: false, error: (err as Error)?.message || 'git log failed' });
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      try {
+        pending += decoder.end();
+        for (const f of pending.split('\0')) consider(f);
+        if (settled) return;
+        if (code !== 0) {
+          finish({ paths: [], truncated: false, error: stderr.trim() || 'git log exited with code ' + code });
+          return;
+        }
+      } catch (err: any) {
+        finish({ paths: [], truncated: false, error: err?.message || 'git log failed' });
+        return;
+      }
+      if (skippedLong > 0) truncated = true;
+      onProgress?.(found.size);
+      finish({ paths: Array.from(found).sort(), truncated });
+    });
+  });
 }
 
 /**

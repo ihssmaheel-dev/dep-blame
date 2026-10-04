@@ -168,7 +168,50 @@
 
   function renderScanningState() {
     updateScanProgress({phase: 'initializing', message: 'Connecting to analysis stream…'});
+    hideSlowNote();
+    armSlowNoteTimer();
     renderView();
+  }
+
+  // Slow-scan reassurance, shown two ways: immediately when the engine
+  // reports a heavy history (>= 1000 commits), or after 20 quiet seconds
+  // for walks whose totals are unknowable up front. Hidden on every fresh
+  // scan and once loading finishes.
+  let slowNoteTimer = 0;
+  function slowNoteText(total) {
+    const scope = total > 0 ? `Big history here — ${total} commits. ` : 'Still working here — ';
+    return `${scope}Sorry for the wait: this first scan walks everything to build the cache. Afterwards only new commits are read, so future runs take seconds and always include your latest changes.`;
+  }
+  function updateSlowNote(phase, total) {
+    const note = document.getElementById('scan-slow-note');
+    if (!note) return;
+    if (phase === 'analyzing' && total >= 1000) {
+      note.textContent = slowNoteText(total);
+      note.hidden = false;
+    } else if (phase === 'analyzing' && total > 0) {
+      // Known-small history: no apology needed (also clears a timer note
+      // if the scan turned out quicker than the 20s tripwire).
+      note.hidden = true;
+    }
+  }
+  function hideSlowNote() {
+    const note = document.getElementById('scan-slow-note');
+    if (note) note.hidden = true;
+  }
+  function armSlowNoteTimer() {
+    clearSlowNoteTimer();
+    slowNoteTimer = setTimeout(() => {
+      slowNoteTimer = 0;
+      if (historyState !== 'loading') return;
+      const note = document.getElementById('scan-slow-note');
+      if (note && note.hidden) {
+        note.textContent = slowNoteText(0);
+        note.hidden = false;
+      }
+    }, 20000);
+  }
+  function clearSlowNoteTimer() {
+    if (slowNoteTimer) { clearTimeout(slowNoteTimer); slowNoteTimer = 0; }
   }
 
   // Exact pipeline stages in order. Percent is derived from the real
@@ -214,6 +257,10 @@
       } else {
         determinate = false;
       }
+    } else if (phase === 'discovering' || phase === 'reading_commits') {
+      // Totals are unknowable while git walks: a frozen-looking static bar
+      // is worse than none. Shimmer + live counts from the message instead.
+      determinate = false;
     }
 
     const steps = document.querySelectorAll('#scan-steps .scan-step');
@@ -237,7 +284,12 @@
       count.textContent = p.message || 'Scanning...';
     }
     }
-    if (ticker) ticker.textContent = p.detail || '';
+    if (ticker) {
+    ticker.textContent = p.detail || '';
+    }
+    // Friendly slow-scan note: heavy histories (or a scan that simply runs
+    // long) explain the wait and the cache payoff, instead of looking stuck.
+    updateSlowNote(phase, p.total);
     if (indexTime) indexTime.textContent = determinate ? `Scanning ${pct}% · ${stageName}` : `Scanning · ${stageName}…`;
   }
 
@@ -246,6 +298,8 @@
     allEvents = data.events;
     historyState = 'ready';
     historyError = '';
+    clearSlowNoteTimer();
+    hideSlowNote();
     calendarCache = null;
     sortedCache = null;
     facetCache.clear();
@@ -268,13 +322,59 @@
     document.getElementById('pm-pill').textContent = data.packageManager || 'npm';
     document.getElementById('index-time').textContent = 'Indexed ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    const notices = document.getElementById('history-notices');
     historyWarnings = Array.isArray(data.warnings) ? data.warnings : [];
     historyTruncated = Boolean(data.truncated);
-    notices.hidden = !historyWarnings.length && !historyTruncated;
-    notices.textContent = [historyTruncated ? 'History is incomplete: the scan limit was reached.' : '', ...historyWarnings].filter(Boolean).join(' • ');
+    renderNoticesButton();
     updateStats();
     renderView();
+  }
+
+  // Scan notices live behind a toolbar button + modal — never as a yellow
+  // wall of text above the table. Closed automatically when a clean scan
+  // leaves nothing to report.
+  let noticesReturnFocus = null;
+  function noticesItems() {
+    const items = [];
+    if (historyTruncated) items.push('History is incomplete: the scan limit was reached.');
+    for (const w of historyWarnings) items.push(w);
+    return items;
+  }
+  function renderNoticesButton() {
+    const btn = document.getElementById('notices-btn');
+    const count = document.getElementById('notices-count');
+    const n = noticesItems().length;
+    if (count) count.textContent = n > 0 ? String(n) : '';
+    if (btn) btn.hidden = n === 0;
+    if (n === 0) closeNotices(false);
+  }
+  function openNotices() {
+    const items = noticesItems();
+    if (!items.length) return;
+    noticesReturnFocus = document.activeElement;
+    const list = document.getElementById('notices-list');
+    list.innerHTML = items.map((text) => `<li>${noticeHtml(text)}</li>`).join('');
+    const sub = document.getElementById('notices-subtitle');
+    if (sub) sub.textContent = `${items.length} ${items.length === 1 ? 'notice' : 'notices'} about this scan. History itself is unaffected unless stated.`;
+    document.getElementById('notices-overlay').hidden = false;
+    const closeBtn = document.getElementById('notices-close');
+    if (closeBtn) closeBtn.focus();
+  }
+  // One notice row, readable: escape first (so markup can never inject),
+  // then highlight manifest paths and short commit SHAs. The SHA pattern
+  // requires a non-hex boundary on both sides, so it never fires inside
+  // 40-char SHAs or long integrity hashes.
+  function noticeHtml(text) {
+    return escapeHtml(text)
+      .replace(/((?:[A-Za-z0-9_@][A-Za-z0-9_@./-]*\/)?(?:package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?))/g, '<span class="notice-path">$1</span>')
+      .replace(/(^|[\s(])([0-9a-f]{7})(?![0-9a-f])/g, '$1<span class="notice-sha">$2</span>');
+  }
+  function closeNotices(restoreFocus = true) {
+    const overlay = document.getElementById('notices-overlay');
+    if (overlay) overlay.hidden = true;
+    if (restoreFocus && noticesReturnFocus && noticesReturnFocus.isConnected !== false) {
+      try { noticesReturnFocus.focus(); } catch { /* focus is best-effort */ }
+    }
+    noticesReturnFocus = null;
   }
 
   // Only one analysis stream at a time: a refresh during a scan joins
@@ -315,6 +415,8 @@
       historyState = 'error';
       historyError = err.message || 'Failed to load dependency history. Try Sync again.';
       document.getElementById('index-time').textContent = 'Sync failed';
+      clearSlowNoteTimer();
+      hideSlowNote();
       renderView();
       return false;
     } finally {
@@ -2020,6 +2122,11 @@
   }
   window.addEventListener('keydown', (e) => {
     if (openPanelKind || e.defaultPrevented) return;
+    const noticesOverlay = document.getElementById('notices-overlay');
+    if (noticesOverlay && !noticesOverlay.hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); closeNotices(); }
+      return;
+    }
     if (document.getElementById('drawer-overlay').classList.contains('active')) {
       if (e.key === 'Escape') { e.preventDefault(); closeArchaeology(); }
       if (e.key === 'Tab') {
@@ -2044,6 +2151,13 @@
     } else if (e.key === '2' && !isTypingTarget(document.activeElement)) {
     document.getElementById('view-calendar-btn').click();
     }
+  });
+
+  // Notices modal events
+  document.getElementById('notices-btn').addEventListener('click', openNotices);
+  document.getElementById('notices-close').addEventListener('click', () => closeNotices());
+  document.getElementById('notices-overlay').addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'notices-overlay') closeNotices();
   });
 
   // Drawer events

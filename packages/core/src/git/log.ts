@@ -9,8 +9,19 @@ export interface GitLogOptions {
   headCommit?: string;
 }
 
-/** Reads NUL-delimited metadata and paths incrementally, parents before children. */
-export function getManifestCommits(repoRoot: string, options: GitLogOptions = {}): Promise<CommitInfo[]> {
+/**
+ * Reads NUL-delimited metadata and paths incrementally, parents before children.
+ *
+ * `onProgress(found)` reports the running commit count while git walks —
+ * full-history walks on huge repositories otherwise sit silent for minutes.
+ * Path chunks run with bounded parallelism (default 4) and merge in chunk
+ * order, so output is deterministic regardless of completion order.
+ */
+export function getManifestCommits(
+  repoRoot: string,
+  options: GitLogOptions = {},
+  onProgress?: (found: number) => void
+): Promise<CommitInfo[]> {
   const {sinceCommit, manifestPaths = ['package.json', 'package-lock.json'], reverse = true, headCommit = 'HEAD'} = options;
   // Avoid ARG_MAX on repos with 300 manifest paths: chunk the path filter
   // and merge/dedupe. 50 paths per invocation keeps argv small.
@@ -24,12 +35,35 @@ export function getManifestCommits(repoRoot: string, options: GitLogOptions = {}
     }
   }
   if (chunks.length === 1) {
-    return getManifestCommitsChunk(repoRoot, { sinceCommit, manifestPaths, reverse, headCommit });
+    return getManifestCommitsChunk(repoRoot, { sinceCommit, manifestPaths, reverse, headCommit }, onProgress);
   }
+  const CONCURRENCY = 4;
+  const counts = new Array<number>(chunks.length).fill(0);
+  let lastEmit = 0;
+  const runChunk = async (index: number): Promise<CommitInfo[]> => {
+    const part = await getManifestCommitsChunk(
+      repoRoot,
+      { sinceCommit, manifestPaths: chunks[index], reverse, headCommit },
+      (n) => {
+        counts[index] = n;
+        const now = Date.now();
+        if (onProgress && now - lastEmit > 500) {
+          lastEmit = now;
+          onProgress(counts.reduce((a, b) => a + b, 0));
+        }
+      }
+    );
+    counts[index] = part.length;
+    return part;
+  };
   return (async () => {
+    const parts: CommitInfo[][] = [];
+    for (let s = 0; s < chunks.length; s += CONCURRENCY) {
+      const group = await Promise.all(chunks.slice(s, s + CONCURRENCY).map((_, k) => runChunk(s + k)));
+      parts.push(...group);
+    }
     const bySha = new Map<string, CommitInfo>();
-    for (const chunk of chunks) {
-      const part = await getManifestCommitsChunk(repoRoot, { sinceCommit, manifestPaths: chunk, reverse, headCommit });
+    for (const part of parts) {
       for (const c of part) {
         const existing = bySha.get(c.commit);
         if (!existing) {
@@ -46,11 +80,16 @@ export function getManifestCommits(repoRoot: string, options: GitLogOptions = {}
     // re-sort merged by date is unsafe (equal timestamps). Re-walk once
     // without a path filter is wasteful, so preserve first-seen order which
     // matches the first chunk's chronological order for overlapping commits.
+    onProgress?.(merged.length);
     return merged;
   })();
 }
 
-function getManifestCommitsChunk(repoRoot: string, options: GitLogOptions = {}): Promise<CommitInfo[]> {
+function getManifestCommitsChunk(
+  repoRoot: string,
+  options: GitLogOptions = {},
+  onProgress?: (found: number) => void
+): Promise<CommitInfo[]> {
   const {sinceCommit, manifestPaths = ['package.json', 'package-lock.json'], reverse = true, headCommit = 'HEAD'} = options;
   const args = ['log', '--topo-order'];
   if (reverse) args.push('--reverse');
@@ -85,7 +124,10 @@ function getManifestCommitsChunk(repoRoot: string, options: GitLogOptions = {}):
       const parents = parentText.split(/\s+/).filter(Boolean);
       if (parents.some(p => !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(p))) throw new Error('Invalid Git parent record.');
       current = bySha.get(commit) || {commit, parents, date, author, message, files: []};
-      if (!bySha.has(commit)) { bySha.set(commit, current); commits.push(current); }
+      if (!bySha.has(commit)) {
+        bySha.set(commit, current); commits.push(current);
+        if (onProgress && commits.length % 200 === 0) onProgress(commits.length);
+      }
       firstFile = true;
     }
     function feed(text: string) {
@@ -109,6 +151,7 @@ function getManifestCommitsChunk(repoRoot: string, options: GitLogOptions = {}):
         feed(decoder.end());
         if (code !== 0) throw new Error(stderr.trim() || 'git log exited with code ' + code);
         if (pending.length || (!current && fields.length)) throw new Error('Incomplete Git history record.');
+        onProgress?.(commits.length);
         resolve(commits);
       } catch (err) { reject(err); }
     });

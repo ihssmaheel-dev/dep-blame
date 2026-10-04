@@ -35,5 +35,6 @@ export { parseNpmLockfile } from './manifest/lockfiles/npm.js';
 export { parsePnpmLockfile, parsePnpmLockfiles } from './manifest/lockfiles/pnpm.js';
 export { parseYarnLockfile } from './manifest/lockfiles/yarn.js';
 export { parseBunLockfile, parseBunLockfiles } from './manifest/lockfiles/bun.js';
+export { parsedBlobCache, type CachedParse, type MultiParseResult } from './manifest/parse-cache.js';
 export { getManifestCommits } from './git/log.js';
 export { batchReadBlobs, streamReadBlobs, resolveBlobOids, type BlobId, type BlobContent } from './git/batch.js';

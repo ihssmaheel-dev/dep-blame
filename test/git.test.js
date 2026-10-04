@@ -93,6 +93,20 @@ test('streamed Git blobs reject an oversized single object before allocating its
   } finally { repo.cleanup(); }
 });
 
+test('git log streams progress while walking history', async () => {
+  const repo = await createTestRepo();
+  try {
+    for (let i = 0; i < 5; i++) {
+      await repo.commitFile('package.json', { name: 'p', dependencies: { [`d${i}`]: '1' } }, `commit ${i}`);
+    }
+    const seen = [];
+    const commits = await getManifestCommits(repo.repoDir, { manifestPaths: ['package.json'] }, (n) => seen.push(n));
+    assert.equal(commits.length, 5);
+    assert.ok(seen.length >= 1);
+    assert.equal(seen[seen.length - 1], 5);
+  } finally { repo.cleanup(); }
+});
+
 test('git log and batch blob reading', async () => {
   const root = await getRepoRoot();
   const commits = await getManifestCommits(root, { manifestPaths: ['package.json'] });

@@ -180,6 +180,60 @@ test('ui behavior: archaeology drawer groups same-commit evidence into one node'
   assert.equal(ui.nodes.get('drawer-evidence-count').textContent, '5 file events');
 });
 
+test('ui behavior: unknowable phases render indeterminate, not frozen', () => {
+  const ui = client();
+  ui.streams[0].emit('progress', { phase: 'reading_commits', current: 1500, total: 0, message: 'Reading commit history… (1500 found)' });
+  assert.equal(ui.nodes.get('scan-percent-label').textContent, '…');
+  assert.ok(ui.nodes.get('scan-bar-track').classList.contains('indeterminate'));
+  assert.equal(ui.nodes.get('scan-commits-count').textContent, 'Reading commit history… (1500 found)');
+});
+
+test('ui behavior: heavy scans show a friendly wait message', () => {
+  const ui = client();
+  ui.streams[0].emit('progress', { phase: 'analyzing', current: 4, total: 2500, message: 'Batch 1/9: Analyzing…', detail: '4/2500 commits' });
+  const note = ui.nodes.get('scan-slow-note');
+  assert.equal(note.hidden, false);
+  assert.match(note.textContent, /Sorry for the wait/);
+  assert.match(note.textContent, /2500/);
+  assert.match(note.textContent, /seconds/);
+  // Small scans stay clean: no apology needed.
+  ui.streams[0].emit('progress', { phase: 'analyzing', current: 4, total: 10, message: 'Analyzing…', detail: '4/10 commits' });
+  assert.equal(ui.nodes.get('scan-slow-note').hidden, true);
+});
+
+test('ui behavior: scan notices open in a modal instead of a banner', async () => {
+  const ui = client();
+  // The yellow wall above the table is gone.
+  assert.throws(() => ui.run("document.getElementById('history-notices')"), /Unknown dashboard element/);
+  ui.streams[0].emit('complete', { ...result([event('2026-09-28')]), warnings: ['broke one thing', 'broke <two> things'], truncated: true });
+  await flush();
+  assert.equal(ui.nodes.get('notices-btn').hidden, false);
+  assert.equal(ui.nodes.get('notices-count').textContent, '3');
+  ui.nodes.get('notices-btn').dispatch('click');
+  assert.equal(ui.nodes.get('notices-overlay').hidden, false);
+  const listHtml = ui.nodes.get('notices-list').innerHTML;
+  assert.ok(listHtml.includes('History is incomplete'));
+  assert.ok(listHtml.includes('broke one thing'));
+  assert.ok(listHtml.includes('broke &lt;two&gt; things'));
+  assert.ok(!listHtml.includes('broke <two>'));
+  ui.run('closeNotices()');
+  assert.equal(ui.nodes.get('notices-overlay').hidden, true);
+});
+
+test('ui behavior: notices highlight paths and commits for readability', () => {
+  const ui = client();
+  const out = ui.run(`noticeHtml('packages/app/package.json no longer resolved by pnpm-lock.yaml at abc1234; keeping state.')`);
+  assert.ok(out.includes('<span class="notice-path">packages/app/package.json</span>'));
+  assert.ok(out.includes('<span class="notice-path">pnpm-lock.yaml</span>'));
+  assert.ok(out.includes('<span class="notice-sha">abc1234</span>'));
+  // Escaped first: no markup injection, no highlights inside long hashes.
+  const evil = ui.run(`noticeHtml('x <img src=x onerror=alert(1)> ' + 'a'.repeat(40))`);
+  assert.ok(!evil.includes('<img'));
+  assert.ok(!evil.includes('notice-sha">aaaaaaa'));
+  // Table region fills tall viewports instead of leaving dead page space.
+  assert.match(html, /\.table-responsive[^}]*height:\s*clamp\(280px,\s*calc\(100dvh[^,]*,\s*1200px\)/);
+});
+
 test('ui behavior: theme toggle swaps in one repaint without transitions', () => {
   const ui = client();
   // Adapter localStorage is empty, so the dashboard starts dark.

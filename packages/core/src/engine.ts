@@ -10,6 +10,7 @@ import {
 import { getManifestCommits } from './git/log.js';
 import { batchReadBlobs, streamReadBlobs, resolveBlobOids, MAX_BLOB_BYTES, type BlobContent } from './git/batch.js';
 import { detectPackageManager, discoverHistoricManifests, mergeManifestPaths } from './manifest/detect.js';
+import { parsedBlobCache } from './manifest/parse-cache.js';
 import { parsePackageJson } from './manifest/package-json.js';
 import { parseNpmLockfile } from './manifest/lockfiles/npm.js';
 import { parsePnpmLockfiles } from './manifest/lockfiles/pnpm.js';
@@ -29,6 +30,7 @@ import type {
   EventSource,
   HeadEntry,
   ParseResult,
+  ProgressPhase,
   StoreInterface
 } from './types.js';
 
@@ -85,27 +87,37 @@ function isLockfilePath(f: string): boolean {
 
 async function parseAnyManifest(
   filePath: string,
-  content?: string | null
+  content?: string | null,
+  oid?: string
 ): Promise<ParseResult | null> {
   if (content === null || content === undefined) return { ok: true, entries: new Map() };
 
-  if (filePath.endsWith('package.json')) {
-    return parsePackageJson(content);
-  }
-  if (filePath.endsWith('package-lock.json')) {
-    return parseNpmLockfile(content, { directOnly: true });
-  }
-  if (filePath.endsWith('pnpm-lock.yaml')) {
-    return await parsePnpmLockfileMulti(filePath, content);
-  }
-  if (filePath.endsWith('yarn.lock')) {
-    return await parseYarnLockfile(content);
-  }
-  if (filePath.endsWith('bun.lock') || filePath.endsWith('bun.lockb')) {
-    return parseBunLockfileMulti(filePath, content);
+  // Lockfile parses (YAML/JSONC over megabytes) are the dominant per-commit
+  // CPU cost; package.json JSON.parse is microseconds and skips the cache.
+  // parseAnyManifest is only ever called with directOnly: true for npm, so
+  // the OID alone identifies the result — no options key needed.
+  const cacheable = isLockfilePath(filePath) && !!oid;
+  if (cacheable) {
+    const hit = parsedBlobCache.get(oid);
+    if (hit && hit.kind === 'single') return hit.result;
   }
 
-  return { ok: true, entries: new Map() };
+  let res: ParseResult | null;
+  if (filePath.endsWith('package.json')) {
+    res = parsePackageJson(content);
+  } else if (filePath.endsWith('package-lock.json')) {
+    res = parseNpmLockfile(content, { directOnly: true });
+  } else if (filePath.endsWith('pnpm-lock.yaml')) {
+    res = await parsePnpmLockfileMulti(filePath, content);
+  } else if (filePath.endsWith('yarn.lock')) {
+    res = await parseYarnLockfile(content);
+  } else if (filePath.endsWith('bun.lock') || filePath.endsWith('bun.lockb')) {
+    res = parseBunLockfileMulti(filePath, content);
+  } else {
+    res = { ok: true, entries: new Map() };
+  }
+  if (cacheable && res !== null) parsedBlobCache.set(oid, { kind: 'single', result: res });
+  return res;
 }
 
 async function parsePnpmLockfileMulti(
@@ -140,15 +152,21 @@ function parseBunLockfileMulti(
 /** Per-manifest resolved maps for multi-importer lockfiles (pnpm, bun). */
 async function parseLockfilePerManifest(
   lockPath: string,
-  content: string
+  content: string,
+  oid?: string
 ): Promise<{ ok: boolean; maps: Map<string, Map<string, DependencyEntry>>; note?: string } | null> {
+  if (oid) {
+    const hit = parsedBlobCache.get(oid);
+    if (hit && hit.kind === 'multi') return hit.result;
+  }
+  let res: { ok: boolean; maps: Map<string, Map<string, DependencyEntry>>; note?: string } | null = null;
   if (lockPath.endsWith('pnpm-lock.yaml')) {
-    return parsePnpmLockfiles(content);
+    res = await parsePnpmLockfiles(content);
+  } else if (lockPath.endsWith('bun.lock') || lockPath.endsWith('bun.lockb')) {
+    res = parseBunLockfiles(content);
   }
-  if (lockPath.endsWith('bun.lock') || lockPath.endsWith('bun.lockb')) {
-    return parseBunLockfiles(content);
-  }
-  return null;
+  if (oid && res !== null) parsedBlobCache.set(oid, { kind: 'multi', result: res });
+  return res;
 }
 
 /** Snapshot entry: parsed map plus content hash and blob OID for skip-fast paths. */
@@ -307,7 +325,7 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
           silent,
           onProgress
         });
-        const events = tempStore.queryEvents(filter);
+        const events = readBoundedEvents(tempStore, filter, limit, offset);
         const bounded = applyBounds(tempStore, filter, events, { limit, offset, includeAggregates, baseDir });
         return {
           repository: repoName,
@@ -366,7 +384,7 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
       // created before generation tracking (write before bounding so
       // the current result already carries it).
       if (!readGeneration(baseDir)) writeGenerationPointer(baseDir, currentHead);
-      const events = cache.queryEvents(filter);
+      const events = readBoundedEvents(cache, filter, limit, offset);
       const bounded = applyBounds(cache, filter, events, { limit, offset, includeAggregates, baseDir });
       const headState = await readHeadState(repoRoot, mergeManifestPaths(
         detected.manifestPaths,
@@ -441,7 +459,7 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
       promoteTempStore(baseDir, tempDir);
       const fresh = await openCache({ repoRoot, cacheDir: baseDir });
       try {
-        const events = fresh.queryEvents(filter);
+        const events = readBoundedEvents(fresh, filter, limit, offset);
         const bounded = applyBounds(fresh, filter, events, { limit, offset, includeAggregates, baseDir });
         const warnings = [...scanned.warnings];
         if (isShallow) warnings.push('Shallow clone: history may be incomplete.');
@@ -490,7 +508,7 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
       onProgress
     });
     writeGenerationPointer(baseDir, currentHead);
-    const events = cache.queryEvents(filter);
+    const events = readBoundedEvents(cache, filter, limit, offset);
     const bounded = applyBounds(cache, filter, events, { limit, offset, includeAggregates, baseDir });
     const warnings = [...scanned.warnings];
     if (isShallow) warnings.push('Shallow clone: history may be incomplete.');
@@ -529,7 +547,7 @@ async function runScanLocked(args: LockedScanArgs): Promise<EngineResult> {
 function applyBounds(
   store: StoreInterface,
   filter: NonNullable<LockedScanArgs['filter']>,
-  all: DependencyEvent[],
+  all: DependencyEvent[] | null,
   opts: { limit?: number; offset?: number; includeAggregates?: boolean; baseDir?: string }
 ): { events: DependencyEvent[]; total: number; generation: number | null; months?: { month: string; total: number; added: number; updated: number; removed: number }[] } {
   const generation = readGeneration(opts.baseDir);
@@ -541,15 +559,37 @@ function applyBounds(
       return { events: paged.events, total: paged.total, generation, ...(months ? { months } : {}) };
     } catch { /* fall through to memory slicing */ }
   }
-  const total = all.length;
-  let events = all;
+  // Callers pass null when the paged path above was applicable: a store
+  // without queryPaged still needs the full list, so fetch it here.
+  const list = all ?? store.queryEvents(filter);
+  const total = list.length;
+  let events = list;
   if (hasPaging) {
     const lim = Math.max(0, Math.min(1000, Math.floor(opts.limit ?? total)));
     const off = Math.max(0, Math.floor(opts.offset ?? 0));
-    events = all.slice(off, off + lim);
+    events = list.slice(off, off + lim);
   }
-  const months = opts.includeAggregates ? readMonths(store, filter, all) : undefined;
+  const months = opts.includeAggregates ? readMonths(store, filter, list) : undefined;
   return { events, total, generation, ...(months ? { months } : {}) };
+}
+
+/**
+ * Reads events for a bounded response. When the caller asked for a page and
+ * the store pages natively, no full materialization happens at all — the
+ * store answers COUNT + LIMIT directly (this is what keeps `list --limit 1`
+ * cheap on 200k-event histories).
+ */
+function readBoundedEvents(
+  store: StoreInterface,
+  filter: NonNullable<LockedScanArgs['filter']>,
+  limit: number | undefined,
+  offset: number | undefined
+): DependencyEvent[] | null {
+  if ((limit !== undefined || offset !== undefined) &&
+      typeof (store as { queryPaged?: unknown }).queryPaged === 'function') {
+    return null;
+  }
+  return store.queryEvents(filter);
 }
 
 function readGeneration(baseDir?: string): number | null {
@@ -680,18 +720,59 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
   };
 
   // Step 4: Resolve full manifest list.
+  // discovering/reading_commits report total: 0 (indeterminate): only live
+  // counts are knowable while git walks. A fake static percent would look
+  // frozen on multi-minute walks; counts + elapsed ticks do not.
   onProgress?.({
     phase: 'discovering',
-    current: 15,
-    total: 100,
+    current: 0,
+    total: 0,
     message: 'Resolving dependency manifests...'
   });
+
+  // Heartbeat for long git I/O: re-emits the latest progress line with an
+  // elapsed-time suffix when the underlying operation goes quiet, so the
+  // terminal and SSE stream never look stalled on huge repositories.
+  const heartbeat = <T>(work: Promise<T>, tick: (elapsedMs: number) => void, intervalMs = 2000): Promise<T> => {
+    const start = Date.now();
+    const timer = setInterval(() => {
+      try { tick(Date.now() - start); } catch { /* progress must never break scans */ }
+    }, intervalMs);
+    const stop = () => clearInterval(timer);
+    return work.then(
+      (value) => { stop(); return value; },
+      (err) => { stop(); throw err; }
+    );
+  };
+  const elapsedText = (elapsedMs: number): string => {
+    const s = Math.max(1, Math.round(elapsedMs / 1000));
+    return s < 60 ? `${s}s elapsed` : `${Math.floor(s / 60)}m${s % 60}s elapsed`;
+  };
+
+  // Live counters keep the last-seen count so quiet-stretch heartbeats show
+  // both ("1,240 found, 38s elapsed") instead of clobbering counts with time.
+  const liveCounter = (phase: ProgressPhase, prefix: string) => {
+    let found = 0;
+    return {
+      onCount: (n: number) => {
+        found = n;
+        onProgress?.({ phase, current: n, total: 0, message: `${prefix}… (${n} found)` });
+      },
+      onQuiet: (elapsedMs: number) => {
+        onProgress?.({ phase, current: found, total: 0, message: `${prefix}… (${found} found, ${elapsedText(elapsedMs)})` });
+      }
+    };
+  };
 
   let manifestPaths = detected.manifestPaths;
   let truncated = sinceCommit ? store.getMeta('history_truncated') === 'true' : false;
   if (sinceCommit && priorManifestPaths) {
     manifestPaths = mergeManifestPaths(priorManifestPaths, manifestPaths);
-    const historic = await discoverHistoricManifests(repoRoot, 300, sinceCommit + '..' + scanHead);
+    const manifestsLive = liveCounter('discovering', 'Resolving dependency manifests');
+    const historic = await heartbeat(
+      discoverHistoricManifests(repoRoot, 300, sinceCommit + '..' + scanHead, manifestsLive.onCount),
+      manifestsLive.onQuiet
+    );
     manifestPaths = mergeManifestPaths(manifestPaths, historic.paths);
     if (historic.truncated || historic.error) {
       truncated = true;
@@ -699,7 +780,11 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
     }
   } else {
     try {
-      const historic = await discoverHistoricManifests(repoRoot, 300, scanHead);
+      const manifestsLive = liveCounter('discovering', 'Resolving dependency manifests');
+      const historic = await heartbeat(
+        discoverHistoricManifests(repoRoot, 300, scanHead, manifestsLive.onCount),
+        manifestsLive.onQuiet
+      );
       if (historic.paths.length > 0) manifestPaths = mergeManifestPaths(manifestPaths, historic.paths);
       if (historic.truncated) {
         truncated = true;
@@ -716,17 +801,20 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
   // Step 5: Get manifest commits in topological order.
   onProgress?.({
     phase: 'reading_commits',
-    current: 30,
-    total: 100,
+    current: 0,
+    total: 0,
     message: 'Reading commit history...'
   });
 
-  const commits = await getManifestCommits(repoRoot, {
-    sinceCommit,
-    manifestPaths,
-    reverse: true,
-    headCommit: scanHead
-  });
+  const commitsLive = liveCounter('reading_commits', 'Reading commit history');
+  const commits = await heartbeat(
+    getManifestCommits(
+      repoRoot,
+      { sinceCommit, manifestPaths, reverse: true, headCommit: scanHead },
+      commitsLive.onCount
+    ),
+    commitsLive.onQuiet
+  );
 
   const currentHead = scanHead;
 
@@ -753,6 +841,16 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
 
   const showProgress = !silent && commits.length >= PROGRESS_THRESHOLD;
   const commitSet = new Set(commits.map((c) => c.commit));
+
+  // Heavy histories get a friendly, honest heads-up: the first scan walks
+  // everything, so it can take minutes — every later run only reads what is
+  // new and takes seconds. Shown once, on stderr, never cached as a warning.
+  const manifestCount = manifestPaths.length;
+  if ((commits.length >= 1000 || manifestCount >= 50) && !silent) {
+    console.warn(`  dep-blame: big history here — ${commits.length} manifest commits across ${manifestCount} manifests.`);
+    console.warn(`  Sorry for the wait: this first scan walks everything to build the cache.`);
+    console.warn(`  Afterwards only new commits are read, so future runs take seconds and always include your latest changes.`);
+  }
 
   // Children counts for state pruning (memory bounded by DAG frontier).
   const needCount = new Map<string, number>();
@@ -785,6 +883,7 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
   let processed = 0;
   const newEvents: DependencyEvent[] = [];
   let lastProgressAt = 0;
+  let analyzeStartedAt = 0;
 
   // Throttled heartbeat: at most one update per 150ms, always on window
   // edges, so long fetches never look stalled and huge histories never
@@ -795,12 +894,22 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
     const isEdge = processed === 0 || processed >= commits.length;
     if (!isEdge && now - lastProgressAt < 150) return;
     lastProgressAt = now;
+    if (!analyzeStartedAt) analyzeStartedAt = now;
+    // Honest throughput over the analyzing phase (cumulative average: stable,
+    // never a frozen-looking instant value). Skipped until commits complete.
+    let resolvedDetail = detail ?? (windowTotal > 1 ? `${processed}/${commits.length} commits` : undefined);
+    if (processed > 0) {
+      const elapsedS = Math.max(1, Math.round((now - analyzeStartedAt) / 1000));
+      const rate = processed / elapsedS;
+      const rateText = `${rate >= 10 ? Math.round(rate) : rate.toFixed(1)}/s`;
+      resolvedDetail = resolvedDetail ? `${resolvedDetail} · ${rateText}` : rateText;
+    }
     onProgress({
       phase: 'analyzing',
       current: processed,
       total: commits.length,
       message: windowTotal > 1 ? `Batch ${windowIndex + 1}/${windowTotal}: ${message}` : message,
-      detail: detail ?? (windowTotal > 1 ? `${processed}/${commits.length} commits` : undefined)
+      detail: resolvedDetail
     });
   };
 
@@ -831,7 +940,10 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
     // the parent snapshot are transferred. Unchanged lockfiles (the
     // common case) cost one short line each, not megabytes, per commit.
     emitProgress(windowIndex, windowTotal, `Locating changed files (${blobRequests.length} lookups)…`);
-    const ids = await resolveBlobOids(repoRoot, blobRequests);
+    const ids = await heartbeat(
+      resolveBlobOids(repoRoot, blobRequests),
+      (elapsed) => emitProgress(windowIndex, windowTotal, `Locating changed files (${blobRequests.length} lookups, ${elapsedText(elapsed)})…`)
+    );
     const requestsByCommit = new Map<string, BlobRequest[]>();
     for (const req of blobRequests) {
       let list = requestsByCommit.get(req.commit);
@@ -908,7 +1020,10 @@ async function executeScan(input: ScanInput): Promise<ScanOutput> {
       if (toFetch.length) {
         const skipped = skippedBytes ? ' · skipped ' + (skippedBytes / 1048576).toFixed(1) + ' MiB unchanged' : '';
         emitProgress(windowIndex, windowTotal, 'Reading ' + toFetch.length + ' unique file(s), ' + (transferBytes / 1024).toFixed(0) + ' KiB' + skipped, processed + '/' + commits.length + ' commits');
-        const fetched = await batchReadBlobs(repoRoot, toFetch);
+        const fetched = await heartbeat(
+          batchReadBlobs(repoRoot, toFetch),
+          (elapsed) => emitProgress(windowIndex, windowTotal, 'Reading ' + toFetch.length + ' unique file(s) (' + elapsedText(elapsed) + ')…', processed + '/' + commits.length + ' commits')
+        );
         for (const [k, v] of fetched) blobs.set(k, v);
         for (const [alias, canonical] of aliases) {
           if (!fetched.has(canonical)) throw new Error('Incomplete Git blob transfer.');
@@ -992,7 +1107,7 @@ async function seedStateEntry(
   oid?: string
 ): Promise<void> {
   if (manifestPath.endsWith('pnpm-lock.yaml') || manifestPath.endsWith('bun.lock') || manifestPath.endsWith('bun.lockb')) {
-    const multi = await parseLockfilePerManifest(manifestPath, content);
+    const multi = await parseLockfilePerManifest(manifestPath, content, oid);
     if (multi === null || !multi.ok) {
       if (multi && requireReadable) throw new InvalidBaselineError();
       return;
@@ -1004,7 +1119,7 @@ async function seedStateEntry(
     state.set(manifestPath, { map: new Map(), hash, oid });
     return;
   }
-  const res = await parseAnyManifest(manifestPath, content);
+  const res = await parseAnyManifest(manifestPath, content, oid);
   if (res === null || !res.ok) {
     if (res && requireReadable) throw new InvalidBaselineError();
     if (res && res.note) warnOnce(`seed:${manifestPath}`, `Skipping undecodable ${manifestPath} at baseline (${res.note}).`);
@@ -1185,7 +1300,7 @@ async function processCommit(
       if (prev.unreadable) next.set(f, { ...prev, oid, unreadable: false });
       continue;
     }
-    const res = await parseAnyManifest(f, content);
+    const res = await parseAnyManifest(f, content, oid);
     if (res === null) {
       markUnreadable(next, f);
       if (directPackagesInCommit.size === 0) {
@@ -1271,7 +1386,7 @@ async function processMultiManifestLockfile(
 ): Promise<void> {
   const short = c.commit.length > 7 ? c.commit.slice(0, 7) : c.commit;
   const h = hashContent(content);
-  const multi = await parseLockfilePerManifest(lockPath, content);
+  const multi = await parseLockfilePerManifest(lockPath, content, lockOid);
   if (multi === null) {
     markUnreadable(next, lockPath);
     if (directPackagesInCommit.size === 0) {

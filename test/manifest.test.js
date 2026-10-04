@@ -4,6 +4,7 @@ import { parsePnpmLockfile, parsePnpmLockfiles } from '../packages/core/dist/man
 import { parseYarnLockfile } from '../packages/core/dist/manifest/lockfiles/yarn.js';
 import { parseBunLockfile, parseBunLockfiles } from '../packages/core/dist/manifest/lockfiles/bun.js';
 import { parsePackageJson } from '../packages/core/dist/manifest/package-json.js';
+import { discoverHistoricManifests } from '../packages/core/dist/manifest/detect.js';
 import { isYamlAvailable } from './helpers/yaml-available.js';
 import { createTestRepo } from './helpers/git-fixture.js';
 import { runDepBlame } from '../packages/core/dist/engine.js';
@@ -62,6 +63,22 @@ importers:
   assert.equal(res.ok, true);
   assert.ok(res.maps.get('package.json')?.has('a'));
   assert.equal(res.maps.get('packages/app/package.json')?.get('b')?.version, '2.0.1');
+});
+
+test('manifest: historic discovery streams progress', async () => {
+  const repo = await createTestRepo();
+  try {
+    await repo.commitFile('package.json', { name: 'root' }, 'root');
+    await repo.commitFile('packages/a/package.json', { name: 'a' }, 'workspace');
+    const seen = [];
+    const res = await discoverHistoricManifests(repo.repoDir, 300, undefined, (n) => seen.push(n));
+    assert.ok(res.paths.includes('package.json'));
+    assert.ok(res.paths.includes('packages/a/package.json'));
+    assert.ok(seen.length >= 1);
+    assert.equal(seen[seen.length - 1], res.paths.length);
+  } finally {
+    repo.cleanup();
+  }
 });
 
 test('manifest: corrupt package.json reports ok:false instead of empty', async () => {

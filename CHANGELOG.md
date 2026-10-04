@@ -10,6 +10,29 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-04
+
+### Added
+
+- Friendly slow-scan message: heavy histories (1000+ commits or 50+ manifests
+  in the CLI; 20+ quiet seconds in the dashboard) explain the wait, the
+  first-run cache build, and the seconds-fast incremental future — instead of
+  looking stuck.
+- Scan notices moved from a yellow banner above the table into a toolbar
+  Notices button with a count and a proper modal (focus handling, Esc,
+  click-outside), one notice per row with highlighted paths and commits.
+
+### Fixed
+
+- Large-repository scans stay live and finish faster: manifest discovery and
+  commit walks stream running counts (plus elapsed-time heartbeats on quiet
+  stretches) instead of freezing the terminal/SSE stream; multi-path log walks
+  run with bounded parallelism; repeated lockfile blobs parse once per unique
+  object via an OID-keyed cache (64 blobs / 100k entries, LRU). Walk phases
+  report indeterminate totals with live counts (never a frozen static
+  percent) and the analyzing stream carries a commits/sec rate. No
+  event-model or output-contract changes.
+
 ## [0.2.0] — 2026-10-04
 
 ### Fixed
@@ -62,8 +85,9 @@ zero-dependency `dep-blame` package (CLI + engine + bundled dashboard).
 - Cache schema **v3 → v4** (`resolutions`, `ambiguous` columns, new indexes on `type` / `is_direct` / `ambiguous`). Stale caches migrate by rescan.
 - CSV gains `resolutions` and `ambiguous` columns (spreadsheet-safe quoting retained).
 - `test/cache.test.js` asserts the current `CACHE_SCHEMA_VERSION` instead of a hardcoded `'3'`, with a Windows handle-race-tolerant cleanup.
-- Dashboard gzip budget **40 → 44 KiB** (still ~1/3 of any framework baseline): accounts for the full-detail GitHub brand mark and per-commit lifecycle grouping, both irreducible product requirements.
+- Dashboard gzip budget **44 → 46 KiB** (still ~1/3 of any framework baseline): accounts for the scan-notices modal and slow-scan note on top of the brand mark and per-commit lifecycle grouping, all irreducible product requirements.
 
-[Unreleased]: https://github.com/ihssmaheel-dev/dep-blame/compare/dep-blame-v0.2.0...HEAD
+[Unreleased]: https://github.com/ihssmaheel-dev/dep-blame/compare/dep-blame-v0.3.0...HEAD
+[0.3.0]: https://github.com/ihssmaheel-dev/dep-blame/releases/tag/dep-blame-v0.3.0
 [0.2.0]: https://github.com/ihssmaheel-dev/dep-blame/releases/tag/dep-blame-v0.2.0
 [0.1.0]: https://github.com/ihssmaheel-dev/dep-blame/releases/tag/dep-blame-v0.1.0

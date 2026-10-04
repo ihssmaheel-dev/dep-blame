@@ -431,7 +431,7 @@ These labels use Git parent data and parsed snapshots, never guesses from names 
 
 ## Web dashboard
 
-The dashboard ships **bundled in the same `dep-blame` package** — zero framework, zero bundler, ~43KB gzipped bundle, no extra install. CLI-only users never touch it; visual users launch it with one command:
+The dashboard ships **bundled in the same `dep-blame` package** — zero framework, zero bundler, ~45KB gzipped bundle, no extra install. CLI-only users never touch it; visual users launch it with one command:
 
 ```bash
 dep-blame ui

@@ -115,6 +115,31 @@ test('engine: adds, updates, and removes dependencies in real git history', asyn
   }
 });
 
+test('engine: progress stays live with honest indeterminate phases and throughput', async () => {
+  const repo = await createTestRepo();
+  try {
+    for (let i = 0; i < 8; i++) {
+      await repo.commitFile('package.json', { name: 'p', dependencies: { [`d${i}`]: '1' } }, `commit ${i}`);
+    }
+    const marks = [];
+    await runDepBlame({ cwd: repo.repoDir, silent: true, onProgress: (p) => marks.push({ ...p }) });
+    // Walk phases never claim a total they cannot know: renderers show a
+    // shimmer plus live counts instead of a frozen-looking static percent.
+    const discovering = marks.filter((m) => m.phase === 'discovering');
+    assert.ok(discovering.length >= 1);
+    for (const m of discovering) assert.equal(m.total, 0);
+    const reading = marks.filter((m) => m.phase === 'reading_commits');
+    assert.ok(reading.length >= 1);
+    for (const m of reading) assert.equal(m.total, 0);
+    // Analyzing keeps its real fraction and reports throughput once work lands.
+    const analyzing = marks.filter((m) => m.phase === 'analyzing' && m.total > 0);
+    assert.ok(analyzing.length >= 1);
+    assert.ok(analyzing.some((m) => /\/s$/.test(m.detail || '')), 'expected a commits/sec rate suffix');
+  } finally {
+    repo.cleanup();
+  }
+});
+
 test('engine: handles invalid/corrupted JSON commit gracefully without crashing', async () => {
   const repo = await createTestRepo();
   try {

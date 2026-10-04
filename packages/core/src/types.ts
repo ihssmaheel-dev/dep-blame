@@ -125,6 +125,11 @@ export type ProgressPhase =
 export interface ProgressUpdate {
   phase: ProgressPhase;
   current: number;
+  /**
+   * Known total, or 0 when the total is unknowable up front. Renderers must
+   * treat 0 as indeterminate (spinner/shimmer + live counts), never as a
+   * frozen 0% bar: discovery and commit walks stream counts without totals.
+   */
   total: number;
   message?: string;
   detail?: string;
