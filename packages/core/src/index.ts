@@ -7,6 +7,7 @@ export { renderStatsView } from './render/stats.js';
 export { renderCiSummary } from './render/ci.js';
 export { renderJson } from './render/json.js';
 export { renderCsv } from './render/csv.js';
+export { buildDependencyFlow, pageDependencyFlow, flowManifestForEvent, type DependencyFlow, type FlowNode, type FlowEdge } from './render/dependency-flow.js';
 export { c, stripControl } from './render/ansi.js';
 export { diffSnapshots } from './diff/snapshot-diff.js';
 export { openCache, isSqliteAvailable, resolveCacheBaseDir, cleanStaleTempDirs } from './cache/index.js';

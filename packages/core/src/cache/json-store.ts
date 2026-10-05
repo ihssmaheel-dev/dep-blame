@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import type { DependencyEvent, FilterOptions, PagedQuery, PagedResult, MonthBucket, StoreInterface } from '../types.js';
 
-export const JSON_CACHE_SCHEMA_VERSION = '5';
+export const JSON_CACHE_SCHEMA_VERSION = '8';
 
 interface JsonCacheData {
   meta: Record<string, string>;

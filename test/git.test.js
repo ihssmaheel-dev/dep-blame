@@ -107,6 +107,31 @@ test('git log streams progress while walking history', async () => {
   } finally { repo.cleanup(); }
 });
 
+test('git log: multiple path chunks preserve actual parent order despite equal timestamps', async () => {
+  const repo = await createTestRepo();
+  try {
+    const paths = Array.from({length: 51}, (_, i) => `apps/p${i}/package.json`);
+    for (const rel of paths) {
+      fs.mkdirSync(path.dirname(path.join(repo.repoDir, rel)), {recursive: true});
+      fs.writeFileSync(path.join(repo.repoDir, rel), JSON.stringify({dependencies: {alpha: '1'}}));
+    }
+    await repo.runGit(['add', '.']);
+    await repo.runGit(['commit', '-m', 'Root across both chunks']);
+    await repo.commitFile(paths[50], {dependencies: {alpha: '2'}}, 'Parent only in second chunk');
+    const parent = (await repo.runGit(['rev-parse', 'HEAD'])).stdout.trim();
+    await repo.commitFile(paths[0], {dependencies: {alpha: '2'}}, 'Child only in first chunk');
+    const child = (await repo.runGit(['rev-parse', 'HEAD'])).stdout.trim();
+    const commits = await getManifestCommits(repo.repoDir, {manifestPaths: paths});
+    assert.equal(commits.length, 3);
+    assert.ok(commits.findIndex(c => c.commit === parent) < commits.findIndex(c => c.commit === child));
+    const reversed = await getManifestCommits(repo.repoDir, {manifestPaths: paths, reverse: false});
+    assert.ok(reversed.findIndex(c => c.commit === child) < reversed.findIndex(c => c.commit === parent));
+    const history = await (await import('../packages/core/dist/engine.js')).runDepBlame({cwd: repo.repoDir, silent: true});
+    assert.equal(history.events.filter(e => e.type === 'added').length, 51);
+    assert.equal(history.events.filter(e => e.type === 'updated').length, 2);
+  } finally { repo.cleanup(); }
+});
+
 test('git log and batch blob reading', async () => {
   const root = await getRepoRoot();
   const commits = await getManifestCommits(root, { manifestPaths: ['package.json'] });

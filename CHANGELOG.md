@@ -10,6 +10,44 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 
 ## [Unreleased]
 
+### Added
+
+- Per-dependency **Flow** tab with declared/resolved state cards, verified
+  ancestry connections, expandable merge integrations, workspace selection,
+  source-file details and a separately read HEAD declaration/resolution summary.
+- Bounded, generation-pinned `/api/dependency-flow` windows. Ancestry is streamed
+  once per cached package/workspace; node selection uses the existing response.
+  Keyboard tabs, selection announcements and responsive detail panels work offline.
+
+### Fixed
+
+- npm v2/v3 lockfile section tracking uses the root dependency declarations;
+  installed `dev`, `peer`, and `optional` flags no longer invent section moves
+  when npm changes dependency-tree metadata.
+- Equal-version updates explain actual section moves or changes to the full
+  resolved version set in the dashboard, archaeology, CLI, and Markdown.
+  Resolution-set updates preserve both sets via additive `resolutionsFrom`.
+  Reordered or repeated versions alone do not create change events.
+- SQLite full and paged queries decode the same resolution evidence; lifecycle
+  grouping keeps different resolution changes distinct within a commit.
+- Partial parent snapshots retain files needed by later descendants, preventing
+  unchanged dependencies from being reported as new additions. Incoming merge
+  snapshots retain the same evidence for accurate integration labels.
+- Git log chunks are merged in actual parent order rather than concatenated;
+  histories across more than 50 manifest paths retain valid baselines.
+- Markdown explains first-parent comparisons, declared versus installed versions,
+  and merge authors; repository notices do not imply that every package is affected.
+
+### Changed
+
+- Cache schema **v5 → v8** rebuilds existing history once to remove false npm
+  updates and recover complete before/after resolution evidence. JSON remains
+  at `schemaVersion: 1`; CSV appends `resolutionsFrom`.
+- Events include additive `flowEvidence` with matching incoming parents and
+  snapshot completeness. Missing proof never creates a flow connection.
+- Package History and Flow drawers render at most 50 commit cards per window;
+  complete event counts and Markdown exports are preserved.
+
 ## [0.3.0] — 2026-10-04
 
 ### Added

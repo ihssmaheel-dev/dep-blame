@@ -4,7 +4,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { createForgeDirectory, configureRemote } from './forge.js';
-import { runDepBlame, getRepoRemoteInfo, detectPackageManager } from 'dep-blame';
+import { runDepBlame, getRepoRemoteInfo, detectPackageManager, getCurrentHead, buildDependencyFlow, pageDependencyFlow, flowManifestForEvent } from 'dep-blame';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,7 +51,7 @@ const CSP = [
   "frame-ancestors 'none'",
   "form-action 'none'",
   "script-src 'self'",
-  "style-src 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self' data:",
   "connect-src 'self'",
@@ -104,6 +104,7 @@ function getAuthorMapFromEvents(events) {
 }
 
 async function loadFullData(cwd, onProgress, forge) {
+  const capturedHead = await getCurrentHead(cwd).catch(() => null);
   const remotePromise = getRepoRemoteInfo(cwd).catch(() => ({
     remoteUrl: null,
     owner: null,
@@ -118,11 +119,15 @@ async function loadFullData(cwd, onProgress, forge) {
   ]);
 
   const authors = getAuthorMapFromEvents(result.events);
+  const finalHead = await getCurrentHead(cwd).catch(() => null);
+  if (capturedHead !== finalHead) throw new Error('Repository HEAD changed during analysis. Use Sync to capture a consistent history.');
   const configuredRemote = configureRemote(remoteInfo);
   forge.setRepository(configuredRemote, result.events);
 
   return {
     schemaVersion: 1,
+    generation: String(result.generation || capturedHead || 'empty'),
+    historyHead: capturedHead,
     repository: result.repository,
     branch: result.branch || 'main',
     packageManager: result.packageManager,
@@ -134,6 +139,7 @@ async function loadFullData(cwd, onProgress, forge) {
     authors,
     warnings: result.warnings || [],
     truncated: Boolean(result.truncated),
+    isShallow: Boolean(result.isShallow),
     headState: result.headState || [],
     headStateComplete: result.headStateComplete !== false,
     generatedAt: new Date().toISOString(),
@@ -186,11 +192,15 @@ export async function startServer(options = {}) {
     throw new Error(`UI script missing at ${APP_JS_PATH}: ${err.message}`);
   }
   const htmlBytes = Buffer.byteLength(htmlContent, 'utf8');
+  const flowCssContent = fs.readFileSync(path.join(__dirname, 'flow.css'), 'utf8');
 
   // Single-flight scans: concurrent dashboard loads share one analysis
   // instead of interleaving full-history scans against the cache.
   /** @type {Promise<any> | null} */
   let inflightScan = null;
+  let latestData = null;
+  const flowCache = new Map();
+  const flowControllers = new Set();
   const forge = createForgeDirectory(cwd);
   let authorQueries = 0;
   const progressListeners = new Set();
@@ -201,7 +211,11 @@ export async function startServer(options = {}) {
       inflightScan = loadFullData(cwd, p => {
         lastProgress = p;
         for (const listener of progressListeners) listener(p);
-      }, forge).finally(() => { inflightScan = null; lastProgress = null; });
+      }, forge).then(data => {
+        if (latestData?.generation !== data.generation) flowCache.clear();
+        latestData = data;
+        return data;
+      }).finally(() => { inflightScan = null; lastProgress = null; });
     }
     return inflightScan;
   }
@@ -240,6 +254,62 @@ export async function startServer(options = {}) {
         return;
       }
       const url = new URL(req.url, requestOrigin);
+      if (req.method === 'GET' && url.pathname === '/flow.css') {
+        const { body, headers } = gzipIfAccepted(req, flowCssContent, 'text/css; charset=utf-8',
+          { 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+        res.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(body) }); res.end(body); return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/dependency-flow') {
+        const reply = (status, payload) => {
+          const { body, headers } = gzipIfAccepted(req, JSON.stringify(payload), 'application/json; charset=utf-8',
+            { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+          res.writeHead(status, { ...headers, 'Content-Length': Buffer.byteLength(body) }); res.end(body);
+        };
+        const q = url.searchParams, packageName = q.get('package'), manifest = q.get('manifest');
+        const offset = q.get('offset') || '0', limit = q.get('limit') || '50';
+        if (!packageName || packageName.length > 512 || !manifest || manifest.length > 1024 ||
+          !/^\d+$/.test(offset) || !Number.isSafeInteger(Number(offset)) || !/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 100) {
+          reply(400, { error: 'Provide a package, exact manifest, nonnegative offset and limit from 1 to 100.' }); return;
+        }
+        try {
+          const data = inflightScan ? await inflightScan : latestData || await scanOnce();
+          if (q.get('generation') && q.get('generation') !== data.generation) {
+            reply(409, { error: 'History changed. Use Sync before opening this flow again.' }); return;
+          }
+          const events = data.events.filter(e => e.package === packageName && flowManifestForEvent(e) === manifest);
+          const manifests = [...new Set(data.events.filter(e => e.package === packageName).map(flowManifestForEvent))].sort();
+          if (!events.length || !data.historyHead) { reply(404, { error: 'No recorded dependency history for this manifest.' }); return; }
+          const key = JSON.stringify([data.generation, packageName, manifest]);
+          let entry = flowCache.get(key);
+          if (!entry) {
+            if (flowControllers.size >= 2) { reply(429, { error: 'Other dependency flows are being prepared. Try again shortly.' }); return; }
+            const controller = new AbortController(); flowControllers.add(controller);
+            entry = { nodes: 0, promise: buildDependencyFlow(cwd, events, { package: packageName, manifest,
+              head: data.historyHead, headState: data.headState, headStateComplete: data.headStateComplete,
+              truncated: data.truncated || data.isShallow, signal: controller.signal }).then(flow => {
+                entry.nodes = flow.nodes.length;
+                // Retain at most four packages / 10,000 nodes; oversize flows
+                // are served without keeping another permanent history copy.
+                let total = [...flowCache.values()].reduce((n, e) => n + e.nodes, 0);
+                for (const [oldKey, old] of flowCache) {
+                  if (flowCache.size <= 4 && total <= 10000) break;
+                  if (oldKey === key && entry.nodes <= 10000) continue;
+                  flowCache.delete(oldKey); total -= old.nodes;
+                }
+                return flow;
+              }).catch(err => { if (flowCache.get(key) === entry) flowCache.delete(key); throw err; })
+              .finally(() => flowControllers.delete(controller)) };
+          }
+          flowCache.delete(key); flowCache.set(key, entry);
+          const flow = await entry.promise;
+          if (latestData?.generation !== data.generation) { reply(409, { error: 'History changed. Use Sync before opening this flow again.' }); return; }
+          if (res.destroyed) return;
+          reply(200, { schemaVersion: 1, generation: data.generation, manifests,
+            ...pageDependencyFlow(flow, Number(offset), Number(limit)) });
+        } catch (err) { if (!res.destroyed) reply(500, { error: err?.message || 'Could not prepare dependency flow.' }); }
+        return;
+      }
 
       if (url.pathname === '/favicon.ico') {
         res.writeHead(204);
@@ -499,6 +569,7 @@ export async function startServer(options = {}) {
   // Fail fast on slowloris-style connections.
   server.requestTimeout = 15000;
   server.headersTimeout = 16000;
+  server.on('close', () => { for (const controller of flowControllers) controller.abort(); flowCache.clear(); latestData = null; });
 
   return new Promise((resolve, reject) => {
     server.on('error', reject);

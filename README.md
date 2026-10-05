@@ -82,7 +82,7 @@ It never writes to `package.json`, never upgrades anything, never phones home. I
 | **Incremental cache** | SQLite (`node:sqlite`) with JSON fallback; warm runs skip re-walking history |
 | **Monorepos** | Root + workspace manifests tracked independently; bulk bumps collapse by default |
 | **Lockfiles** | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock` (see [honesty rules](#package-manager-and-lockfile-support)) |
-| **Dashboard** | Zero-framework local web UI bundled in the same package — `dep-blame ui` for table, calendar, drawer, search, and filters |
+| **Dashboard** | Zero-framework local web UI — timeline, calendar, package History/Flow, search, and filters |
 | **Security** | Loopback-only server, strict Host/Origin checks, CSP with no inline scripts, proxied avatars, no emails/tokens in browser payloads |
 
 ---
@@ -167,6 +167,13 @@ DATE        TYPE       SRC     PACKAGE        CHANGE              AUTHOR        
 ```
 
 `[decl]` = declared in `package.json` (intent). `[lock]` = resolved in a lockfile (reality). They are tracked as independent evidence streams, even within the same commit.
+
+`updated` means dependency evidence changed: a version, its dependency section,
+or the complete set of installed versions. A section move keeps the version
+unchanged and records `depTypeFrom`. A resolved-set change records both
+`resolutionsFrom` and `resolutions`, including singleton sets, so a representative
+version cannot hide the actual difference. npm v2/v3 sections use root
+declarations; changes to installed `dev`/`peer`/`optional` flags alone are ignored.
 
 ---
 
@@ -425,7 +432,7 @@ The CLI and dashboard group evidence into one node per commit. The summary separ
 - **Merged existing dependency / update / removal:** the result matches readable dependency evidence from an incoming parent. The person is the merge commit’s author; this is an integration of an existing state.
 - **Merge dependency changes:** a merge result without that matching evidence, including conflict resolutions or unavailable incoming snapshots. No original author is inferred.
 
-These labels use Git parent data and parsed snapshots, never guesses from names or commit messages. Git author metadata does not authenticate a person or a hosting account. JSON preserves the full event stream with optional `commitParents` (full parent SHAs) and `changeOrigin` (`direct`, `merge-integration`, or `merge-change`); CSV includes the same fields. Cache schema v5 rebuilds older indexes once to populate them.
+These labels use Git parent data and parsed snapshots, never guesses from names or commit messages. Git author metadata does not authenticate a person or a hosting account. JSON preserves the full event stream with optional `commitParents` (full parent SHAs), `changeOrigin` (`direct`, `merge-integration`, or `merge-change`) and `flowEvidence` (matched incoming parents and snapshot readability); CSV includes the parent and origin fields. Cache schema v8 rebuilds older indexes once to recover flow evidence and corrected dependency history.
 
 ---
 
@@ -448,6 +455,25 @@ dep-blame-ui --port 4321   # identical alias, same package
 
 What you get: KPI cards, one-row toolbar (search, action tabs, manifests, view toggle), applied-filter chips, timeline table (25/50/100 rows, sticky header, pinned pagination footer on every screen size), calendar with month picker and day drill-down, per-package archaeology drawer with HEAD status and commit evidence, JSON export of **all matching events** (not just the visible page), dark/light themes, keyboard navigation (`/` search, `1`/`2` views, `Esc` closes), and a repository footer.
 
+### Dependency Flow
+
+Open a package, then choose **Flow**. Select one workspace/manifest when a
+dependency appears in several. Declared requirements and lockfile resolutions
+appear together in each commit card, with explicit section moves and complete
+resolution-set changes. Verified merge integrations expand separately.
+
+Solid connections require a matching previous recorded state along the actual
+first-parent path. Dashed connections additionally require a readable matching
+incoming-parent snapshot. Independent equal versions never establish provenance.
+Dates label nodes; ancestry determines their order. Missing or unreadable evidence
+leaves a gap. A matching incoming parent does not authenticate an original author.
+
+The HEAD summary reads the captured checkout's declaration and lockfile evidence,
+independently of event dates. Removed, unsupported or unreadable lockfiles show
+unavailable resolution evidence. History and Flow show 50 commits per window;
+references to another window remain navigable. Copy Markdown still exports the
+complete package history. Flow adds no runtime dependency or network requirement.
+
 Security model: loopback-only by default, spoofed `Host`/cross-site `Origin` rejected (DNS-rebinding barrier), CSP without inline scripts, no inline handlers, all repo text escaped, no emails or tokens in browser payloads, avatars via same-origin opaque proxy with initials fallback, outbound forge requests DNS-pinned with private-network opt-in. Set `DEP_BLAME_AVATARS=0` for fully offline mode.
 
 ---
@@ -460,12 +486,14 @@ All JSON. All `no-store` except immutable fonts. Gzip when accepted.
 |---|---|
 | `GET /` | Dashboard page |
 | `GET /app.js` | Client script |
+| `GET /flow.css` | Bundled dependency-flow styles |
 | `GET /fonts/*.woff2` | Bundled Manrope font (`immutable`, 1-year cache) |
 | `GET /api/events` | Full engine result (`schemaVersion: 1`) |
 | `GET /api/events/stream` | SSE: `progress` events + `complete` / `error` |
 | `GET /api/events/paged?limit=&offset=&package=&type=&manifest=&workspace=&source=` | Bounded page + `total` (no full transfer) |
 | `GET /api/months?...` | Month aggregates for bounded calendars |
 | `GET /api/facets?...` | Top packages / authors / manifests (200-cap) |
+| `GET /api/dependency-flow?package=&manifest=&generation=&offset=&limit=` | Verified package/workspace flow, default 50 / maximum 100 nodes; stale generations return `409` |
 | `GET /api/authors?commits=<sha,…>` | Lazy host-linked accounts (≤ 20 commits, ≤ 6 concurrent, `429` when busy) |
 | `GET /api/avatars/<64-hex>` | Cached raster proxy (`private, max-age=3600`; SVG rejected) |
 
@@ -595,7 +623,7 @@ npm test        # 85/85 via node:test with real disposable git repos
 - Keep the core CLI at **zero required runtime dependencies**.
 - Relative ESM imports need explicit `.js` extensions.
 - New parsers/renderers need fixture tests under `test/` (real `git init` + commits, not mocked `git log` output).
-- UI changes must respect the gzip budget (HTML+JS < 40 KiB) and keep `Host`/`Origin` checks green.
+- UI changes must respect the gzip budget (HTML + JS + Flow CSS < 56 KiB) and keep `Host`/`Origin` checks green.
 
 Full workflow, standards, and release process: [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 Security reports (private only): [`SECURITY.md`](./SECURITY.md) · Conduct: [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) · Help: [`SUPPORT.md`](./SUPPORT.md) · Changes: [`CHANGELOG.md`](./CHANGELOG.md)

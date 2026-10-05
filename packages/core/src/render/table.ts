@@ -1,5 +1,6 @@
 import { c, stripControl } from './ansi.js';
 import type { DependencyEvent } from '../types.js';
+import { describeUpdate } from './change.js';
 
 function formatDate(isoString?: string): string {
   if (!isoString) return '';
@@ -14,6 +15,9 @@ function formatChange(event: DependencyEvent): string {
     return stripControl(event.from || '');
   }
   if (event.type === 'updated') {
+    if (event.from === undefined && event.to === undefined) return 'lockfile changed';
+    if (event.resolutionsFrom) return 'resolved versions changed';
+    if (event.from === event.to) return event.depTypeFrom ? 'section moved' : 'metadata changed';
     return `${stripControl(event.from || '?')} -> ${stripControl(event.to || '?')}`;
   }
   return '';
@@ -163,6 +167,9 @@ export function renderEventTable(
     } else {
       for (const ev of group) {
         lines.push(renderSingleRow(ev));
+        if (ev.type === 'updated' && (ev.depTypeFrom || ev.resolutionsFrom || ev.from === ev.to)) {
+          lines.push(c.dim('  ↳ ' + stripControl(describeUpdate(ev))));
+        }
       }
     }
   }

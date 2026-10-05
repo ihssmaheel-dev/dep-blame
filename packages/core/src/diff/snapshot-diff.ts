@@ -13,6 +13,11 @@ export interface DiffOptions {
   lockfile?: string;
 }
 
+/** Canonical set: a representative version alone is not a full multi-version diff. */
+export function resolutionSet(entry: { version: string; resolutions?: string[] }): string[] {
+  return [...new Set(entry.resolutions?.length ? entry.resolutions : [entry.version])].sort();
+}
+
 /**
  * Diffs two snapshot maps and produces normalized DependencyEvents.
  *
@@ -69,10 +74,14 @@ export function diffSnapshots(
       );
     } else {
       const previous = prev.get(name)!;
-      const resolutionsChanged =
-        JSON.stringify(previous.resolutions || null) !== JSON.stringify(current.resolutions || null) ||
-        (previous.ambiguous || false) !== (current.ambiguous || false);
-      if (previous.version !== current.version || previous.depType !== current.depType || resolutionsChanged) {
+      // The common single-version path needs no arrays, sets, sorting, or JSON.
+      const hasResolutionSets = !!(previous.resolutions?.length || current.resolutions?.length);
+      const before = hasResolutionSets ? resolutionSet(previous) : undefined;
+      const after = hasResolutionSets ? resolutionSet(current) : undefined;
+      const setsDiffer = hasResolutionSets && JSON.stringify(before) !== JSON.stringify(after);
+      const resolutionsChanged = setsDiffer;
+      const versionChanged = previous.version !== current.version && (!hasResolutionSets || setsDiffer);
+      if (versionChanged || previous.depType !== current.depType || resolutionsChanged) {
         events.push(
           base({
             package: name,
@@ -83,6 +92,7 @@ export function diffSnapshots(
             ...(previous.depType !== current.depType ? { depTypeFrom: previous.depType } : {}),
             isDirect: current.isDirect ?? true,
             ...(current.resolutions ? { resolutions: [...current.resolutions] } : {}),
+            ...(resolutionsChanged ? { resolutionsFrom: before, resolutions: after } : {}),
             ...(current.ambiguous ? { ambiguous: true } : {})
           })
         );
@@ -99,6 +109,8 @@ export function diffSnapshots(
           type: 'removed',
           from: previous.version,
           depType: previous.depType,
+          ...(previous.resolutions ? { resolutions: [...previous.resolutions] } : {}),
+          ...(previous.ambiguous ? { ambiguous: true } : {}),
           isDirect: previous.isDirect ?? true
         })
       );

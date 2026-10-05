@@ -16,7 +16,7 @@ import { parseNpmLockfile } from './manifest/lockfiles/npm.js';
 import { parsePnpmLockfiles } from './manifest/lockfiles/pnpm.js';
 import { parseYarnLockfile } from './manifest/lockfiles/yarn.js';
 import { parseBunLockfiles } from './manifest/lockfiles/bun.js';
-import { diffSnapshots, createLockfileLowFiEvent } from './diff/snapshot-diff.js';
+import { diffSnapshots, createLockfileLowFiEvent, resolutionSet } from './diff/snapshot-diff.js';
 import { openCache, resolveCacheBaseDir } from './cache/index.js';
 import { acquireScanLock } from './cache/lock.js';
 import { stripControl } from './render/ansi.js';
@@ -182,9 +182,12 @@ interface SnapEntry {
 type StateMap = Map<string, SnapEntry>;
 
 function markUnreadable(state: StateMap, filePath: string): void {
+  let found = false;
   for (const [key, entry] of state) {
-    if (key === filePath || key.startsWith(filePath + '::')) state.set(key, { ...entry, unreadable: true });
+    if (key === filePath || key.startsWith(filePath + '::')) { found = true; state.set(key, { ...entry, unreadable: true }); }
   }
+  // An unreadable first snapshot is unknown, not a proven empty baseline.
+  if (!found) state.set(filePath, { map: new Map(), hash: '', unreadable: true });
 }
 
 /** Snapshot key for a lockfile's per-manifest resolved map. */
@@ -603,7 +606,7 @@ function readGeneration(baseDir?: string): number | null {
 
 function writeGenerationPointer(baseDir: string, head: string): void {
   try {
-    const active = { generation: Date.now(), head, schema: 5, updatedAt: new Date().toISOString() };
+    const active = { generation: Date.now(), head, schema: 8, updatedAt: new Date().toISOString() };
     const tmp = path.join(baseDir, `.active-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
     fs.writeFileSync(tmp, JSON.stringify(active), 'utf8');
     fs.renameSync(tmp, path.join(baseDir, 'active.json'));
@@ -660,7 +663,7 @@ function promoteTempStore(baseDir: string, tempDir: string): void {
   // Write an atomic generation pointer so readers can pin one generation.
   try {
     const head = tryReadJsonMeta(path.join(baseDir, 'cache.json'), 'cached_head') ?? '';
-    const active = { generation: Date.now(), head, schema: 5, updatedAt: new Date().toISOString() };
+    const active = { generation: Date.now(), head, schema: 8, updatedAt: new Date().toISOString() };
     const tmp = path.join(baseDir, `.active-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
     fs.writeFileSync(tmp, JSON.stringify(active), 'utf8');
     fs.renameSync(tmp, path.join(baseDir, 'active.json'));
@@ -1141,21 +1144,32 @@ async function seedMissingParents(
   states: Map<string, StateMap>,
   warnOnce: (key: string, message: string) => void
 ): Promise<void> {
-  // Which manifest files does each missing parent need? Only files its
-  // in-range children changed.
+  // A seeded parent is a partial snapshot. Its child may touch only the
+  // manifest, while a later descendant touches the lockfile. Carry those
+  // future file requirements backwards through the first-parent chain;
+  // otherwise that lockfile disappears from inherited state and becomes a
+  // false addition. Keep only the reverse DAG frontier's demand sets.
   const needed = new Map<string, Set<string>>();
-  for (const c of commits) {
-    for (const p of c.parents) {
-      if (p === sinceCommit || commitSet.has(p) || states.has(p)) continue;
-      let set = needed.get(p);
-      if (!set) {
-        set = new Set();
-        needed.set(p, set);
-      }
-      for (const f of c.files) {
-        if (isManifestFile(f)) set.add(f);
+  for (let i = commits.length - 1; i >= 0; i--) {
+    const c = commits[i];
+    const inherited = needed.get(c.commit);
+    needed.delete(c.commit);
+    const changed = new Set(c.files.filter(isManifestFile));
+    for (let parentIndex = 0; parentIndex < c.parents.length; parentIndex++) {
+      const p = c.parents[parentIndex];
+      if (p === sinceCommit || states.has(p)) continue;
+      let files = needed.get(p);
+      if (!files) { files = new Set(); needed.set(p, files); }
+      // All parents need changed files for diff/merge-origin evidence.
+      for (const f of changed) files.add(f);
+      if (parentIndex === 0 && inherited) {
+        for (const f of inherited) if (!changed.has(f)) files.add(f);
       }
     }
+  }
+  // Topological input consumes every in-range demand above.
+  for (const parent of needed.keys()) {
+    if (commitSet.has(parent)) throw new Error('Git history is not in parent-before-child order.');
   }
   if (needed.size === 0) return;
 
@@ -1327,32 +1341,52 @@ async function processCommit(
   }
 
   for (let i = eventStart; i < newEvents.length; i++) {
-    newEvents[i].changeOrigin = classifyChangeOrigin(newEvents[i], c, states);
+    const event = newEvents[i];
+    event.changeOrigin = classifyChangeOrigin(event, c, states);
+    const key = event.lockfile ? lockStateKey(event.lockfile, event.manifest) : event.manifest;
+    event.flowEvidence!.previousReadable = !base.get(key)?.unreadable && !base.get(event.lockfile || event.manifest)?.unreadable;
   }
   states.set(c.commit, next);
 }
 
 /** A matching incoming snapshot proves integration; messages and names do not. */
 function classifyChangeOrigin(event: DependencyEvent, c: CommitInfo, states: Map<string, StateMap>): DependencyEvent['changeOrigin'] {
+  event.flowEvidence = { matchingParents: [], complete: true, previousReadable: true };
   if (c.parents.length < 2) return 'direct';
   const key = event.lockfile ? lockStateKey(event.lockfile, event.manifest) : event.manifest;
   for (const parent of c.parents.slice(1)) {
     const snapshot = states.get(parent)?.get(key);
-    if (!snapshot || snapshot.unreadable) continue;
+    if (!snapshot || snapshot.unreadable) { event.flowEvidence.complete = false; continue; }
     const incoming = snapshot.map.get(event.package);
     if (event.type === 'removed') {
-      if (!incoming) return 'merge-integration';
+      if (!incoming) event.flowEvidence.matchingParents.push(parent);
     } else if (incoming && incoming.version === event.to && incoming.depType === event.depType &&
       Boolean(incoming.ambiguous) === Boolean(event.ambiguous) &&
-      JSON.stringify(incoming.resolutions || null) === JSON.stringify(event.resolutions || null)) {
-      return 'merge-integration';
+      JSON.stringify(resolutionSet(incoming)) === JSON.stringify(resolutionSet({ version: event.to || '', resolutions: event.resolutions }))) {
+      event.flowEvidence.matchingParents.push(parent);
     }
   }
-  return 'merge-change';
+  return event.flowEvidence.matchingParents.length ? 'merge-integration' : 'merge-change';
 }
 
 function parsePackageJsonSync(content: string): ParseResult {
   return parsePackageJson(content);
+}
+
+/** Read the captured checkout's lockfile evidence using the scanner's parsers. */
+export async function readResolvedDependencyState(repoRoot: string, head: string, packageName: string, manifest: string, lockfiles: string[]) {
+  const rows: { file: string; status: 'resolved' | 'absent' | 'unavailable'; versions: string[]; ambiguous?: boolean }[] = [];
+  for await (const { request, content, oid } of streamReadBlobs(repoRoot, lockfiles.map(file => ({ commit: head, path: file })))) {
+    if (content === null) { rows.push({ file: request.path, status: 'unavailable', versions: [] }); continue; }
+    const multiFile = request.path.endsWith('pnpm-lock.yaml') || /bun\.lockb?$/.test(request.path);
+    const multi = multiFile ? await parseLockfilePerManifest(request.path, content, oid) : null;
+    const single = multiFile ? null : await parseAnyManifest(request.path, content, oid);
+    const readable = multiFile ? multi?.ok : single?.ok;
+    const entry = multiFile ? multi?.maps.get(manifest)?.get(packageName) : single?.entries.get(packageName);
+    rows.push({ file: request.path, status: !readable ? 'unavailable' : entry ? 'resolved' : 'absent',
+      versions: entry ? resolutionSet(entry) : [], ...(entry?.ambiguous ? { ambiguous: true } : {}) });
+  }
+  return rows;
 }
 
 function baseHasLockData(base: StateMap, lockPath: string): boolean {

@@ -12,7 +12,7 @@ function cell(value: string | undefined | null): string {
  * spreadsheets, and CI artifacts.
  */
 export function renderCsv(events: DependencyEvent[]): string {
-  const header = ['package', 'type', 'from', 'to', 'date', 'commit', 'commitFull', 'author', 'message', 'manifest', 'depType', 'source', 'lockfile', 'depTypeFrom', 'isDirect', 'resolutions', 'ambiguous', 'changeOrigin', 'commitParents'].join(',');
+  const header = ['package', 'type', 'from', 'to', 'date', 'commit', 'commitFull', 'author', 'message', 'manifest', 'depType', 'source', 'lockfile', 'depTypeFrom', 'isDirect', 'resolutions', 'ambiguous', 'changeOrigin', 'commitParents', 'resolutionsFrom'].join(',');
   const rows = (events || []).map((ev) =>
     [
       cell(ev.package),
@@ -33,7 +33,8 @@ export function renderCsv(events: DependencyEvent[]): string {
       cell(ev.resolutions ? ev.resolutions.join(' | ') : ''),
       cell(ev.ambiguous ? 'true' : ''),
       cell(ev.changeOrigin),
-      cell(ev.commitParents?.join(' '))
+      cell(ev.commitParents?.join(' ')),
+      cell(ev.resolutionsFrom?.join(' | '))
     ].join(',')
   );
   return [header, ...rows].join('\n');

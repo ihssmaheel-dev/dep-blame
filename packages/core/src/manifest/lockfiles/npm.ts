@@ -1,4 +1,5 @@
 import type { DependencyEntry, DepType, ParseResult } from '../../types.js';
+import { DEP_TYPES } from '../package-json.js';
 
 export interface NpmLockfileOptions {
   directOnly?: boolean;
@@ -50,20 +51,12 @@ export function parseNpmLockfile(
   // Handle v2 & v3 (parsed.packages)
   if (parsed.packages && typeof parsed.packages === 'object') {
     const rootPkg = parsed.packages[''] || {};
-    const directNames = new Set<string>();
-
-    const checkRootDeps = (section: any) => {
-      if (section && typeof section === 'object') {
-        for (const name of Object.keys(section)) {
-          directNames.add(name);
-        }
-      }
-    };
-
-    checkRootDeps(rootPkg.dependencies);
-    checkRootDeps(rootPkg.devDependencies);
-    checkRootDeps(rootPkg.peerDependencies);
-    checkRootDeps(rootPkg.optionalDependencies);
+    // Installed dev/peer/optional flags describe npm's dependency tree.
+    // Root declarations are authoritative for a direct package's section.
+    const directTypes = new Map<string, DepType>();
+    for (const depType of DEP_TYPES) {
+      for (const name of Object.keys(rootPkg[depType] || {})) directTypes.set(name, depType);
+    }
 
     // Collect every installed version per package (including nested
     // node_modules/a/node_modules/b) so multi-version installs are
@@ -89,12 +82,13 @@ export function parseNpmLockfile(
       const version = entry.version || '';
       if (!versionsByName.has(name)) versionsByName.set(name, new Set());
       if (version) versionsByName.get(name)!.add(version);
-      if (!metaByName.has(name)) {
-        const isDirect = directNames.has(name);
+      if (!metaByName.has(name) || pkgPath === `node_modules/${name}`) {
+        const isDirect = directTypes.has(name);
         let depType: DepType = 'dependencies';
         if (entry.dev) depType = 'devDependencies';
         else if (entry.peer) depType = 'peerDependencies';
         else if (entry.optional) depType = 'optionalDependencies';
+        depType = directTypes.get(name) || depType;
         metaByName.set(name, { depType, isDirect });
       }
     }

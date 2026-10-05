@@ -39,6 +39,11 @@
   let historyWarnings = [];
   let historyTruncated = false;
   let drawerReturnFocus = null;
+  let historyGeneration = '';
+  let drawerView = 'history';
+  let flowManifest = '', flowManifests = [], flowData = null, flowRequest = null;
+  let flowRequestSerial = 0, flowSelectedId = '', flowResizeObserver = null, flowDrawFrame = null;
+  let drawerHistoryRender = null, drawerHistoryOffset = 0;
 
   // Theme Management (Dark Theme Default)
   function initTheme() {
@@ -296,6 +301,10 @@
   function applyLoadedData(data) {
     if (data.schemaVersion !== 1 || !Array.isArray(data.events)) throw new Error('Unsupported history response.');
     allEvents = data.events;
+    historyGeneration = String(data.generation || '');
+    cancelFlowRequest();
+    flowData = null;
+    if (selectedPkgName) closeArchaeology();
     historyState = 'ready';
     historyError = '';
     clearSlowNoteTimer();
@@ -532,16 +541,36 @@
     return dayKeyLocal(ev.date) || '';
   }
 
-  function changeKeyOf(ev) {
-    if (ev.type === 'added') return `+ ${ev.to || ''}`;
-    if (ev.type === 'removed') return `− ${ev.from || ''}`;
-    return `${ev.from || '?'} → ${ev.to || '?'}`;
+  function versionEvidence(ev, before = false) {
+    const versions = before ? ev.resolutionsFrom || (ev.type === 'removed' ? ev.resolutions : undefined) : ev.resolutions;
+    return versions ? '{' + versions.join(', ') + '}' : (before ? ev.from : ev.to) || '?';
   }
 
-  function changeTextOf(ev) {
-    if (ev.type === 'added') return ev.to || '';
-    if (ev.type === 'removed') return ev.from || '';
-    return `${ev.from || ''} ${ev.to || ''}`;
+  function updateReason(ev) {
+    const parts = [];
+    if (ev.resolutionsFrom) parts.push('Resolved versions changed');
+    else if (ev.from !== ev.to) parts.push('Version changed');
+    if (ev.depTypeFrom && ev.depTypeFrom !== ev.depType) parts.push('Section moved: ' + ev.depTypeFrom + ' → ' + ev.depType);
+    return parts.join(' · ') || 'Dependency metadata changed';
+  }
+
+  function changeKeyOf(ev) {
+    if (ev.type === 'added') return '+ ' + versionEvidence(ev);
+    if (ev.type === 'removed') return '− ' + versionEvidence(ev, true);
+    if (ev.from === undefined && ev.to === undefined) return 'Lockfile changed · resolution details unavailable';
+    const version = ev.from === ev.to && !ev.resolutionsFrom ? (ev.to || '?') + ' (version unchanged)' : versionEvidence(ev, true) + ' → ' + versionEvidence(ev);
+    return version + ' · ' + updateReason(ev);
+  }
+
+  function changeTextOf(ev) { return changeKeyOf(ev); }
+
+  function updateDiffHtml(ev) {
+    const unchanged = ev.from === ev.to && !ev.resolutionsFrom;
+    const short = value => value.length > 80 ? value.slice(0, 77) + '…' : value;
+    const diff = ev.from === undefined && ev.to === undefined ? '<span>Lockfile changed</span>' : unchanged ? '<span>' + escapeHtml(ev.to || '?') + ' (unchanged)</span>'
+      : '<span class="diff-from">' + escapeHtml(short(versionEvidence(ev, true))) + '</span><span class="diff-arrow">→</span><span class="diff-to">' + escapeHtml(short(versionEvidence(ev))) + '</span>';
+    const detail = ev.from === undefined && ev.to === undefined ? 'Resolution details unavailable' : unchanged || ev.resolutionsFrom || ev.depTypeFrom ? updateReason(ev) : '';
+    return '<div class="change-cell" title="' + escapeHtml(changeKeyOf(ev)) + '"><div class="diff-pill">' + diff + '</div>' + (detail ? '<span class="change-detail">' + escapeHtml(detail) + '</span>' : '') + '</div>';
   }
 
   function typeTagOf(ev) {
@@ -740,14 +769,16 @@
     }
     closeFilterPanel();
     openPanelKind = kind;
+    panel.classList.toggle('flow-panel', kind === 'flow-manifest');
     panelAnchor = anchor;
     anchor.setAttribute('aria-expanded', 'true');
     anchor.setAttribute('aria-controls', 'filter-panel');
-    panel.setAttribute('aria-label', kind === 'page-size' ? 'Rows per page' : kind === 'filters' ? 'Filter history' : kind === 'calendar-month' ? 'Choose month with changes' : `${kind} filters`);
+    panel.setAttribute('aria-label', kind === 'page-size' ? 'Rows per page' : kind === 'filters' ? 'Filter history' : kind === 'calendar-month' ? 'Choose month with changes' : kind === 'flow-manifest' ? 'Choose dependency workspace' : `${kind} filters`);
     if (kind === 'date') renderDatePanel(panel);
     else if (kind === 'manifest') renderManifestPanel(panel);
     else if (kind === 'commit') renderTextPanel(panel, kind);
     else if (kind === 'calendar-month') renderCalendarMonthPanel(panel);
+    else if (kind === 'flow-manifest') renderFlowManifestPanel(panel);
     else if (kind === 'action' || kind === 'type') renderOptionsPanel(panel, kind);
     else if (kind === 'page-size') renderPageSizePanel(panel);
     else if (kind === 'filters') renderFilterMenu(panel);
@@ -1217,15 +1248,11 @@
 
     let changeHtml = '';
     if (ev.type === 'added') {
-      changeHtml = `<span class="diff-to">${escapeHtml(ev.to || '')}</span>`;
+      changeHtml = `<span class="diff-to">${escapeHtml(versionEvidence(ev))}</span>`;
     } else if (ev.type === 'removed') {
-      changeHtml = `<span class="diff-from">was ${escapeHtml(ev.from || '')}</span>`;
+      changeHtml = `<span class="diff-from">was ${escapeHtml(versionEvidence(ev, true))}</span>`;
     } else {
-      changeHtml = `
-      <span class="diff-from">${escapeHtml(ev.from || '?')}</span>
-      <span class="diff-arrow">&rarr;</span>
-      <span class="diff-to">${escapeHtml(ev.to || '?')}</span>
-      `;
+      changeHtml = updateDiffHtml(ev);
     }
 
     const authorInfo = getAuthorDetails(ev.author, ev.commitFull);
@@ -1254,7 +1281,7 @@
         </button>
         </div>
       </td>
-      <td><div class="diff-pill">${changeHtml}</div></td>
+      <td>${ev.type === 'updated' ? changeHtml : '<div class="diff-pill">' + changeHtml + '</div>'}</td>
       <td>${typeBadge}</td>
       <td><span class="manifest-badge" title="${escapeHtml(ev.manifest)}">${escapeHtml(ev.manifest)}</span></td>
       <td>
@@ -1495,7 +1522,7 @@
       if (ev.type === 'removed') symbol = '–';
       else if (ev.type === 'updated') symbol = '↑';
 
-      const ver = ev.type === 'removed' ? (ev.from || '') : (ev.to || '');
+      const ver = changeKeyOf(ev);
       eventsHtml += `
         <button class="day-event-pill ${ev.type}" data-pkg="${escapeHtml(ev.package)}" title="${symbol} ${escapeHtml(ev.package)} ${ver ? '(' + escapeHtml(ver) + ')' : ''} by ${escapeHtml(ev.author || '')}">
         <span>${symbol}</span>
@@ -1591,7 +1618,7 @@
   // lifecycle step, not twenty rows. Render-only; allEvents stays complete.
   function groupLifecycleNodes(pkgEvents) {
     const nodes = [], byCommit = new Map();
-    const keyOf = ch => JSON.stringify([ch.type, ch.from, ch.to, ch.depType, ch.depTypeFrom, ch.changeOrigin]);
+    const keyOf = ch => JSON.stringify([ch.type, ch.from, ch.to, ch.depType, ch.depTypeFrom, ch.changeOrigin, ch.resolutionsFrom, ch.resolutions]);
     for (const ev of pkgEvents) {
       const key = ev.commitFull || ev.commit;
       let node = byCommit.get(key);
@@ -1609,7 +1636,7 @@
       const k = keyOf(ev);
       let ch = list.find(c => c.k === k);
       if (!ch) {
-        ch = { k, type: ev.type, from: ev.from, to: ev.to, depType: ev.depType, depTypeFrom: ev.depTypeFrom, changeOrigin: ev.changeOrigin, manifests: [] };
+        ch = { k, type: ev.type, from: ev.from, to: ev.to, depType: ev.depType, depTypeFrom: ev.depTypeFrom, changeOrigin: ev.changeOrigin, resolutions: ev.resolutions, resolutionsFrom: ev.resolutionsFrom, manifests: [] };
         list.push(ch);
       }
       if (ev.manifest && !ch.manifests.includes(ev.manifest)) ch.manifests.push(ev.manifest);
@@ -1648,6 +1675,7 @@
     const pkgEvents = allEvents.filter(e => e.package === pkgName);
     if (pkgEvents.length === 0) return;
     const lifecycleNodes = groupLifecycleNodes(pkgEvents);
+    initializeFlowDrawer(pkgEvents);
 
     document.getElementById('drawer-title').textContent = pkgName;
 
@@ -1790,7 +1818,7 @@
     const hasMerges = integrations + otherMerges > 0;
     note.hidden = !hasMerges && !historyTruncated && !historyWarnings.length;
     note.textContent = [hasMerges ? 'Includes merged branches. Integration entries show existing changes brought into the receiving history.' : '',
-      historyTruncated || historyWarnings.length ? 'Scan warnings may affect the first recorded date.' : ''].filter(Boolean).join(' ');
+      historyTruncated ? 'History was truncated; the first recorded date may be incomplete.' : historyWarnings.length ? 'Repository scan notices may concern other packages; see Notices for details.' : ''].filter(Boolean).join(' ');
 
     const firstDateElem = document.getElementById('drawer-first-date');
     if (firstDateElem) {
@@ -1807,17 +1835,22 @@
     const timeline = document.getElementById('drawer-timeline');
     const changeHtml = ch => {
       const action = lifecycleAction(ch);
-      const v = ch.type === 'added' ? `${action} <span style="color: var(--color-added)">${escapeHtml(ch.to || '')}</span>`
-        : ch.type === 'removed' ? `${action} (was ${escapeHtml(ch.from || '')})`
-        : `${action} ${escapeHtml(ch.from || '')} &rarr; <span style="color: var(--color-updated)">${escapeHtml(ch.to || '')}</span>`;
-      const move = ch.depTypeFrom && ch.depTypeFrom !== ch.depType ? ` · ${escapeHtml(ch.depTypeFrom)} → ${escapeHtml(ch.depType)}` : '';
-      const section = ch.depType && ch.depType !== 'dependencies' ? ` <span style="color: var(--color-text-secondary)">(${escapeHtml(ch.depType)})</span>` : '';
-      return `${v}${move}${section}`;
+      const section = ch.depType && ch.depType !== 'dependencies' && !ch.depTypeFrom ? ' <span class="change-detail">(' + escapeHtml(ch.depType) + ')</span>' : '';
+      if (ch.type === 'updated') return escapeHtml(action + ' · ' + changeKeyOf(ch)) + section;
+      const value = ch.type === 'added' ? versionEvidence(ch) : ch.resolutions ? '{' + ch.resolutions.join(', ') + '}' : ch.from || '';
+      return escapeHtml(action + ' ' + value) + section;
     };
     const groupHtml = (label, changes) => changes.length ? changes.map(ch =>
       `<div class="node-version"><span style="color: var(--color-text-secondary)">${label}:</span> ${changeHtml(ch)} <span style="font-family: var(--font-mono); color: var(--color-text-secondary)">[${ch.manifests.map(escapeHtml).join(', ')}]</span></div>`
     ).join('') : '';
-    timeline.innerHTML = lifecycleNodes.map(node => {
+    drawerHistoryOffset = 0;
+    drawerHistoryRender = offset => {
+    drawerHistoryOffset = Math.max(0, Math.min(offset, Math.max(0, lifecycleNodes.length - 1)));
+    document.getElementById('drawer-history-window').hidden = lifecycleNodes.length <= 50;
+    document.getElementById('drawer-history-window-label').textContent = `${drawerHistoryOffset + 1}–${Math.min(drawerHistoryOffset + 50, lifecycleNodes.length)} of ${lifecycleNodes.length} commits`;
+    document.getElementById('drawer-history-earlier').disabled = drawerHistoryOffset === 0;
+    document.getElementById('drawer-history-later').disabled = drawerHistoryOffset + 50 >= lifecycleNodes.length;
+    timeline.innerHTML = lifecycleNodes.slice(drawerHistoryOffset, drawerHistoryOffset + 50).map(node => {
     const symbol = node.headline === 'added' ? '+' : node.headline === 'removed' ? '–' : node.headline === 'mixed' ? '±' : '↑';
     const authorInfo = getAuthorDetails(node.author, node.commitFull);
     const authorInitial = (authorInfo.name || 'U')[0].toUpperCase();
@@ -1845,6 +1878,9 @@
     `;
     }).join('');
 
+    hydrateAuthors();
+    };
+    drawerHistoryRender(0);
     document.getElementById('drawer-overlay').classList.add('active');
     initTimelineDelegation();
     hydrateAuthors();
@@ -1871,10 +1907,196 @@
   }
 
   function closeArchaeology() {
+    cancelFlowRequest();
+    flowResizeObserver?.disconnect();
+    flowData = null;
+    drawerHistoryRender = null;
+    if (openPanelKind === 'flow-manifest') closeFilterPanel();
     document.getElementById('drawer-overlay').classList.remove('active');
     selectedPkgName = null;
     if (drawerReturnFocus?.isConnected) drawerReturnFocus.focus({preventScroll: true});
     drawerReturnFocus = null;
+  }
+
+  // Dependency flow is read from the shared, verified server model. Local
+  // dates label nodes; neither dates nor equal versions create graph edges.
+  function cancelFlowRequest() {
+    flowRequestSerial++;
+    flowRequest?.abort(); flowRequest = null;
+    if (flowDrawFrame !== null) cancelAnimationFrame(flowDrawFrame);
+    flowDrawFrame = null;
+  }
+  function initializeFlowDrawer(events) {
+    cancelFlowRequest(); flowData = null; flowSelectedId = '';
+    flowManifests = [...new Set(events.map(e => e.source === 'lockfile' && !e.lockfile && /(?:^|\/)(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/.test(e.manifest) ? e.manifest.replace(/[^/]+$/, 'package.json') : e.manifest))].sort();
+    flowManifest = flowManifests.includes(colFilters.manifest) ? colFilters.manifest : flowManifests[0] || '';
+    document.getElementById('flow-manifest-btn').hidden = flowManifests.length < 2;
+    document.getElementById('flow-manifest-label').textContent = flowManifest;
+    document.getElementById('flow-scope').textContent = flowManifest;
+    document.getElementById('flow-content').hidden = true;
+    document.getElementById('flow-status').hidden = true;
+    document.getElementById('flow-retry').hidden = true;
+    setDrawerView('history');
+    if (typeof ResizeObserver !== 'undefined') {
+      flowResizeObserver?.disconnect();
+      flowResizeObserver = new ResizeObserver(scheduleFlowConnections);
+      flowResizeObserver.observe(document.getElementById('flow-graph'));
+    }
+  }
+  function setDrawerView(view) {
+    drawerView = view;
+    const flow = view === 'flow';
+    document.getElementById('drawer-history-panel').hidden = flow;
+    document.getElementById('drawer-flow-panel').hidden = !flow;
+    document.querySelector('.drawer')?.classList.toggle('flow-active', flow);
+    for (const name of ['history', 'flow']) {
+      const tab = document.getElementById('drawer-' + name + '-tab');
+      tab.setAttribute('aria-selected', String(name === view));
+      tab.setAttribute('tabindex', name === view ? '0' : '-1');
+    }
+    if (flow && !flowData && !flowRequest && selectedPkgName) loadDependencyFlow();
+    else if (flow) scheduleFlowConnections();
+  }
+  function renderFlowManifestPanel(panel) {
+    panel.innerHTML = '<div class="filter-panel-head">Dependency workspace</div><input class="filter-panel-search" type="text" placeholder="Search manifests…" aria-label="Search dependency manifests"><div class="filter-panel-list" role="group" aria-label="Dependency manifests"></div>';
+    const search = panel.querySelector('input'), list = panel.querySelector('.filter-panel-list');
+    const draw = () => {
+      const matches = flowManifests.filter(m => m.toLowerCase().includes(search.value.toLowerCase()));
+      list.innerHTML = matches.slice(0, 200).map(m => `<button class="filter-check" data-flow-manifest="${escapeHtml(m)}" aria-pressed="${m === flowManifest}"><span class="lbl">${escapeHtml(m)}</span>${m === flowManifest ? '✓' : ''}</button>`).join('') || '<div class="filter-panel-empty">No matching manifests.</div>';
+      if (matches.length > 200) list.innerHTML += '<div class="filter-panel-empty">Refine your search to find more manifests.</div>';
+    };
+    search.addEventListener('input', draw); draw();
+    list.addEventListener('click', e => {
+      const button = e.target.closest('[data-flow-manifest]');
+      if (!button) return;
+      flowManifest = button.dataset.flowManifest;
+      document.getElementById('flow-manifest-label').textContent = flowManifest;
+      document.getElementById('flow-scope').textContent = flowManifest;
+      closeFilterPanel(true); flowData = null; flowSelectedId = ''; loadDependencyFlow();
+    });
+  }
+  async function loadDependencyFlow(offset = 0, selectId = '') {
+    cancelFlowRequest();
+    const serial = flowRequestSerial, pkg = selectedPkgName, manifest = flowManifest;
+    if (!pkg || !manifest) return;
+    const controller = new AbortController(); flowRequest = controller;
+    const status = document.getElementById('flow-status');
+    status.hidden = false; status.textContent = 'Preparing verified dependency flow…';
+    document.getElementById('flow-content').hidden = true;
+    document.getElementById('flow-retry').hidden = true;
+    document.getElementById('drawer-flow-panel').setAttribute('aria-busy', 'true');
+    try {
+      const query = new URLSearchParams({ package: pkg, manifest, offset: String(offset), limit: '50' });
+      if (historyGeneration) query.set('generation', historyGeneration);
+      const response = await fetch('/api/dependency-flow?' + query, { signal: controller.signal });
+      const data = await response.json();
+      if (serial !== flowRequestSerial || selectedPkgName !== pkg || flowManifest !== manifest) return;
+      if (!response.ok) throw new Error(data.error || 'Could not load dependency flow.');
+      if (data.schemaVersion !== 1 || !Array.isArray(data.nodes) || !Array.isArray(data.edges) ||
+        (historyGeneration && data.generation !== historyGeneration)) throw new Error('History changed. Use Sync to refresh the dependency evidence.');
+      flowData = data;
+      status.hidden = true;
+      document.getElementById('flow-content').hidden = false;
+      renderDependencyFlow(selectId);
+    } catch (error) {
+      if (serial !== flowRequestSerial || error.name === 'AbortError') return;
+      status.textContent = error.message || 'Could not load dependency flow.';
+      document.getElementById('flow-retry').hidden = false;
+    } finally {
+      if (serial === flowRequestSerial) {
+        flowRequest = null;
+        document.getElementById('drawer-flow-panel').setAttribute('aria-busy', 'false');
+      }
+    }
+  }
+  function flowNodeTitle(node) {
+    if (node.kind === 'integration') return 'Integrated existing dependency change';
+    if (node.kind === 'merge-change') return 'Merge dependency change';
+    if (node.kind === 'unknown') return 'Dependency change · evidence incomplete';
+    const types = new Set(node.changes.map(e => e.type));
+    if (types.size !== 1) return 'Dependency changes';
+    if (types.has('added')) return 'Added dependency';
+    if (types.has('removed')) return 'Removed dependency';
+    if (node.changes.every(e => e.from === e.to && e.depTypeFrom && e.depTypeFrom !== e.depType)) return 'Dependency section moved';
+    if (node.changes.every(e => e.from === e.to)) return 'Resolved versions or metadata changed';
+    return 'Updated dependency';
+  }
+  function flowChangeValue(e) {
+    if (e.type === 'updated') return e.from !== e.to && !e.depTypeFrom && !e.resolutionsFrom
+      ? versionEvidence(e, true) + ' → ' + versionEvidence(e) : changeKeyOf(e);
+    const value = e.type === 'added' ? versionEvidence(e) : e.resolutionsFrom?.length ? '{' + e.resolutionsFrom.join(', ') + '}' : e.from || 'Version unavailable';
+    return (e.type === 'added' ? 'Added ' : 'Removed ') + value;
+  }
+  function flowNodeHtml(node) {
+    const type = node.kind === 'integration' ? 'integration' : new Set(node.changes.map(e => e.type)).size === 1 ? node.changes[0].type : 'updated';
+    return `<li><button class="flow-node ${type}" data-flow-node="${escapeHtml(node.id)}" aria-pressed="false" aria-controls="flow-details"><span class="flow-node-meta"><span>${escapeHtml(eventDateKey(node))}</span><code>${escapeHtml(node.commit)}</code></span><span class="flow-node-title">${escapeHtml(flowNodeTitle(node))}</span>${node.changes.map(e => `<span class="flow-change"><span class="flow-change-label">${e.source === 'manifest' ? 'Declared' : 'Resolved'}</span><span class="flow-change-value">${escapeHtml(flowChangeValue(e))}</span></span>`).join('')}<span class="flow-author">Git ${node.kind === 'integration' || node.kind === 'merge-change' ? 'merge ' : ''}author: ${escapeHtml(node.author || 'Unknown')}</span></button></li>`;
+  }
+  function renderDependencyFlow(selectId = '') {
+    const primary = flowData.nodes.filter(n => n.kind !== 'integration'), integrations = flowData.nodes.filter(n => n.kind === 'integration');
+    const boundary = flowData.truncated ? '<li class="flow-boundary">Available history is incomplete. Earlier changes or paths may be missing.</li>' : '';
+    document.getElementById('flow-nodes').innerHTML = boundary + primary.map(flowNodeHtml).join('');
+    document.getElementById('flow-integration-nodes').innerHTML = integrations.map(flowNodeHtml).join('');
+    const group = document.getElementById('flow-integrations');
+    group.hidden = !integrations.length; group.open = !primary.length;
+    document.getElementById('flow-integrations-summary').textContent = `${integrations.length} verified merge ${integrations.length === 1 ? 'integration' : 'integrations'} in this window · expand evidence`;
+    const label = document.getElementById('flow-window-label');
+    label.textContent = `${flowData.offset + 1}–${flowData.offset + flowData.nodes.length} of ${flowData.total} commits · ancestry order`;
+    document.getElementById('flow-earlier').disabled = flowData.offset === 0;
+    document.getElementById('flow-earlier').hidden = flowData.offset === 0 && flowData.nextOffset === null;
+    document.getElementById('flow-later').disabled = flowData.nextOffset === null;
+    document.getElementById('flow-later').hidden = flowData.offset === 0 && flowData.nextOffset === null;
+    const head = flowData.headState || [];
+    document.getElementById('flow-head').innerHTML = `<span class="flow-head-label">Current checkout · HEAD · ${escapeHtml(flowManifest)}</span><span class="flow-head-value">Declared: ${head.length ? head.map(e => escapeHtml(e.version + ' · ' + e.depType)).join('<br>') : flowData.headStateComplete ? 'Not declared at HEAD' : 'HEAD declaration unavailable'}</span>${(flowData.headResolved || []).map(r => `<span class="flow-head-value">Resolved: ${r.status === 'resolved' ? escapeHtml(r.versions.join(', ')) : r.status === 'absent' ? 'Not recorded in this lockfile' : 'Current lockfile unavailable'} · ${escapeHtml(r.file)}</span>`).join('')}`;
+    selectFlowNode(selectId || primary[0]?.id || integrations[0]?.id, Boolean(selectId));
+    scheduleFlowConnections();
+  }
+  function selectFlowNode(id, moveFocus = false) {
+    const node = flowData?.nodes.find(n => n.id === id);
+    if (!node) return;
+    flowSelectedId = id;
+    const buttons = document.querySelectorAll('[data-flow-node]');
+    for (const button of buttons) {
+      const selected = button.dataset.flowNode === id;
+      button.setAttribute('aria-pressed', String(selected));
+      if (selected && moveFocus) {
+        if (node.kind === 'integration') document.getElementById('flow-integrations').open = true;
+        button.focus({ preventScroll: true }); button.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      }
+    }
+    const incoming = flowData.edges.filter(e => e.to === id);
+    const unique = new Map(incoming.map(e => [e.from + e.kind, e]));
+    const details = document.getElementById('flow-details');
+    document.getElementById('flow-selection-status').textContent = `Selected ${flowNodeTitle(node)} at ${node.commit}.`;
+    details.innerHTML = `<h3>${escapeHtml(flowNodeTitle(node))}</h3><button class="commit-tag" data-commit="${escapeHtml(node.commit)}" data-full="${escapeHtml(node.id)}">${escapeHtml(node.id)}</button><p>${escapeHtml(node.message || 'No commit message')}</p><div data-author-entry class="node-author"><span class="author-avatar-wrapper" data-author-commit="${escapeHtml(node.id)}" style="width:18px;height:18px"><span class="author-avatar-fallback">${escapeHtml((node.author || "U")[0].toUpperCase())}</span></span><span>Git author: ${renderAuthorName(node.author, node.id)}</span></div>${node.gaps.map(g => `<p class="flow-boundary">${escapeHtml(g)}</p>`).join('')}${node.changes.map(e => `<div class="flow-detail-evidence"><span class="flow-change-label">${e.source === 'manifest' ? 'Declared requirement' : 'Lockfile resolution'}</span><p><code>${escapeHtml(e.lockfile || e.manifest)}</code></p><p>${escapeHtml(flowChangeValue(e))}</p><p>${escapeHtml(e.depTypeFrom && e.depTypeFrom !== e.depType ? e.depTypeFrom + ' → ' + e.depType : e.depType)}</p>${e.flowEvidence?.matchingParents.length ? '<p>Matching incoming parent snapshots:</p>' + e.flowEvidence.matchingParents.map(p => `<p><code>${escapeHtml(p)}</code></p>`).join('') : ''}</div>`).join('')}<div class="flow-detail-evidence"><span class="flow-change-label">Verified earlier connections</span>${unique.size ? '<ul class="flow-detail-links">' + [...unique.values()].map(e => `<li><button class="flow-link" data-flow-jump="${escapeHtml(e.from)}">${e.kind === 'integration' ? 'Incoming recorded state' : 'Previous recorded state'} · ${escapeHtml(e.from.slice(0, 7))}</button></li>`).join('') + '</ul>' : '<p>No earlier connection is established in the available evidence.</p>'}</div>`;
+    hydrateAuthors(); scheduleFlowConnections();
+  }
+  function jumpFlowNode(id) {
+    if (flowData?.nodes.some(n => n.id === id)) selectFlowNode(id, true);
+    else {
+      const reference = flowData?.references.find(r => r.id === id);
+      if (reference) loadDependencyFlow(reference.offset, id);
+    }
+  }
+  function scheduleFlowConnections() {
+    if (drawerView !== 'flow' || !flowData || flowDrawFrame !== null) return;
+    flowDrawFrame = requestAnimationFrame(() => { flowDrawFrame = null; drawFlowConnections(); });
+  }
+  function drawFlowConnections() {
+    const graph = document.getElementById('flow-graph'), svg = document.getElementById('flow-connections');
+    const box = graph.getBoundingClientRect(), positions = new Map();
+    for (const button of graph.querySelectorAll('[data-flow-node]')) {
+      const disclosure = button.closest('details');
+      if (disclosure && !disclosure.open) continue;
+      if (button.getClientRects().length) positions.set(button.dataset.flowNode, button.getBoundingClientRect().top - box.top + 28);
+    }
+    const unique = new Map(flowData.edges.map(e => [e.from + e.to + e.kind, e]));
+    const paths = [...unique.values()].flatMap(e => {
+      const from = positions.get(e.from), to = positions.get(e.to);
+      if (from === undefined || to === undefined) return [];
+      return [`<path class="${e.kind}" d="M12 ${from} C2 ${from},2 ${to},12 ${to}" marker-end="url(#flow-arrow)"/>`];
+    });
+    svg.setAttribute('height', String(Math.ceil(box.height)));
+    svg.innerHTML = '<defs><marker id="flow-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5" style="fill:var(--color-text-muted);stroke:none"/></marker></defs>' + paths.join('');
   }
 
   function copyText(text, msg = 'Copied to clipboard!') {
@@ -2050,7 +2272,7 @@
   document.getElementById('filter-panel').addEventListener('click', e => e.stopPropagation());
   document.addEventListener('click', (e) => {
     const panel = document.getElementById('filter-panel');
-    if (panel && !panel.hidden && !panel.contains(e.target) && !e.target.closest('button[data-panel], #pager-size')) {
+    if (panel && !panel.hidden && !panel.contains(e.target) && !panelAnchor?.contains(e.target) && !e.target.closest('button[data-panel], #pager-size')) {
       closeFilterPanel();
     }
   });
@@ -2162,6 +2384,30 @@
 
   // Drawer events
   document.getElementById('drawer-close').addEventListener('click', closeArchaeology);
+  document.getElementById('drawer-history-tab').addEventListener('click', () => setDrawerView('history'));
+  document.getElementById('drawer-history-earlier').addEventListener('click', () => drawerHistoryRender?.(Math.max(0, drawerHistoryOffset - 50)));
+  document.getElementById('drawer-history-later').addEventListener('click', () => drawerHistoryRender?.(drawerHistoryOffset + 50));
+  document.getElementById('drawer-flow-tab').addEventListener('click', () => setDrawerView('flow'));
+  for (const name of ['history', 'flow']) document.getElementById('drawer-' + name + '-tab').addEventListener('keydown', e => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const next = e.key === 'Home' ? 'history' : e.key === 'End' ? 'flow' : name === 'history' ? 'flow' : 'history';
+    setDrawerView(next); document.getElementById('drawer-' + next + '-tab').focus();
+  });
+  document.getElementById('flow-manifest-btn').addEventListener('click', e => openFilterPanel('flow-manifest', e.currentTarget));
+  document.getElementById('flow-earlier').addEventListener('click', () => { if (flowData) loadDependencyFlow(Math.max(0, flowData.offset - flowData.limit)); });
+  document.getElementById('flow-later').addEventListener('click', () => { if (flowData && flowData.nextOffset !== null) loadDependencyFlow(flowData.nextOffset); });
+  document.getElementById('flow-retry').addEventListener('click', () => loadDependencyFlow(flowData?.offset || 0));
+  document.getElementById('flow-integrations').addEventListener('toggle', scheduleFlowConnections);
+  document.getElementById('drawer-flow-panel').addEventListener('click', e => {
+    const node = e.target.closest('[data-flow-node]'), jump = e.target.closest('[data-flow-jump]'), commit = e.target.closest('[data-commit]');
+    if (node) selectFlowNode(node.dataset.flowNode);
+    else if (jump) jumpFlowNode(jump.dataset.flowJump);
+    else if (commit) {
+      const full = commit.dataset.full, link = commitUrl(full);
+      if (link) window.open(link, '_blank', 'noopener,noreferrer'); else copyText(full, 'Commit SHA copied!');
+    }
+  });
   document.getElementById('drawer-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'drawer-overlay') closeArchaeology();
   });
@@ -2195,11 +2441,13 @@
     const pkgEvents = allEvents.filter(e => e.package === selectedPkgName);
     const mdCell = value => String(value ?? '-').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ').replace(/`/g, '\\`');
     let md = `### Dependency history: ${mdCell(selectedPkgName)}\n\n`;
-    if (historyTruncated || historyWarnings.length) md += 'History contains scan warnings; consult the JSON export for details.\n\n';
+    if (historyTruncated || historyWarnings.length) md += 'Repository scan notices may concern other packages; consult the JSON export for details.\n\n';
     const nodes = groupLifecycleNodes(pkgEvents);
     md += `${nodes.length} commits · ${pkgEvents.length} file events · ${nodes.filter(n => n.isMerge).length} merge commits. Dates include changes from merged branches.\n\n`;
-    md += `| Date | Action | Context | Source | Manifest | From | To | Commit | Author role | Commit author |\n`;
-    md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+    md += 'Each change is compared with the commit\'s first parent. Manifest rows show declared ranges; lockfile rows show installed versions.\n\n';
+    if (nodes.some(n => n.isMerge)) md += 'Merge integration means an existing dependency change entered that branch. The listed merge author is not necessarily the original author of the change.\n\n';
+    md += `| Date | Action | Context | Source | Manifest | Change | From | To | Commit | Author role | Commit author |\n`;
+    md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
     // One row per commit per distinct change (manifests joined): the same
     // grouping as the drawer timeline, so a ten-workspace rollout is two
     // rows (declared + resolved), not twenty. Full fidelity stays in JSON.
@@ -2208,7 +2456,7 @@
     for (const [source, changes] of [['manifest', node.declared], ['lockfile', node.resolved]]) {
       for (const ch of changes) {
         const context = ch.changeOrigin === 'merge-integration' ? 'Merge integration' : node.isMerge ? 'Merge change' : node.metadataKnown ? 'Direct commit' : 'Merge status unknown';
-        md += `| ${[d, ch.type, context, source, ch.manifests.join(', '), ch.from, ch.to, node.commitFull || node.commit, node.isMerge ? 'Merge author' : 'Commit author', node.author].map(mdCell).join(' | ')} |\n`;
+        md += `| ${[d, ch.type, context, source, ch.manifests.join(', '), changeKeyOf(ch), ch.type === 'added' ? undefined : versionEvidence(ch, true), ch.type === 'removed' ? undefined : versionEvidence(ch), node.commitFull || node.commit, node.isMerge ? 'Merge author' : 'Commit author', node.author].map(mdCell).join(' | ')} |\n`;
       }
     }
     }

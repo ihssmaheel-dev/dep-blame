@@ -52,6 +52,12 @@ export interface DependencyEvent {
   commitParents?: string[];
   /** Direct commit, verified incoming-parent change, or other merge result. */
   changeOrigin?: ChangeOrigin;
+  /** Snapshot evidence for dependency flow; parent matches do not imply original authorship. */
+  flowEvidence?: {
+    matchingParents: string[];
+    complete: boolean;
+    previousReadable: boolean;
+  };
   author: string;
   message: string;
   manifest: string;
@@ -67,6 +73,8 @@ export interface DependencyEvent {
   resolutions?: string[];
   /** True when version info is partial/representative — warn, never authoritative. */
   ambiguous?: boolean;
+  /** Previous full version set for a resolved-set update (including singleton sets). */
+  resolutionsFrom?: string[];
 }
 
 export interface CommitInfo {

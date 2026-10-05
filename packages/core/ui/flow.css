@@ -1,0 +1,55 @@
+  .drawer.flow-active { width: 960px; }
+  .drawer.flow-active .drawer-stats-strip { display: none; }
+  .drawer.flow-active .drawer-header { margin-bottom: 12px; }
+  .drawer.flow-active #drawer-history-heading { display: none; }
+  .drawer-view-tabs { display: flex; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--color-border); padding-bottom: 8px; }
+  .drawer-view-tab { background: transparent; color: var(--color-text-secondary); border: 1px solid transparent; border-radius: var(--radius-sm); padding: 8px 14px; font: inherit; font-size: 12px; cursor: pointer; }
+  .drawer-view-tab[aria-selected="true"] { color: var(--color-text); background: var(--color-bg-secondary); border-color: var(--color-border); }
+  .flow-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  .flow-toolbar .flow-help { margin: 0; }
+  .flow-selection-status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+  .flow-toolbar .drawer-action-btn { max-width: 100%; min-width: 0; }
+  #flow-manifest-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .flow-help, .flow-status, .flow-boundary, .flow-head-label { color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; }
+  .flow-help { margin: 0 0 16px; }
+  .flow-status { padding: 18px 0; }
+  .flow-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: 20px; }
+  .flow-graph { position: relative; min-width: 0; }
+  .flow-list { list-style: none; margin: 0; padding: 0 0 0 26px; position: relative; }
+  .flow-list li { margin-bottom: 18px; min-width: 0; }
+  .flow-node { width: 100%; text-align: left; display: block; position: relative; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 12px 14px; color: var(--color-text); font: inherit; cursor: pointer; }
+  .flow-node:hover { border-color: var(--color-text-muted); }
+  .flow-node[aria-pressed="true"] { border-color: var(--color-accent); box-shadow: inset 3px 0 var(--color-accent); }
+  .flow-node::before { content: ''; position: absolute; left: -22px; top: 24px; width: 9px; height: 9px; border-radius: 50%; background: var(--color-surface); border: 2px solid var(--color-text-muted); }
+  .flow-node.added::before { border-color: var(--color-added); }
+  .flow-node.updated::before { border-color: var(--color-updated); }
+  .flow-node.removed::before { border-color: var(--color-removed); }
+  .flow-node.integration::before { border-radius: 2px; }
+  .flow-node-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--color-text-secondary); font-size: 11px; margin-bottom: 7px; }
+  .flow-node-title { display: block; font-weight: 600; font-size: 13px; margin-bottom: 9px; }
+  .flow-change { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 8px; font-size: 12px; line-height: 1.6; margin-top: 4px; }
+  .flow-change-label { color: var(--color-text-secondary); }
+  .flow-change-value { font-family: var(--font-mono); overflow-wrap: anywhere; }
+  .flow-author { display: block; font-size: 11px; color: var(--color-text-secondary); margin-top: 10px; overflow-wrap: anywhere; }
+  .flow-connections { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; width: 26px; }
+  .flow-connections path { fill: none; stroke: var(--color-text-muted); stroke-width: 1; }
+  .flow-connections path.integration { stroke-dasharray: 3 3; }
+  .flow-details { position: sticky; top: 12px; padding: 14px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-bg-secondary); min-width: 0; }
+  .flow-details h3 { font-size: 13px; margin: 0 0 12px; }
+  .flow-details p { margin: 8px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+  .flow-details code, .flow-details .commit-tag { overflow-wrap: anywhere; white-space: normal; }
+  .flow-detail-evidence { border-top: 1px solid var(--color-border); padding-top: 9px; margin-top: 12px; }
+  .flow-detail-evidence .flow-change { grid-template-columns: 1fr; gap: 2px; }
+  .flow-detail-links { list-style: none; margin: 8px 0 0; padding: 0; }
+  .flow-detail-links li { margin: 6px 0; }
+  .flow-link { font: inherit; font-size: 12px; color: var(--color-text); text-align: left; border: 0; background: transparent; padding: 4px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .flow-integrations { margin: 6px 0 18px; border-top: 1px solid var(--color-border); padding-top: 12px; }
+  .flow-integrations summary { font-size: 12px; cursor: pointer; margin-bottom: 14px; line-height: 1.6; }
+  .flow-boundary { margin: 0 0 12px; }
+  .flow-window { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .flow-head { border-top: 1px solid var(--color-border); padding: 14px 0; margin-top: 14px; }
+  .flow-head-value { display: block; margin-top: 5px; font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+  @media (max-width: 760px) { .flow-layout { grid-template-columns: 1fr; gap: 12px; } .flow-details { position: static; } }
+  @media (prefers-reduced-motion: reduce) { .drawer, .drawer-overlay { transition: none; } }
+
+.filter-panel.flow-panel { z-index: 1200; }

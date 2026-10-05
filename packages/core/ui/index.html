@@ -1133,6 +1133,10 @@
     white-space: nowrap;
   }
 
+  .change-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 340px; }
+  .change-detail { color: var(--color-text-secondary); font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+  .change-cell .diff-pill { white-space: normal; flex-wrap: wrap; overflow-wrap: anywhere; }
+
   .diff-from { color: var(--color-removed); }
   .diff-to { color: var(--color-added); font-weight: 600; }
   .diff-arrow { color: var(--color-text-muted); }
@@ -2429,6 +2433,7 @@
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
   </style>
+  <link rel="stylesheet" href="/flow.css">
 </head>
 <body>
 
@@ -2615,7 +2620,7 @@
         <th aria-sort="descending"><span class="th-head"><button class="th-sort" data-sort="date">Date <span id="sort-date-icon">↓</span></button><button class="col-filter-icon" data-panel="date" aria-label="Filter by date range" aria-haspopup="dialog" title="Filter dates"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th><span class="th-head"><span class="th-label">Action</span><button class="col-filter-icon" data-panel="action" aria-label="Filter by action" aria-haspopup="dialog" title="Filter actions"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th aria-sort="none"><span class="th-head"><button class="th-sort" data-sort="package">Dependency <span id="sort-pkg-icon"></span></button><button class="col-filter-icon" data-panel="package" aria-label="Filter by dependencies" aria-haspopup="dialog" title="Filter packages"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
-        <th><span class="th-head"><span class="th-label">Version Diff</span><button class="col-filter-icon" data-panel="change" aria-label="Filter by version changes" aria-haspopup="dialog" title="Filter versions"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
+        <th><span class="th-head"><span class="th-label">Change</span><button class="col-filter-icon" data-panel="change" aria-label="Filter dependency changes" aria-haspopup="dialog" title="Filter changes"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th><span class="th-head"><span class="th-label">Source</span><button class="col-filter-icon" data-panel="type" aria-label="Filter by source" aria-haspopup="dialog" title="Filter sources"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th><span class="th-head"><span class="th-label">Manifest</span><button class="col-filter-icon" data-panel="manifest" aria-label="Filter by manifest" aria-haspopup="dialog" title="Filter manifests"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
         <th><span class="th-head"><span class="th-label">Author</span><button class="col-filter-icon" data-panel="author" aria-label="Filter by authors" aria-haspopup="dialog" title="Filter authors"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.5 10 19 14 21 14 12.5 22 3"></polygon></svg></button></span></th>
@@ -2762,13 +2767,35 @@
     </div>
     </div>
 
-    <div style="font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin-bottom: 8px;">
+    <div id="drawer-history-heading" style="font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-secondary); margin-bottom: 8px;">
     Dependency history
     </div>
 
     <p class="drawer-history-note" id="drawer-history-note" hidden></p>
 
-    <div class="tree-timeline" id="drawer-timeline"></div>
+    <div class="drawer-view-tabs" role="tablist" aria-label="Dependency history view">
+      <button class="drawer-view-tab" id="drawer-history-tab" role="tab" aria-selected="true" aria-controls="drawer-history-panel">History</button>
+      <button class="drawer-view-tab" id="drawer-flow-tab" role="tab" aria-selected="false" aria-controls="drawer-flow-panel" tabindex="-1">Flow</button>
+    </div>
+    <div id="drawer-history-panel" role="tabpanel" aria-labelledby="drawer-history-tab"><div class="flow-window" id="drawer-history-window" hidden><button class="drawer-action-btn" id="drawer-history-earlier">Earlier changes</button><span class="flow-help" id="drawer-history-window-label" role="status" aria-live="polite"></span><button class="drawer-action-btn" id="drawer-history-later">Later changes</button></div><div class="tree-timeline" id="drawer-timeline"></div></div>
+    <div id="drawer-flow-panel" role="tabpanel" aria-labelledby="drawer-flow-tab" hidden>
+      <div class="flow-toolbar">
+        <button class="drawer-action-btn" id="flow-manifest-btn" aria-haspopup="dialog" aria-expanded="false" hidden><span id="flow-manifest-label"></span><svg class="control-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <span class="flow-help" id="flow-scope"></span>
+      </div>
+      <p class="flow-help">Solid connections: matching previous recorded state. Dashed connections: verified incoming merge state. Order follows ancestry.</p>
+      <div class="flow-status" id="flow-status" role="status" aria-live="polite" hidden></div>
+      <span class="flow-selection-status" id="flow-selection-status" role="status" aria-live="polite"></span>
+      <div id="flow-content" hidden>
+        <div class="flow-window"><button class="drawer-action-btn" id="flow-earlier">Earlier changes</button><span class="flow-help" id="flow-window-label" role="status" aria-live="polite"></span><button class="drawer-action-btn" id="flow-later">Later changes</button></div>
+        <div class="flow-layout">
+          <div class="flow-graph" id="flow-graph"><svg class="flow-connections" id="flow-connections" aria-hidden="true"></svg><ol class="flow-list" id="flow-nodes" aria-label="Dependency changes in ancestry order"></ol><details class="flow-integrations" id="flow-integrations"><summary id="flow-integrations-summary"></summary><ol class="flow-list" id="flow-integration-nodes" aria-label="Verified dependency merge integrations"></ol></details></div>
+          <section class="flow-details" id="flow-details" aria-label="Selected dependency change"><p>Select a change to inspect its evidence.</p></section>
+        </div>
+        <div class="flow-head" id="flow-head"></div>
+      </div>
+      <button class="drawer-action-btn" id="flow-retry" hidden>Retry flow</button>
+    </div>
   </div>
   </div>
 

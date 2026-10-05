@@ -1,6 +1,7 @@
 import { c, stripControl } from './ansi.js';
 import type { DependencyEvent, HeadEntry, ChangeOrigin } from '../types.js';
 import { eventDayKey } from './calendar.js';
+import { describeUpdate } from './change.js';
 
 function formatDate(isoString?: string): string {
   if (!isoString) return '';
@@ -34,6 +35,8 @@ export interface LifecycleChange {
   depType?: string;
   depTypeFrom?: string;
   changeOrigin?: ChangeOrigin;
+  resolutions?: string[];
+  resolutionsFrom?: string[];
   manifests: string[];
 }
 
@@ -108,6 +111,8 @@ export function groupLifecycleNodes(
         (ch.from || '') === (ev.from || '') &&
         (ch.to || '') === (ev.to || '') &&
         (ch.depType || '') === (ev.depType || '') &&
+        JSON.stringify(ch.resolutions) === JSON.stringify(ev.resolutions) &&
+        JSON.stringify(ch.resolutionsFrom) === JSON.stringify(ev.resolutionsFrom) &&
         ch.changeOrigin === ev.changeOrigin &&
         (ch.depTypeFrom || '') === (ev.depTypeFrom || '')
     );
@@ -123,6 +128,8 @@ export function groupLifecycleNodes(
         depType: ev.depType,
         depTypeFrom: ev.depTypeFrom,
         changeOrigin: ev.changeOrigin,
+        resolutions: ev.resolutions,
+        resolutionsFrom: ev.resolutionsFrom,
         manifests: ev.manifest ? [ev.manifest] : [],
       });
     }
@@ -261,9 +268,7 @@ function formatLifecycleChange(ch: LifecycleChange): string {
   if (ch.type === 'added') {
     changeStr = `${integration ? 'merged existing' : '+added'} ${c.bold(stripControl(ch.to || ''))}`;
   } else if (ch.type === 'updated') {
-    const move =
-      ch.depTypeFrom && ch.depTypeFrom !== ch.depType ? c.dim(` [${ch.depTypeFrom} → ${ch.depType}]`) : '';
-    changeStr = `${integration ? 'merged update ' : ''}${stripControl(ch.from || '?')} -> ${c.bold(stripControl(ch.to || '?'))}${move}`;
+    changeStr = `${integration ? 'merged update ' : ''}${stripControl(describeUpdate(ch))}`;
   } else if (ch.type === 'removed') {
     changeStr = `${integration ? 'merged removal' : '-removed'} ${c.dim(`was ${stripControl(ch.from || 'installed')}`)}`;
   }

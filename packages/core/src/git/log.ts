@@ -75,11 +75,36 @@ export function getManifestCommits(
         }
       }
     }
-    const merged = [...bySha.values()];
-    // getManifestCommitsChunk already returns topo+reverse order per chunk;
-    // re-sort merged by date is unsafe (equal timestamps). Re-walk once
-    // without a path filter is wasteful, so preserve first-seen order which
-    // matches the first chunk's chronological order for overlapping commits.
+    // Concatenating independently walked chunks can put a child before a
+    // parent found only in another chunk. Order the merged DAG by its actual
+    // edges, not timestamps (author clocks can run backwards).
+    const unordered = [...bySha.values()];
+    const degree = new Map<string, number>();
+    const children = new Map<string, CommitInfo[]>();
+    for (const c of unordered) {
+      let count = 0;
+      for (const parent of c.parents) {
+        if (!bySha.has(parent)) continue;
+        count++;
+        let list = children.get(parent);
+        if (!list) { list = []; children.set(parent, list); }
+        list.push(c);
+      }
+      degree.set(c.commit, count);
+    }
+    const ready = unordered.filter(c => degree.get(c.commit) === 0);
+    const merged: CommitInfo[] = [];
+    for (let cursor = 0; cursor < ready.length; cursor++) {
+      const c = ready[cursor];
+      merged.push(c);
+      for (const child of children.get(c.commit) || []) {
+        const left = degree.get(child.commit)! - 1;
+        degree.set(child.commit, left);
+        if (left === 0) ready.push(child);
+      }
+    }
+    if (merged.length !== unordered.length) throw new Error('Invalid Git history graph.');
+    if (options.reverse === false) merged.reverse();
     onProgress?.(merged.length);
     return merged;
   })();

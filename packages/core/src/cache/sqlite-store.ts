@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import type { DependencyEvent, FilterOptions, StoreInterface } from '../types.js';
 
-export const CACHE_SCHEMA_VERSION = '5';
+export const CACHE_SCHEMA_VERSION = '8';
 
 function loadDatabaseSync(): any {
   try {
@@ -194,7 +194,9 @@ export class SqliteStore implements StoreInterface {
       'ALTER TABLE events ADD COLUMN resolutions TEXT',
       'ALTER TABLE events ADD COLUMN ambiguous INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE events ADD COLUMN commit_parents TEXT',
-      'ALTER TABLE events ADD COLUMN change_origin TEXT'
+      'ALTER TABLE events ADD COLUMN change_origin TEXT',
+      'ALTER TABLE events ADD COLUMN resolutions_from TEXT',
+      'ALTER TABLE events ADD COLUMN flow_evidence TEXT'
     ];
     for (const sql of additions) {
       try {
@@ -240,8 +242,8 @@ export class SqliteStore implements StoreInterface {
             package, type, from_version, to_version,
             date, commit_sha, commit_full, author, message, manifest,
             dep_type, dep_type_from, source, lockfile, is_direct,
-            resolutions, ambiguous, commit_parents, change_origin
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            resolutions, ambiguous, commit_parents, change_origin, resolutions_from, flow_evidence
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
       }
       const stmt = this.stmtInsertEvent;
@@ -266,7 +268,9 @@ export class SqliteStore implements StoreInterface {
           ev.resolutions ? JSON.stringify(ev.resolutions) : null,
           ev.ambiguous ? 1 : 0,
           ev.commitParents ? JSON.stringify(ev.commitParents) : null,
-          ev.changeOrigin || null
+          ev.changeOrigin || null,
+          ev.resolutionsFrom ? JSON.stringify(ev.resolutionsFrom) : null,
+          ev.flowEvidence ? JSON.stringify(ev.flowEvidence) : null
         );
       }
       this.commitTx();
@@ -349,40 +353,7 @@ export class SqliteStore implements StoreInterface {
     const stmt = this.db.prepare(sql);
     const rows = stmt.all(...params) as any[];
 
-    return rows.map((row) => {
-      const ev: DependencyEvent = {
-        package: row.package,
-        type: row.type,
-        date: row.date,
-        commit: row.commit_sha,
-        author: row.author,
-        message: row.message,
-        manifest: row.manifest,
-        depType: row.dep_type,
-        source: row.source === 'lockfile' ? 'lockfile' : 'manifest',
-        isDirect: row.is_direct === 1
-      };
-      if (row.commit_full) ev.commitFull = row.commit_full;
-      if (row.commit_parents) {
-        try {
-          const parents = JSON.parse(row.commit_parents);
-          if (Array.isArray(parents) && parents.every((p: unknown) => typeof p === 'string' && /^[0-9a-f]{40,64}$/i.test(p))) ev.commitParents = parents;
-        } catch { /* Ignore corrupt optional metadata. */ }
-      }
-      if (['direct', 'merge-integration', 'merge-change'].includes(row.change_origin)) ev.changeOrigin = row.change_origin;
-      if (row.from_version) ev.from = row.from_version;
-      if (row.to_version) ev.to = row.to_version;
-      if (row.dep_type_from) ev.depTypeFrom = row.dep_type_from;
-      if (row.lockfile) ev.lockfile = row.lockfile;
-      if (row.resolutions) {
-        try {
-          const parsed = JSON.parse(row.resolutions);
-          if (Array.isArray(parsed)) ev.resolutions = parsed.filter((v) => typeof v === 'string');
-        } catch { /* ignore corrupt resolutions payload */ }
-      }
-      if (row.ambiguous === 1) ev.ambiguous = true;
-      return ev;
-    });
+    return rows.map(row => this.decodeEvent(row));
   }
 
   /**
@@ -413,29 +384,56 @@ export class SqliteStore implements StoreInterface {
     const offset = Math.max(0, Math.floor(page.offset ?? 0));
     const stmt = this.db.prepare('SELECT * FROM events' + where + ' ORDER BY id ASC LIMIT ? OFFSET ?');
     const rows = stmt.all(...params, limit, offset) as any[];
-    const events = rows.map((row) => {
-      const ev: DependencyEvent = {
-        package: row.package, type: row.type, date: row.date, commit: row.commit_sha,
-        author: row.author, message: row.message, manifest: row.manifest,
-        depType: row.dep_type, source: row.source === 'lockfile' ? 'lockfile' : 'manifest',
-        isDirect: row.is_direct === 1,
-      };
-      if (row.commit_full) ev.commitFull = row.commit_full;
-      if (row.commit_parents) {
-        try {
-          const parents = JSON.parse(row.commit_parents);
-          if (Array.isArray(parents) && parents.every((p: unknown) => typeof p === 'string' && /^[0-9a-f]{40,64}$/i.test(p))) ev.commitParents = parents;
-        } catch { /* Ignore corrupt optional metadata. */ }
-      }
-      if (['direct', 'merge-integration', 'merge-change'].includes(row.change_origin)) ev.changeOrigin = row.change_origin;
-      if (row.from_version) ev.from = row.from_version;
-      if (row.to_version) ev.to = row.to_version;
-      if (row.dep_type_from) ev.depTypeFrom = row.dep_type_from;
-      if (row.lockfile) ev.lockfile = row.lockfile;
-      if (row.ambiguous === 1) ev.ambiguous = true;
-      return ev;
-    });
+    const events = rows.map(row => this.decodeEvent(row));
     return { events, total, limit, offset };
+  }
+
+  private decodeEvent(row: any): DependencyEvent {
+    const ev: DependencyEvent = {
+      package: row.package,
+      type: row.type,
+      date: row.date,
+      commit: row.commit_sha,
+      author: row.author,
+      message: row.message,
+      manifest: row.manifest,
+      depType: row.dep_type,
+      source: row.source === 'lockfile' ? 'lockfile' : 'manifest',
+      isDirect: row.is_direct === 1
+    };
+    if (row.commit_full) ev.commitFull = row.commit_full;
+    if (row.commit_parents) {
+      try {
+        const parents = JSON.parse(row.commit_parents);
+        if (Array.isArray(parents) && parents.every((p: unknown) => typeof p === 'string' && /^[0-9a-f]{40,64}$/i.test(p))) ev.commitParents = parents;
+      } catch { /* Ignore corrupt optional metadata. */ }
+    }
+    if (['direct', 'merge-integration', 'merge-change'].includes(row.change_origin)) ev.changeOrigin = row.change_origin;
+    if (row.flow_evidence) {
+      try {
+        const proof = JSON.parse(row.flow_evidence);
+        if (Array.isArray(proof.matchingParents) && proof.matchingParents.every((p: unknown) => typeof p === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(p)) &&
+          typeof proof.complete === 'boolean' && typeof proof.previousReadable === 'boolean') ev.flowEvidence = proof;
+      } catch { /* Missing proof never creates a flow edge. */ }
+    }
+    if (row.from_version) ev.from = row.from_version;
+    if (row.to_version) ev.to = row.to_version;
+    if (row.dep_type_from) ev.depTypeFrom = row.dep_type_from;
+    if (row.lockfile) ev.lockfile = row.lockfile;
+    if (row.resolutions) {
+      try {
+        const parsed = JSON.parse(row.resolutions);
+        if (Array.isArray(parsed)) ev.resolutions = parsed.filter((v) => typeof v === 'string');
+      } catch { /* ignore corrupt resolutions payload */ }
+    }
+    if (row.resolutions_from) {
+      try {
+        const parsed = JSON.parse(row.resolutions_from);
+        if (Array.isArray(parsed) && parsed.every((v: unknown) => typeof v === 'string')) ev.resolutionsFrom = parsed;
+      } catch { /* Ignore corrupt optional metadata. */ }
+    }
+    if (row.ambiguous === 1) ev.ambiguous = true;
+    return ev;
   }
 
   /** Month aggregates for bounded calendar rendering (no full transfer). */

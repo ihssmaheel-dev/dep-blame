@@ -13,6 +13,8 @@ assert.ok(fs.existsSync(path.join(core, 'LICENSE')));
 assert.ok(fs.existsSync(path.join(core, 'ui', 'server.js')));
 assert.ok(fs.existsSync(path.join(core, 'ui', 'index.html')));
 assert.ok(fs.existsSync(path.join(core, 'ui', 'app.js')));
+assert.ok(fs.existsSync(path.join(core, 'ui', 'flow.css')));
+assert.ok(fs.existsSync(path.join(core, 'dist', 'render', 'dependency-flow.js')));
 execFileSync(process.execPath, [path.join(core, 'bin/cli.js'), '--help']);
 execFileSync(process.execPath, [path.join(core, 'bin/dep-blame-ui.js'), '--help']);
 const {runDepBlame} = await import(pathToFileURL(path.join(core, 'dist/index.js')));
@@ -35,6 +37,10 @@ try {
   assert.equal((await fetch(`${instance.url}/app.js`)).status, 200);
   const data = await (await fetch(`${instance.url}/api/events`)).json();
   assert.equal(data.events.length, 2);
+  const query = new URLSearchParams({ package: 'alpha', manifest: 'package.json', generation: data.generation });
+  const flow = await (await fetch(`${instance.url}/api/dependency-flow?${query}`)).json();
+  assert.equal(flow.total, 2); assert.equal(flow.edges.length, 1);
+  assert.equal((await fetch(`${instance.url}/flow.css`)).status, 200);
   console.log('Installed dep-blame tarball: CLI, UI bins, engine, API, font, CSP, and LICENSE smoke checks passed.');
 } finally {
   if (instance) await instance.close();
