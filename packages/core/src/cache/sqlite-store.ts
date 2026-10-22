@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import type { DependencyEvent, FilterOptions, StoreInterface } from '../types.js';
 
-export const CACHE_SCHEMA_VERSION = '8';
+export const CACHE_SCHEMA_VERSION = '9';
 
 function loadDatabaseSync(): any {
   try {

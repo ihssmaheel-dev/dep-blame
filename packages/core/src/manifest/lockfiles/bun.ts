@@ -148,8 +148,9 @@ export function parseBunLockfiles(content?: string | null): BunParseResult {
       const map = new Map<string, DependencyEntry>();
       for (const [name, { spec, depType }] of direct) {
         const all = versionsByName.has(name) ? [...versionsByName.get(name)!].sort() : null;
+        if (!resolved.has(name)) return { ok: false, maps: new Map(), note: `Missing lockfile resolution for ${name}; declared specifier is not a resolved version` };
         map.set(name, {
-          version: resolved.get(name) || spec,
+          version: resolved.get(name)!,
           depType,
           isDirect: true,
           ...(all && all.length > 1 ? { resolutions: all, ambiguous: true as const } : {})

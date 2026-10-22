@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createForgeDirectory, configureRemote } from './forge.js';
 import { runDepBlame, getRepoRemoteInfo, detectPackageManager, getCurrentHead, buildDependencyFlow, pageDependencyFlow, flowManifestForEvent } from 'dep-blame';
@@ -27,11 +28,23 @@ function headerHostname(value) {
   }
 }
 
-function gzipIfAccepted(req, body, contentType, extraHeaders = {}) {
-  const accept = String(req.headers['accept-encoding'] || '');
-  if (/\bgzip\b/.test(accept)) {
+const gzip = promisify(zlib.gzip);
+const compressedAssets = new WeakMap();
+async function gzipIfAccepted(req, body, contentType, extraHeaders = {}) {
+  const encodings = String(req.headers['accept-encoding'] || '').toLowerCase().split(',').map(token => {
+    const [name, ...params] = token.trim().split(';');
+    const q = params.find(p => p.trim().startsWith('q='));
+    return [name, q ? Number(q.trim().slice(2)) : 1];
+  });
+  const quality = encodings.find(([name]) => name === 'gzip') || encodings.find(([name]) => name === '*');
+  if (quality && quality[1] > 0 && quality[1] <= 1) {
+    let encoded = Buffer.isBuffer(body) ? compressedAssets.get(body) : null;
+    if (!encoded) {
+      encoded = gzip(body);
+      if (Buffer.isBuffer(body)) compressedAssets.set(body, encoded);
+    }
     return {
-      body: zlib.gzipSync(body),
+      body: await encoded,
       headers: {
         'Content-Type': contentType,
         'Content-Encoding': 'gzip',
@@ -40,7 +53,7 @@ function gzipIfAccepted(req, body, contentType, extraHeaders = {}) {
       }
     };
   }
-  return { body, headers: { 'Content-Type': contentType, ...extraHeaders } };
+  return { body, headers: { 'Content-Type': contentType, Vary: 'Accept-Encoding', ...extraHeaders } };
 }
 
 // No inline scripts remain (see app.js), so script-src stays 'self'.
@@ -126,7 +139,7 @@ async function loadFullData(cwd, onProgress, forge) {
 
   return {
     schemaVersion: 1,
-    generation: String(result.generation || capturedHead || 'empty'),
+    generation: `${capturedHead || 'empty'}:${result.generation || '0'}`,
     historyHead: capturedHead,
     repository: result.repository,
     branch: result.branch || 'main',
@@ -181,18 +194,20 @@ export async function startServer(options = {}) {
 
   let htmlContent;
   try {
-    htmlContent = fs.readFileSync(HTML_PATH, 'utf8');
+    htmlContent = fs.readFileSync(HTML_PATH);
   } catch (err) {
     throw new Error(`UI bundle missing at ${HTML_PATH}: ${err.message}`);
   }
   let appJsContent = '';
   try {
-    appJsContent = fs.readFileSync(APP_JS_PATH, 'utf8');
+    appJsContent = fs.readFileSync(APP_JS_PATH);
   } catch (err) {
     throw new Error(`UI script missing at ${APP_JS_PATH}: ${err.message}`);
   }
   const htmlBytes = Buffer.byteLength(htmlContent, 'utf8');
-  const flowCssContent = fs.readFileSync(path.join(__dirname, 'flow.css'), 'utf8');
+  const flowCssContent = fs.readFileSync(path.join(__dirname, 'flow.css'));
+  const appCssContent = fs.readFileSync(path.join(__dirname, 'app.css'));
+  const graphJsContent = fs.readFileSync(path.join(__dirname, 'flow-graph.js'));
 
   // Single-flight scans: concurrent dashboard loads share one analysis
   // instead of interleaving full-history scans against the cache.
@@ -254,15 +269,15 @@ export async function startServer(options = {}) {
         return;
       }
       const url = new URL(req.url, requestOrigin);
-      if (req.method === 'GET' && url.pathname === '/flow.css') {
-        const { body, headers } = gzipIfAccepted(req, flowCssContent, 'text/css; charset=utf-8',
+      if (req.method === 'GET' && (url.pathname === '/flow.css' || url.pathname === '/app.css')) {
+        const { body, headers } = await gzipIfAccepted(req, url.pathname === '/flow.css' ? flowCssContent : appCssContent, 'text/css; charset=utf-8',
           { 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
         res.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(body) }); res.end(body); return;
       }
 
       if (req.method === 'GET' && url.pathname === '/api/dependency-flow') {
-        const reply = (status, payload) => {
-          const { body, headers } = gzipIfAccepted(req, JSON.stringify(payload), 'application/json; charset=utf-8',
+        const reply = async (status, payload) => {
+          const { body, headers } = await gzipIfAccepted(req, JSON.stringify(payload), 'application/json; charset=utf-8',
             { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
           res.writeHead(status, { ...headers, 'Content-Length': Buffer.byteLength(body) }); res.end(body);
         };
@@ -270,20 +285,20 @@ export async function startServer(options = {}) {
         const offset = q.get('offset') || '0', limit = q.get('limit') || '50';
         if (!packageName || packageName.length > 512 || !manifest || manifest.length > 1024 ||
           !/^\d+$/.test(offset) || !Number.isSafeInteger(Number(offset)) || !/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 100) {
-          reply(400, { error: 'Provide a package, exact manifest, nonnegative offset and limit from 1 to 100.' }); return;
+          await reply(400, { error: 'Provide a package, exact manifest, nonnegative offset and limit from 1 to 100.' }); return;
         }
         try {
           const data = inflightScan ? await inflightScan : latestData || await scanOnce();
           if (q.get('generation') && q.get('generation') !== data.generation) {
-            reply(409, { error: 'History changed. Use Sync before opening this flow again.' }); return;
+            await reply(409, { error: 'History changed. Use Sync before opening this flow again.' }); return;
           }
           const events = data.events.filter(e => e.package === packageName && flowManifestForEvent(e) === manifest);
           const manifests = [...new Set(data.events.filter(e => e.package === packageName).map(flowManifestForEvent))].sort();
-          if (!events.length || !data.historyHead) { reply(404, { error: 'No recorded dependency history for this manifest.' }); return; }
+          if (!events.length || !data.historyHead) { await reply(404, { error: 'No recorded dependency history for this manifest.' }); return; }
           const key = JSON.stringify([data.generation, packageName, manifest]);
           let entry = flowCache.get(key);
           if (!entry) {
-            if (flowControllers.size >= 2) { reply(429, { error: 'Other dependency flows are being prepared. Try again shortly.' }); return; }
+            if (flowControllers.size >= 2) { await reply(429, { error: 'Other dependency flows are being prepared. Try again shortly.' }); return; }
             const controller = new AbortController(); flowControllers.add(controller);
             entry = { nodes: 0, promise: buildDependencyFlow(cwd, events, { package: packageName, manifest,
               head: data.historyHead, headState: data.headState, headStateComplete: data.headStateComplete,
@@ -303,11 +318,11 @@ export async function startServer(options = {}) {
           }
           flowCache.delete(key); flowCache.set(key, entry);
           const flow = await entry.promise;
-          if (latestData?.generation !== data.generation) { reply(409, { error: 'History changed. Use Sync before opening this flow again.' }); return; }
+          if (latestData?.generation !== data.generation) { await reply(409, { error: 'History changed. Use Sync before opening this flow again.' }); return; }
           if (res.destroyed) return;
-          reply(200, { schemaVersion: 1, generation: data.generation, manifests,
+          await reply(200, { schemaVersion: 1, generation: data.generation, manifests,
             ...pageDependencyFlow(flow, Number(offset), Number(limit)) });
-        } catch (err) { if (!res.destroyed) reply(500, { error: err?.message || 'Could not prepare dependency flow.' }); }
+        } catch (err) { if (!res.destroyed) await reply(500, { error: err?.message || 'Could not prepare dependency flow.' }); }
         return;
       }
 
@@ -318,7 +333,7 @@ export async function startServer(options = {}) {
       }
 
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-        const { body, headers } = gzipIfAccepted(req, htmlContent, 'text/html; charset=utf-8', {
+        const { body, headers } = await gzipIfAccepted(req, htmlContent, 'text/html; charset=utf-8', {
           'Cache-Control': 'no-cache',
           'X-Content-Type-Options': 'nosniff',
           'Content-Security-Policy': CSP
@@ -331,8 +346,8 @@ export async function startServer(options = {}) {
         return;
       }
 
-      if (req.method === 'GET' && url.pathname === '/app.js') {
-        const { body, headers } = gzipIfAccepted(req, appJsContent, 'application/javascript; charset=utf-8', {
+      if (req.method === 'GET' && (url.pathname === '/app.js' || url.pathname === '/flow-graph.js')) {
+        const { body, headers } = await gzipIfAccepted(req, url.pathname === '/app.js' ? appJsContent : graphJsContent, 'application/javascript; charset=utf-8', {
           'Cache-Control': 'no-cache',
           'X-Content-Type-Options': 'nosniff',
           'Content-Security-Policy': CSP
@@ -361,7 +376,7 @@ export async function startServer(options = {}) {
           res.end('Invalid asset');
           return;
         }
-        const { body, headers } = gzipIfAccepted(req, logoBytes, 'image/svg+xml', {
+        const { body, headers } = await gzipIfAccepted(req, logoBytes, 'image/svg+xml', {
           'Cache-Control': 'public, max-age=31536000, immutable',
           'X-Content-Type-Options': 'nosniff',
           'Content-Security-Policy': CSP
@@ -469,7 +484,7 @@ export async function startServer(options = {}) {
       if (req.method === 'GET' && url.pathname === '/api/events') {
         try {
           const data = await scanOnce();
-          const { body, headers } = gzipIfAccepted(req, JSON.stringify(data), 'application/json; charset=utf-8', {
+          const { body, headers } = await gzipIfAccepted(req, JSON.stringify(data), 'application/json; charset=utf-8', {
             'X-Content-Type-Options': 'nosniff',
             'Cache-Control': 'no-store'
           });
@@ -490,8 +505,17 @@ export async function startServer(options = {}) {
       // scan without re-walking history per request.
       if (req.method === 'GET' && (url.pathname === '/api/events/paged' || url.pathname === '/api/months' || url.pathname === '/api/facets')) {
         try {
-          const data = await scanOnce();
           const q = url.searchParams;
+          const limit = q.get('limit') || '100', offset = q.get('offset') || '0';
+          if (!/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 1000 || !/^\d+$/.test(offset) || !Number.isSafeInteger(Number(offset))) {
+            res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+            res.end(JSON.stringify({ error: 'Use a nonnegative integer offset and a limit from 1 to 1000.' })); return;
+          }
+          const data = inflightScan ? await inflightScan : latestData || await scanOnce();
+          if (q.get('generation') && q.get('generation') !== data.generation) {
+            res.writeHead(409, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+            res.end(JSON.stringify({ error: 'History changed. Refresh the history before requesting another page.' })); return;
+          }
           const f = {
             package: q.get('package') || undefined,
             type: q.get('type') || undefined,
@@ -506,10 +530,9 @@ export async function startServer(options = {}) {
           if (f.workspace) list = list.filter((e) => String(e.manifest || '').split('/').includes(String(f.workspace)));
           if (f.source) list = list.filter((e) => (e.source || 'manifest') === f.source);
           if (url.pathname === '/api/events/paged') {
-            const limit = Math.max(1, Math.min(1000, Number.parseInt(q.get('limit') || '100', 10) || 100));
-            const offset = Math.max(0, Number.parseInt(q.get('offset') || '0', 10) || 0);
-            const payload = JSON.stringify({ schemaVersion: 1, total: list.length, limit, offset, events: list.slice(offset, offset + limit) });
-            const { body, headers } = gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
+            const limit = Number(q.get('limit') || '100'), offset = Number(q.get('offset') || '0');
+            const payload = JSON.stringify({ schemaVersion: 1, generation: data.generation, total: list.length, limit, offset, events: list.slice(offset, offset + limit) });
+            const { body, headers } = await gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
             res.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(body) });
             res.end(body);
             return;
@@ -527,8 +550,8 @@ export async function startServer(options = {}) {
               else if (ev.type === 'updated') b.updated++;
               else if (ev.type === 'removed') b.removed++;
             }
-            const payload = JSON.stringify({ schemaVersion: 1, months: [...buckets.values()].sort((a, b) => a.month < b.month ? -1 : 1) });
-            const { body, headers } = gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
+            const payload = JSON.stringify({ schemaVersion: 1, generation: data.generation, months: [...buckets.values()].sort((a, b) => a.month < b.month ? -1 : 1) });
+            const { body, headers } = await gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
             res.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(body) });
             res.end(body);
             return;
@@ -540,12 +563,12 @@ export async function startServer(options = {}) {
             return [...m.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count).slice(0, 200);
           };
           const payload = JSON.stringify({
-            schemaVersion: 1,
+            schemaVersion: 1, generation: data.generation,
             packages: countBy((e) => e.package),
             authors: countBy((e) => e.author),
             manifests: countBy((e) => e.manifest),
           });
-          const { body, headers } = gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
+          const { body, headers } = await gzipIfAccepted(req, payload, 'application/json; charset=utf-8', { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
           res.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(body) });
           res.end(body);
         } catch (err) {
@@ -581,7 +604,11 @@ export async function startServer(options = {}) {
       resolve({
         server,
         url: serverUrl,
-        close: () => new Promise((resClose) => server.close(() => resClose()))
+        close: () => new Promise((resClose) => {
+          for (const controller of flowControllers) controller.abort();
+          server.close(() => resClose());
+          server.closeIdleConnections();
+        })
       });
     });
   });

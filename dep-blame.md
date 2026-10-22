@@ -1392,3 +1392,14 @@ claim a new full-codebase security audit or an npm release.
 Existing UI server processes must be restarted to load the rebuilt engine
 and cached HTML/JS. A replacement preview was verified separately; the
 user-owned server on port 3333 was left running.
+
+## 2026-10-22: dependency graph and correctness audit
+
+The Flow drawer now uses a bounded pan/zoom canvas with verified ancestry, a
+minimap, keyboard navigation and a collapsible evidence panel. Cache schema 9
+rebuilds incorrect nested lockfile attribution and incomplete resolution evidence.
+The review also fixes parser retention limits, HTTP compression/pagination,
+hosting identity races and mobile overflow.
+
+Findings, verification, performance measurements and remaining limits are in
+[the October 22 audit](docs/AUDIT-2026-10-22.md).

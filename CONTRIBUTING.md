@@ -94,7 +94,7 @@ These are hard requirements, enforced by tests or review:
 5. **Sanitize untrusted text.** Commit messages, authors, versions, and paths go through `stripControl` (terminal) or escaped HTML / `textContent` (dashboard). CSV output keeps formula neutralization. No inline event handlers in UI markup or scripts.
 6. **Corrupt input warns, never invents.** Unparseable manifests keep the last-good snapshot and record a warning; lockfile deletion ends *resolution* history only. New parsers must return the tri-state contract (`ok: false` = corrupt, `null` = optional parser missing).
 7. **Instant-based date comparison.** Never compare ISO strings lexicographically; use `Date.parse` with a lexicographic fallback, and `eventDayKey` (viewer-local) for calendar grouping.
-8. **UI bundle budget:** `index.html` + `app.js` gzip must stay under **40 KiB** (`test/ui.test.js` enforces it). Subsetted local fonts only — no CDN.
+8. **UI bundle budget:** All dashboard HTML, JavaScript, and CSS gzip must stay under **60 KiB** (`test/ui.test.js` enforces it). Subsetted local fonts only — no CDN.
 9. **Server security invariants:** loopback-only default, strict `Host` port check + `Origin` match + `Sec-Fetch-Site` rejection, `no-store` on APIs, tokens server-side over HTTPS only. Changes touching `server.js`/`forge.js` need security-review attention in the PR.
 10. **No framework creep in the UI.** Vanilla JS/CSS only. Extract modules instead of adding dependencies.
 
@@ -105,7 +105,7 @@ TypeScript: strict null handling, no `any` leakage into public types in `src/typ
 Tests use **real disposable git repositories** (`test/helpers/git-fixture.js`), not mocked `git log` output — mocks drift from real git behavior and hide bugs.
 
 ```bash
-npm test                                   # full suite: 81 tests
+npm test                                   # full suite, including real Git fixtures
 node --test test/engine.test.js            # one area
 node --test test/ui.test.js test/forge.test.js
 ```

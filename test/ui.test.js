@@ -22,20 +22,11 @@ test('ui: enforces HTML size budget (<100KB uncompressed, <30KB gzipped)', () =>
 });
 
 test('ui: served bundle stays small with gzip transfer', async () => {
-  const htmlPath = path.join(__dirname, '../packages/core/ui/index.html');
-  const jsPath = path.join(__dirname, '../packages/core/ui/app.js');
-  const css = fs.readFileSync(path.join(__dirname, '../packages/core/ui/flow.css'));
-  const total = fs.readFileSync(htmlPath).length + fs.readFileSync(jsPath).length + css.length;
-  const gzipped = zlib.gzipSync(fs.readFileSync(htmlPath)).length + zlib.gzipSync(fs.readFileSync(jsPath)).length + zlib.gzipSync(css).length;
-  // 46 KiB: still ~1/3 of any framework baseline. Raised from 40 KiB across
-  // two user-required additions that cannot shrink further — the full-detail
-  // GitHub brand mark and header logo tile (~1.2 KiB gzipped), per-commit
-  // lifecycle grouping (~1.3 KiB gzipped), and the scan-notices modal plus
-  // slow-scan note (~1.7 KiB gzipped). The gate keeps blocking dependency
-  // creep: any library or framework addition would blow past it by 50+ KiB.
-  // The dependency flow adds ~6 KiB compressed with no runtime dependency.
-  // Count its stylesheet as well, so extracting CSS cannot evade the budget.
-  assert.ok(gzipped < 56 * 1024, `UI gzip transfer exceeds 56KB: ${gzipped} bytes (raw ${total})`);
+  const assets = ['index.html', 'app.js', 'app.css', 'flow.css', 'flow-graph.js'].map(file => fs.readFileSync(path.join(__dirname, '../packages/core/ui', file)));
+  const total = assets.reduce((n, b) => n + b.length, 0), gzipped = assets.reduce((n, b) => n + zlib.gzipSync(b).length, 0);
+  // Includes every dashboard script and stylesheet, including the new graph
+  // viewport. Fonts have a separate budget below. No framework dependency.
+  assert.ok(gzipped < 60 * 1024, `UI gzip transfer exceeds 60KB: ${gzipped} bytes (raw ${total})`);
 });
 
 test('ui: no inline event handlers remain in served markup or script', () => {
@@ -45,7 +36,8 @@ test('ui: no inline event handlers remain in served markup or script', () => {
   assert.ok(!/onclick\s*=/.test(js), 'app.js must not interpolate inline onclick');
   assert.ok(!/onerror\s*=/.test(js), 'app.js must not interpolate inline onerror');
   assert.ok(!html.includes('fonts.googleapis.com'), 'dashboard must work offline (no remote fonts)');
-  assert.ok(html.includes('/fonts/manrope-latin.woff2'), 'Manrope must load from the bundled same-origin fonts');
+  const css = fs.readFileSync(path.join(__dirname, '../packages/core/ui/app.css'), 'utf8');
+  assert.ok(css.includes('/fonts/manrope-latin.woff2'), 'Manrope must load from the bundled same-origin fonts');
 });
 
 test('ui: bundled fonts stay small and serve correctly', async () => {

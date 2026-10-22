@@ -61,6 +61,7 @@ function client() {
   let fallback = async () => { throw new Error('Offline fixture'); };
   const context = vm.createContext({
     document, URL, URLSearchParams, AbortController, console, EventSource: Stream,
+    DepBlameGraph: { create: () => ({ select() {}, focus() {}, refresh() {}, destroy() {} }) },
     window: {EventSource: Stream, addEventListener() {}},
     localStorage: {getItem: () => null, setItem() {}},
     setTimeout(callback) { const id = timers.size + 1; timers.set(id, callback); return id; },
@@ -103,7 +104,30 @@ function flowResponse(events, generation = 'fixture-generation') {
       message: e.message, kind: index ? 'integration' : 'change', gaps: [], changes: [e] })) };
 }
 
-test('ui flow: loading, source evidence, collapsed integrations, HEAD and escaped details', async () => {
+test('ui flow: starts in the clicked workspace and allows the evidence panel to collapse', async () => {
+  const ui = client();
+  ui.streams[0].emit('complete', result([event('2026-09-28'), event('2026-09-28', 'apps/web/package.json')])); await flush();
+  ui.run("openArchaeology('alpha', 'apps/web/package.json');");
+  assert.equal(ui.run('flowManifest'), 'apps/web/package.json');
+  ui.nodes.get('flow-details-toggle').dispatch('click');
+  assert.equal(ui.nodes.get('flow-details').hidden, true);
+  assert.equal(ui.nodes.get('flow-details-toggle').getAttribute('aria-expanded'), 'false');
+  ui.nodes.get('flow-details-toggle').dispatch('click');
+  assert.equal(ui.nodes.get('flow-details').hidden, false);
+});
+
+test('ui flow: graph initialization failures display an error instead of overlapping unpositioned nodes', async () => {
+  const ui = client(), e = event('2026-09-28');
+  ui.streams[0].emit('complete', { ...result([e]), generation: 'fixture-generation' }); await flush();
+  ui.fallback(async () => ({ ok: true, json: async () => flowResponse([e]) }));
+  ui.run("DepBlameGraph.create = () => { throw new Error('Graph unavailable'); }; openArchaeology('alpha'); setDrawerView('flow');"); await flush();
+  assert.equal(ui.nodes.get('flow-content').hidden, true);
+  assert.equal(ui.nodes.get('flow-status').hidden, false);
+  assert.match(ui.nodes.get('flow-status').textContent, /Graph unavailable/);
+  assert.equal(ui.nodes.get('flow-retry').hidden, false);
+});
+
+test('ui flow: loading, source evidence, integrations in ancestry order, HEAD and escaped details', async () => {
   const ui = client(), first = event('2026-09-28'), second = { ...first, commit: 'bcdef00', commitFull: 'b'.repeat(40) };
   first.message = '<img src=x onerror=alert(1)>';
   ui.streams[0].emit('complete', { ...result([first, second]), generation: 'fixture-generation' }); await flush();
@@ -117,8 +141,8 @@ test('ui flow: loading, source evidence, collapsed integrations, HEAD and escape
   assert.equal(ui.nodes.get('flow-content').hidden, false);
   assert.equal(ui.nodes.get('drawer-flow-panel').getAttribute('aria-busy'), 'false');
   assert.match(ui.nodes.get('flow-nodes').innerHTML, /Declared/);
-  assert.match(ui.nodes.get('flow-integrations-summary').textContent, /1 verified merge integration/);
-  assert.equal(ui.nodes.get('flow-integrations').open, false);
+  assert.match(ui.nodes.get('flow-nodes').innerHTML, /Integrated existing dependency change/);
+  assert.ok(ui.nodes.get('flow-nodes').innerHTML.indexOf(first.commitFull) < ui.nodes.get('flow-nodes').innerHTML.indexOf(second.commitFull));
   assert.match(ui.nodes.get('flow-head').innerHTML, /Current checkout · HEAD/);
   assert.match(ui.nodes.get('flow-head').innerHTML, /Resolved: 2/);
   assert.ok(ui.nodes.get('flow-details').innerHTML.includes('&lt;img'));
@@ -331,7 +355,7 @@ test('ui behavior: notices highlight paths and commits for readability', () => {
   assert.ok(!evil.includes('<img'));
   assert.ok(!evil.includes('notice-sha">aaaaaaa'));
   // Table region fills tall viewports instead of leaving dead page space.
-  assert.match(html, /\.table-responsive[^}]*height:\s*clamp\(280px,\s*calc\(100dvh[^,]*,\s*1200px\)/);
+  assert.match(fs.readFileSync(new URL('../packages/core/ui/app.css', import.meta.url), 'utf8'), /\.table-responsive[^}]*height:\s*clamp\(280px,\s*calc\(100dvh[^,]*,\s*1200px\)/);
 });
 
 test('ui behavior: theme toggle swaps in one repaint without transitions', () => {
@@ -346,7 +370,7 @@ test('ui behavior: theme toggle swaps in one repaint without transitions', () =>
   assert.equal(ui.nodes.get('theme-icon-dark').style.display, 'none');
   assert.equal(ui.nodes.get('theme-icon-light').style.display, 'block');
   // And the stylesheet honors the guard instead of animating every element.
-  assert.match(html, /html\.theme-switching[^}]*transition:\s*none/);
+  assert.match(fs.readFileSync(new URL('../packages/core/ui/app.css', import.meta.url), 'utf8'), /html\.theme-switching[^}]*transition:\s*none/);
 });
 
 test('ui behavior: archaeology separates direct changes, integrations, author roles, and export context', async () => {

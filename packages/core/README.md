@@ -25,7 +25,7 @@ npx dep-blame ci --since origin/main --fail-on-removal
 npx dep-blame list --limit 50 --json
 ```
 
-Zero required runtime dependencies. Node.js ≥ 20. Fully offline — no registry lookups, no telemetry.
+Zero required runtime dependencies. Node.js ≥ 20. History scans use local Git without registry lookups or telemetry. The UI can fetch hosting profiles; set `DEP_BLAME_AVATARS=0` for fully offline use.
 
 Full documentation (CLI reference, CI, cache, monorepos, dashboard, API, troubleshooting): [dep-blame on GitHub](https://github.com/ihssmaheel-dev/dep-blame#readme).
 
@@ -76,8 +76,10 @@ async iterator for large totals; `batchReadBlobs` retains a 64 MiB map limit.
 The zero-framework visual dashboard ships inside this same package — timeline table, calendar, per-package archaeology drawer, search, filters, JSON export, dark/light themes. No extra install:
 
 Each package drawer includes **History** and **Flow**. Flow shows declared and
-resolved changes together, follows verified ancestry, expands merge integrations
-and reads the current HEAD state separately. Choose an exact workspace when needed.
+resolved changes together in a pannable, zoomable graph, follows verified ancestry, includes merge integrations
+and reads the current HEAD state separately. Fit, Focus, keyboard navigation, a minimap,
+and a collapsible evidence panel support larger histories. The clicked table/calendar
+workspace is selected initially; choose another exact workspace when needed.
 Both drawer views render 50 commits per window; exports retain the full history.
 Missing evidence creates an explicit gap. Matching versions alone never draw a
 connection or establish an original author. The view works offline with no graph library.
@@ -109,7 +111,7 @@ The optional `yaml` dependency (installed by default) powers pnpm/Yarn parsing. 
 - Each commit diffs against **its own first parent** — merges report exactly what the merge introduced into that parent’s history.
 - Archaeology shows original commit authors and merge commit authors separately. A readable incoming snapshot matching the result earns a verified integration label; other merge results use a general merge-change label.
 - Summaries distinguish commits from file events and evidence files. "First recorded" describes the scanned history, not a guaranteed original introduction. Git author metadata is not identity authentication.
-- JSON adds optional `commitParents`, `changeOrigin` and `flowEvidence` fields; CSV carries the parent/origin columns. Cache schema v8 rebuilds older caches once to recover corrected history and readable flow evidence.
+- JSON adds optional `commitParents`, `changeOrigin` and `flowEvidence` fields; CSV carries the parent/origin columns. Cache schema v9 rebuilds older caches once to recover corrected history and readable flow evidence.
 - Corrupt manifests keep the last-good snapshot and warn; they never invent churn.
 - Warnings plus a `truncated` flag ship on every human-readable command and in `--json`. Incomplete scans never look complete.
 

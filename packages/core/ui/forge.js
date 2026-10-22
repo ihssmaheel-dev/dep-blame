@@ -46,8 +46,9 @@ export async function requestBytes(rawUrl, {method = 'GET', body, token, private
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Unsafe forge URL');
   if (token && url.protocol !== 'https:') throw new Error('Forge tokens require HTTPS');
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
+  let dnsTimer;
   const addresses = net.isIP(hostname) ? [{address: hostname, family: net.isIP(hostname)}] :
-    await Promise.race([dns.lookup(hostname, {all: true}), new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('Forge DNS timeout')), 4000); timer.unref(); })]);
+    await Promise.race([dns.lookup(hostname, {all: true}), new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new Error('Forge DNS timeout')), 4000); dnsTimer.unref(); })]).finally(() => clearTimeout(dnsTimer));
   const allowPrivate = privateOrigin === url.origin;
   if (!addresses.length || (!allowPrivate && addresses.some(a => !isPublicAddress(a.address)))) throw new Error('Private forge requires DEP_BLAME_ALLOW_PRIVATE_FORGE=1');
   const selected = addresses[0];
@@ -132,9 +133,10 @@ export function createForgeDirectory(cwd, options = {}) {
   const privateOrigin = () => env.DEP_BLAME_ALLOW_PRIVATE_FORGE === '1' && remote?.remoteUrl ? new URL(remote.remoteUrl).origin : undefined;
   const baseUrl = () => remote.baseUrl || new URL(remote.remoteUrl).origin;
   async function json(url, body, useToken = true) {
+    const scope = generation;
     const result = await transport(url, {method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined,
       token: useToken ? env.DEP_BLAME_FORGE_TOKEN : undefined, privateOrigin: privateOrigin()});
-    if (result.status === 429 || result.status === 403) {
+    if (scope === generation && (result.status === 429 || result.status === 403)) {
       const reset = Number(result.headers['x-ratelimit-reset']) * 1000;
       pausedUntil = Math.max(Date.now() + 60000, Math.min(reset || Date.now() + 60000, Date.now() + 3600000));
     }
@@ -144,25 +146,33 @@ export function createForgeDirectory(cwd, options = {}) {
   async function detect(sha) {
     if (hosting.provider !== 'unknown' || offline) return;
     if (!detection) detection = (async () => {
-      const origin = baseUrl();
+      const origin = baseUrl(), scope = generation;
       try {
         const version = await json(origin + '/api/v1/version', undefined, false);
+        if (scope !== generation) return;
         if (typeof version.version === 'string') {
           let provider = 'gitea';
           try { const forgejo = await json(origin + '/api/forgejo/v1/version', undefined, false); if (typeof forgejo.version === 'string') provider = 'forgejo'; } catch {}
+          if (scope !== generation) return;
           hosting = hostingInfo(remote, provider); return;
         }
       } catch {}
+      if (scope !== generation) return;
       try {
         const value = await gitlab(sha, false);
+        if (scope !== generation) return;
         if (value.data && Object.hasOwn(value.data, 'project') && !value.errors) { hosting = hostingInfo(remote, 'gitlab'); return; }
       } catch {}
+      if (scope !== generation) return;
       try {
         const meta = await json(origin + '/api/v3/meta', undefined, false);
+        if (scope !== generation) return;
         if (typeof meta.installed_version === 'string') { hosting = hostingInfo(remote, 'github'); return; }
       } catch {}
+      if (scope !== generation) return;
       try {
         const meta = await json(origin + '/rest/api/latest/application-properties', undefined, false);
+        if (scope !== generation) return;
         if (typeof meta.version === 'string' && meta.buildNumber != null) hosting = hostingInfo(remote, 'bitbucket-server');
       } catch {}
     })();
@@ -229,13 +239,14 @@ export function createForgeDirectory(cwd, options = {}) {
         if (Date.now() < pausedUntil || scope !== generation) break;
         try { profile = await account(sha); if (profile) break; } catch {}
       }
+      if (scope !== generation) return null;
       if (profile) {
         try { profile.avatarUrl = await storeAvatar(profile.avatar, scope); } catch { profile.avatarUrl = null; }
         delete profile.avatar;
       }
       if (scope === generation) touch(identities, key, {profile, until: Date.now() + (profile ? 3600000 : 300000)}, 512);
-      return profile;
-    }).finally(() => inflight.delete(key));
+      return scope === generation ? profile : null;
+    }).finally(() => { if (inflight.get(key) === promise) inflight.delete(key); });
     inflight.set(key, promise); return promise;
   }
   async function resolve(commits) {
@@ -244,10 +255,11 @@ export function createForgeDirectory(cwd, options = {}) {
     if (offline || !remote?.remoteUrl || !unique.length) return {hosting: getHosting(), profiles};
     // Concurrent browser requests join cached work, with a bounded queue.
     if (waiting.length > 100) return {hosting: getHosting(), profiles};
-    await detect(unique[0]);
-    if (hosting.provider === 'unknown') return {hosting: getHosting(), profiles};
     const scope = generation;
+    await detect(unique[0]);
+    if (scope !== generation || hosting.provider === 'unknown') return {hosting: getHosting(), profiles};
     const {stdout} = await execFileAsync('git', ['log','--no-walk','-z','--format=%H%x00%an%x00%ae', ...unique, '--'], {cwd, windowsHide: true, maxBuffer: 1024 * 1024, timeout: 5000});
+    if (scope !== generation) return {hosting: getHosting(), profiles};
     const fields = stdout.split('\0'), groups = new Map();
     for (let i = 0; i + 2 < fields.length; i += 3) {
       const sha = fields[i]; if (!SHA.test(sha) || !allowed.has(sha)) continue;
@@ -255,6 +267,7 @@ export function createForgeDirectory(cwd, options = {}) {
       if (!groups.has(key)) groups.set(key, []); groups.get(key).push(sha);
     }
     await Promise.all([...groups].map(async ([key, shas]) => { const profile = await resolveIdentity(key, shas, scope); for (const sha of shas) profiles[sha] = profile; }));
+    if (scope !== generation) return {hosting: getHosting(), profiles: Object.create(null)};
     return {hosting: getHosting(), profiles};
   }
   return {setRepository, resolve, getHosting, getAvatar: key => {

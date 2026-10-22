@@ -94,11 +94,11 @@ async function parseAnyManifest(
 
   // Lockfile parses (YAML/JSONC over megabytes) are the dominant per-commit
   // CPU cost; package.json JSON.parse is microseconds and skips the cache.
-  // parseAnyManifest is only ever called with directOnly: true for npm, so
-  // the OID alone identifies the result — no options key needed.
+  // Identical bytes can have different meanings in different lockfile formats.
   const cacheable = isLockfilePath(filePath) && !!oid;
+  const cacheKey = `${path.posix.basename(filePath)}:single:${oid}`;
   if (cacheable) {
-    const hit = parsedBlobCache.get(oid);
+    const hit = parsedBlobCache.get(cacheKey);
     if (hit && hit.kind === 'single') return hit.result;
   }
 
@@ -116,7 +116,7 @@ async function parseAnyManifest(
   } else {
     res = { ok: true, entries: new Map() };
   }
-  if (cacheable && res !== null) parsedBlobCache.set(oid, { kind: 'single', result: res });
+  if (cacheable && res !== null) parsedBlobCache.set(cacheKey, { kind: 'single', result: res });
   return res;
 }
 
@@ -155,18 +155,30 @@ async function parseLockfilePerManifest(
   content: string,
   oid?: string
 ): Promise<{ ok: boolean; maps: Map<string, Map<string, DependencyEntry>>; note?: string } | null> {
-  if (oid) {
-    const hit = parsedBlobCache.get(oid);
-    if (hit && hit.kind === 'multi') return hit.result;
-  }
+  const cacheKey = `${path.posix.basename(lockPath)}:multi:${oid}`;
+  const hit = oid ? parsedBlobCache.get(cacheKey) : undefined;
   let res: { ok: boolean; maps: Map<string, Map<string, DependencyEntry>>; note?: string } | null = null;
-  if (lockPath.endsWith('pnpm-lock.yaml')) {
+  if (hit?.kind === 'multi') res = hit.result;
+  else if (lockPath.endsWith('pnpm-lock.yaml')) {
     res = await parsePnpmLockfiles(content);
   } else if (lockPath.endsWith('bun.lock') || lockPath.endsWith('bun.lockb')) {
     res = parseBunLockfiles(content);
   }
-  if (oid && res !== null) parsedBlobCache.set(oid, { kind: 'multi', result: res });
-  return res;
+  if (oid && res !== null && !hit) parsedBlobCache.set(cacheKey, { kind: 'multi', result: res });
+  if (!res) return null;
+  // Importers are relative to the lockfile, not the Git repository. Keep the
+  // cached parser output relative so identical blobs in two directories share
+  // parsing work without sharing the wrong workspace identity.
+  const directory = path.posix.dirname(lockPath);
+  const maps = new Map<string, Map<string, DependencyEntry>>();
+  for (const [manifest, entries] of res.maps) {
+    const scoped = path.posix.normalize(path.posix.join(directory, manifest));
+    if (path.posix.isAbsolute(manifest) || scoped.startsWith('../') || scoped === '..' || scoped.includes('\\')) {
+      return { ok: false, maps: new Map(), note: 'Workspace importer points outside the repository' };
+    }
+    maps.set(scoped, entries);
+  }
+  return { ...res, maps };
 }
 
 /** Snapshot entry: parsed map plus content hash and blob OID for skip-fast paths. */
@@ -606,7 +618,7 @@ function readGeneration(baseDir?: string): number | null {
 
 function writeGenerationPointer(baseDir: string, head: string): void {
   try {
-    const active = { generation: Date.now(), head, schema: 8, updatedAt: new Date().toISOString() };
+    const active = { generation: Date.now(), head, schema: 9, updatedAt: new Date().toISOString() };
     const tmp = path.join(baseDir, `.active-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
     fs.writeFileSync(tmp, JSON.stringify(active), 'utf8');
     fs.renameSync(tmp, path.join(baseDir, 'active.json'));
@@ -663,7 +675,7 @@ function promoteTempStore(baseDir: string, tempDir: string): void {
   // Write an atomic generation pointer so readers can pin one generation.
   try {
     const head = tryReadJsonMeta(path.join(baseDir, 'cache.json'), 'cached_head') ?? '';
-    const active = { generation: Date.now(), head, schema: 8, updatedAt: new Date().toISOString() };
+    const active = { generation: Date.now(), head, schema: 9, updatedAt: new Date().toISOString() };
     const tmp = path.join(baseDir, `.active-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
     fs.writeFileSync(tmp, JSON.stringify(active), 'utf8');
     fs.renameSync(tmp, path.join(baseDir, 'active.json'));
@@ -1381,7 +1393,7 @@ export async function readResolvedDependencyState(repoRoot: string, head: string
     const multiFile = request.path.endsWith('pnpm-lock.yaml') || /bun\.lockb?$/.test(request.path);
     const multi = multiFile ? await parseLockfilePerManifest(request.path, content, oid) : null;
     const single = multiFile ? null : await parseAnyManifest(request.path, content, oid);
-    const readable = multiFile ? multi?.ok : single?.ok;
+    const readable = multiFile ? multi?.ok && multi.maps.has(manifest) : single?.ok;
     const entry = multiFile ? multi?.maps.get(manifest)?.get(packageName) : single?.entries.get(packageName);
     rows.push({ file: request.path, status: !readable ? 'unavailable' : entry ? 'resolved' : 'absent',
       versions: entry ? resolutionSet(entry) : [], ...(entry?.ambiguous ? { ambiguous: true } : {}) });

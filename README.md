@@ -13,14 +13,14 @@
   <a href="https://www.npmjs.com/package/dep-blame"><img alt="npm version" src="https://img.shields.io/npm/v/dep-blame"></a>
   <a href="https://nodejs.org"><img alt="node" src="https://img.shields.io/node/v/dep-blame"></a>
   <a href="./LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
-  <a href="#contributing"><img alt="tests" src="https://img.shields.io/badge/tests-85%2F85-brightgreen"></a>
+  <a href="#contributing"><img alt="tests" src="https://img.shields.io/badge/tests-141%2F141-brightgreen"></a>
 </p>
 
 ```bash
 npx dep-blame
 ```
 
-One command. Zero config. Zero servers. Zero accounts. **100% offline by default.**
+One command. Zero config. No external server or account required. **Dependency history is read locally.**
 
 ---
 
@@ -64,7 +64,9 @@ One command. Zero config. Zero servers. Zero accounts. **100% offline by default
 
 `dep-blame` walks your repository's git history, diffs every manifest and lockfile change commit-by-commit, and produces a single chronological **dependency event stream** — `added` / `updated` / `removed` — with author, date, commit, manifest, dependency section, and declared-vs-resolved source. Every view (terminal table, calendar, stats, archaeology, JSON, CSV, CI summary, web dashboard) reads from that one stream.
 
-It never writes to `package.json`, never upgrades anything, never phones home. It reads history.
+It never writes to `package.json` or upgrades dependencies. It reads history locally.
+The dashboard can request hosting profiles and avatars from the repository's forge;
+set `DEP_BLAME_AVATARS=0` to disable those requests. There is no telemetry.
 
 ---
 
@@ -432,7 +434,7 @@ The CLI and dashboard group evidence into one node per commit. The summary separ
 - **Merged existing dependency / update / removal:** the result matches readable dependency evidence from an incoming parent. The person is the merge commit’s author; this is an integration of an existing state.
 - **Merge dependency changes:** a merge result without that matching evidence, including conflict resolutions or unavailable incoming snapshots. No original author is inferred.
 
-These labels use Git parent data and parsed snapshots, never guesses from names or commit messages. Git author metadata does not authenticate a person or a hosting account. JSON preserves the full event stream with optional `commitParents` (full parent SHAs), `changeOrigin` (`direct`, `merge-integration`, or `merge-change`) and `flowEvidence` (matched incoming parents and snapshot readability); CSV includes the parent and origin fields. Cache schema v8 rebuilds older indexes once to recover flow evidence and corrected dependency history.
+These labels use Git parent data and parsed snapshots, never guesses from names or commit messages. Git author metadata does not authenticate a person or a hosting account. JSON preserves the full event stream with optional `commitParents` (full parent SHAs), `changeOrigin` (`direct`, `merge-integration`, or `merge-change`) and `flowEvidence` (matched incoming parents and snapshot readability); CSV includes the parent and origin fields. Cache schema v9 rebuilds older indexes once to recover flow evidence and corrected dependency history.
 
 ---
 
@@ -460,7 +462,16 @@ What you get: KPI cards, one-row toolbar (search, action tabs, manifests, view t
 Open a package, then choose **Flow**. Select one workspace/manifest when a
 dependency appears in several. Declared requirements and lockfile resolutions
 appear together in each commit card, with explicit section moves and complete
-resolution-set changes. Verified merge integrations expand separately.
+resolution-set changes. Verified merge integrations stay in their ancestry positions.
+
+Drag the canvas to pan, scroll to pan, or use Ctrl/Command + scroll to zoom at
+the pointer. Fit shows the complete current window; Focus centers the selected
+change. Use the minimap to navigate, and Hide details for a wider overview.
+Arrow keys move the focused canvas; Left/Right on a change select adjacent
+records in ancestry order. Home/End select the first/last change. The evidence
+panel preserves full values, source files, author roles and connection links.
+Touch supports dragging and two-pointer zoom. The canvas includes only commits
+with dependency events, not the repository's general Git graph.
 
 Solid connections require a matching previous recorded state along the actual
 first-parent path. Dashed connections additionally require a readable matching
@@ -486,16 +497,23 @@ All JSON. All `no-store` except immutable fonts. Gzip when accepted.
 |---|---|
 | `GET /` | Dashboard page |
 | `GET /app.js` | Client script |
+| `GET /app.css` | Dashboard styles and local font declarations |
 | `GET /flow.css` | Bundled dependency-flow styles |
+| `GET /flow-graph.js` | Dependency graph layout and viewport controls |
 | `GET /fonts/*.woff2` | Bundled Manrope font (`immutable`, 1-year cache) |
 | `GET /api/events` | Full engine result (`schemaVersion: 1`) |
 | `GET /api/events/stream` | SSE: `progress` events + `complete` / `error` |
-| `GET /api/events/paged?limit=&offset=&package=&type=&manifest=&workspace=&source=` | Bounded page + `total` (no full transfer) |
+| `GET /api/events/paged?limit=&offset=&generation=&package=&type=&manifest=&workspace=&source=` | Bounded page + `total` + captured `generation`; maximum 1,000 events |
 | `GET /api/months?...` | Month aggregates for bounded calendars |
 | `GET /api/facets?...` | Top packages / authors / manifests (200-cap) |
 | `GET /api/dependency-flow?package=&manifest=&generation=&offset=&limit=` | Verified package/workspace flow, default 50 / maximum 100 nodes; stale generations return `409` |
 | `GET /api/authors?commits=<sha,…>` | Lazy host-linked accounts (≤ 20 commits, ≤ 6 concurrent, `429` when busy) |
 | `GET /api/avatars/<64-hex>` | Cached raster proxy (`private, max-age=3600`; SVG rejected) |
+
+Paged events, months and facets reuse the captured history until `/api/events`
+or `/api/events/stream` performs a Sync. Pass `generation` to reject changed
+history with `409`; invalid integer pagination returns `400`. Gzip is asynchronous
+and honors encoding quality values, including `gzip;q=0`.
 
 ---
 
@@ -603,7 +621,7 @@ dep-blame/                  # single publishable package: `dep-blame`
 │           ├── diff/           # snapshot diff → DependencyEvent[]
 │           ├── cache/          # SQLite + JSON stores, generation pointer, locks
 │           └── render/         # table, calendar, stats, archaeology, json, csv, ci
-├── test/                   # 81 real-git-fixture tests (node:test, no mocks of git)
+├── test/                   # Real Git fixtures, API/security, parsers and UI tests
 ├── scripts/test.mjs
 └── dep-blame.md            # full architecture spec and audit log
 ```
@@ -617,13 +635,13 @@ Deep technical spec, decisions, and roadmap: [`dep-blame.md`](./dep-blame.md).
 ```bash
 npm install
 npm run build
-npm test        # 85/85 via node:test with real disposable git repos
+npm test        # node:test with real disposable git repos
 ```
 
 - Keep the core CLI at **zero required runtime dependencies**.
 - Relative ESM imports need explicit `.js` extensions.
 - New parsers/renderers need fixture tests under `test/` (real `git init` + commits, not mocked `git log` output).
-- UI changes must respect the gzip budget (HTML + JS + Flow CSS < 56 KiB) and keep `Host`/`Origin` checks green.
+- UI changes must respect the gzip budget (all dashboard HTML + JS + CSS < 60 KiB) and keep `Host`/`Origin` checks green.
 
 Full workflow, standards, and release process: [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 Security reports (private only): [`SECURITY.md`](./SECURITY.md) · Conduct: [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) · Help: [`SUPPORT.md`](./SUPPORT.md) · Changes: [`CHANGELOG.md`](./CHANGELOG.md)

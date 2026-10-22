@@ -110,7 +110,7 @@ test('review: Bun array descriptors resolve real versions and preserve JSONC URL
   const result = parseBunLockfiles(`{
     // Keep URLs and comment-looking text inside strings intact.
     "workspaces": {"": {"dependencies": {"alpha": "^1", "remote": "https://example.test/a//b"}}},
-    "packages": {"alpha": ["alpha@1.2.3", "https://registry.example.test/a", {}, "sha"],},
+    "packages": {"alpha": ["alpha@1.2.3", "https://registry.example.test/a", {}, "sha"], "remote": ["remote@https://example.test/a//b", "", {}, "sha"],},
   }`);
   assert.equal(result.ok, true);
   assert.equal(result.maps.get('package.json').get('alpha').version, '1.2.3');

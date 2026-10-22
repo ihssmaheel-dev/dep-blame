@@ -13,14 +13,34 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 ### Added
 
 - Per-dependency **Flow** tab with declared/resolved state cards, verified
-  ancestry connections, expandable merge integrations, workspace selection,
+  ancestry connections, merge integrations in their ancestry positions, workspace selection,
   source-file details and a separately read HEAD declaration/resolution summary.
+- A dependency graph canvas with pan, pointer-anchored zoom, Fit, Focus,
+  keyboard navigation, minimap, and a collapsible evidence panel. Connections
+  follow verified dependency states across branches and merges. No graph runtime
+  dependency is added; the browser renders at most 50 nodes per window.
 - Bounded, generation-pinned `/api/dependency-flow` windows. Ancestry is streamed
   once per cached package/workspace; node selection uses the existing response.
   Keyboard tabs, selection announcements and responsive detail panels work offline.
 
 ### Fixed
 
+- Nested pnpm and Bun lockfiles attribute events and HEAD resolutions to the
+  lockfile's owning workspace. Identical blobs in different folders remain scoped
+  correctly; parser cache keys also separate lockfile formats.
+- Missing importers and missing pnpm/Bun resolution records are unavailable
+  evidence, not dependency absence or a declared range presented as resolved.
+- npm workspace metadata entries cannot contaminate installed version sets.
+- Oversized parsed lockfiles are not retained beyond the cache's entry and
+  estimated 16 MiB retention budgets.
+- Gzip respects `q=0`, always varies by accepted encoding, runs asynchronously,
+  and reuses compressed static assets. Bounded API queries reuse the captured
+  history generation; malformed pagination and stale generations fail explicitly.
+- Hosting lookups discard stale identities when the repository remote changes.
+  Closing the server aborts active graph requests; completed DNS lookups clear timers.
+- Flow starts in the clicked workspace, preserves integrations in the graph,
+  supports earlier and later connection jumps, and handles rendering failures.
+  Narrow mobile headers wrap without horizontal page overflow.
 - npm v2/v3 lockfile section tracking uses the root dependency declarations;
   installed `dev`, `peer`, and `optional` flags no longer invent section moves
   when npm changes dependency-tree metadata.
@@ -40,9 +60,10 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 
 ### Changed
 
-- Cache schema **v5 → v8** rebuilds existing history once to remove false npm
+- Cache schema **v5 → v9** rebuilds existing history once to remove false npm
   updates and recover complete before/after resolution evidence. JSON remains
-  at `schemaVersion: 1`; CSV appends `resolutionsFrom`.
+  at `schemaVersion: 1`; CSV appends `resolutionsFrom`. Version 9 also rebuilds
+  older workspace attribution and incomplete resolution records.
 - Events include additive `flowEvidence` with matching incoming parents and
   snapshot completeness. Missing proof never creates a flow connection.
 - Package History and Flow drawers render at most 50 commit cards per window;

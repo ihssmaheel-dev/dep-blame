@@ -8,6 +8,27 @@ import {createForgeDirectory, configureRemote, hostingInfo, isPublicAddress, req
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6N8sAAAAASUVORK5CYII=', 'base64');
 const json = value => ({status: 200, headers: {}, bytes: Buffer.from(JSON.stringify(value))});
 
+test('forge: a repository change during lookup cannot return or cache the previous host identity', async () => {
+  const repo = await createTestRepo();
+  try {
+    await repo.commitFile('package.json', { dependencies: { alpha: '1' } }, 'add');
+    const sha = (await repo.runGit(['rev-parse', 'HEAD'])).stdout.trim();
+    let release, started;
+    const waiting = new Promise(resolve => { started = resolve; });
+    const directory = createForgeDirectory(repo.repoDir, { env: { DEP_BLAME_FORGE_PROVIDER: 'github' }, request: async url => {
+      if (url.includes('old.example')) { started(); await new Promise(resolve => { release = resolve; }); return json({ author: { login: 'old-user', id: 1, html_url: 'https://old.example/old-user' } }); }
+      return json({ author: { login: 'new-user', id: 2, html_url: 'https://new.example/new-user' } });
+    } });
+    directory.setRepository({ remoteUrl: 'https://old.example/team/project' }, [{ commitFull: sha }]);
+    const old = directory.resolve([sha]); await waiting;
+    directory.setRepository({ remoteUrl: 'https://new.example/team/project' }, [{ commitFull: sha }]);
+    const current = await directory.resolve([sha]); release();
+    assert.equal(Object.keys((await old).profiles).length, 0);
+    assert.equal(current.profiles[sha].username, 'new-user');
+    assert.equal((await directory.resolve([sha])).profiles[sha].username, 'new-user');
+  } finally { repo.cleanup(); }
+});
+
 test('forge: remote links preserve HTTP ports, nested namespaces, SSH web links, and no-remote state', async () => {
   const repo = await createTestRepo();
   try {

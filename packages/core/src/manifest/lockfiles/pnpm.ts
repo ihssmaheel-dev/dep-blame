@@ -73,7 +73,7 @@ export async function parsePnpmLockfiles(
       if (typeof val === 'string') {
         version = val;
       } else if (val && typeof val === 'object') {
-        version = val.version || val.specifier || '';
+        version = val.version || '';
       }
       if (typeof version !== 'string' || !version) { invalid = true; continue; }
       if (name && version) {
@@ -103,8 +103,6 @@ export async function parsePnpmLockfiles(
       if (!root || typeof root !== 'object' || Array.isArray(root)) return {ok: false, maps: new Map(), note: 'invalid importer'};
       extractImporter(toManifest(importer), root);
     }
-    // Ensure a root entry exists even when the lockfile omits it.
-    if (!maps.has('package.json')) maps.set('package.json', new Map());
     return invalid ? { ok: false, maps: new Map(), note: 'invalid importer dependency' } : { ok: true, maps };
   }
 

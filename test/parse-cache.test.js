@@ -36,7 +36,18 @@ test('parse cache: evicts oldest blobs under budget pressure', () => {
   for (let i = 0; i < 110000; i++) big.set(`p${i}`, { version: '1', depType: 'dependencies' });
   cache.set('big', { kind: 'single', result: { ok: true, entries: big } });
   assert.ok(cache.size <= 64);
-  assert.ok(cache.get('big'));
+  assert.equal(cache.get('big'), undefined, 'oversize results must not be pinned in memory');
+  assert.ok(cache.get('oid-64'), 'rejecting an oversized result preserves useful cached parses');
+});
+
+test('parse cache: large resolution strings cannot bypass the entry limit', () => {
+  const cache = new ParsedBlobCache();
+  const result = single('1');
+  result.entries.get('a').resolutions = ['x'.repeat(9 * 1024 * 1024)];
+  cache.set('oversize-text', { kind: 'single', result });
+  cache.set('oversize-note', { kind: 'single', result: { ok: false, entries: new Map(), note: 'x'.repeat(9 * 1024 * 1024) } });
+  cache.set('oversize-path', { kind: 'multi', result: { ok: true, maps: new Map([['x'.repeat(9 * 1024 * 1024), new Map()]]) } });
+  assert.equal(cache.size, 0);
 });
 
 test('parse cache: shared singleton starts empty and clears', () => {

@@ -17,6 +17,21 @@ export type CachedParse =
 // measured worst-case retention stays in the tens of megabytes per scan.
 const MAX_CACHED_BLOBS = 64;
 const MAX_CACHED_ENTRIES = 100000;
+const MAX_ESTIMATED_BYTES = 16 * 1024 * 1024;
+
+function estimateBytes(value: CachedParse): number {
+  const maps = value.kind === 'single' ? [['', value.result.entries] as const] : value.result.maps;
+  let bytes = 2 * (value.result.note?.length || 0);
+  for (const [manifest, map] of maps) {
+    bytes += 96 + manifest.length * 2;
+    if (bytes > MAX_ESTIMATED_BYTES) return bytes;
+    for (const [name, entry] of map) {
+      bytes += 192 + 2 * (name.length + entry.version.length) + (entry.resolutions || []).reduce((n, v) => n + 24 + 2 * v.length, 0);
+      if (bytes > MAX_ESTIMATED_BYTES) return bytes;
+    }
+  }
+  return bytes;
+}
 
 function countEntries(value: CachedParse): number {
   if (value.kind === 'single') return value.result.entries.size;
@@ -26,7 +41,7 @@ function countEntries(value: CachedParse): number {
 }
 
 /**
- * Content-addressed cache of lockfile parse results, keyed by Git blob OID.
+ * Content-addressed cache of lockfile parse results, keyed by parser and blob OID.
  *
  * Identical OIDs are byte-identical everywhere, so one process-wide cache is
  * safe across concurrent scans and repositories: merge-heavy histories and
@@ -43,6 +58,8 @@ function countEntries(value: CachedParse): number {
 export class ParsedBlobCache {
   private entries = new Map<string, CachedParse>();
   private tokens = 0;
+  private bytes = 0;
+  private costs = new Map<string, number>();
 
   get(oid: string | undefined): CachedParse | undefined {
     if (!oid) return undefined;
@@ -57,20 +74,26 @@ export class ParsedBlobCache {
 
   set(oid: string | undefined, value: CachedParse): void {
     if (!oid || this.entries.has(oid)) return;
+    const tokens = countEntries(value), bytes = estimateBytes(value);
+    // A single huge parse must not displace the cache and remain pinned forever.
+    if (tokens > MAX_CACHED_ENTRIES || bytes > MAX_ESTIMATED_BYTES) return;
     this.entries.set(oid, value);
-    this.tokens += countEntries(value);
-    while ((this.entries.size > MAX_CACHED_BLOBS || this.tokens > MAX_CACHED_ENTRIES) && this.entries.size > 1) {
+    this.tokens += tokens; this.bytes += bytes; this.costs.set(oid, bytes);
+    while (this.entries.size > MAX_CACHED_BLOBS || this.tokens > MAX_CACHED_ENTRIES || this.bytes > MAX_ESTIMATED_BYTES) {
       const oldest = this.entries.keys().next();
       if (oldest.done) break;
       const evicted = this.entries.get(oldest.value);
       this.entries.delete(oldest.value);
       if (evicted) this.tokens -= countEntries(evicted);
+      this.bytes -= this.costs.get(oldest.value) || 0;
+      this.costs.delete(oldest.value);
     }
   }
 
   clear(): void {
     this.entries.clear();
     this.tokens = 0;
+    this.bytes = 0; this.costs.clear();
   }
 
   get size(): number {

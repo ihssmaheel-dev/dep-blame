@@ -64,7 +64,7 @@ export function parseNpmLockfile(
     const versionsByName = new Map<string, Set<string>>();
     const metaByName = new Map<string, { depType: DepType; isDirect: boolean }>();
     for (const [pkgPath, entry] of Object.entries<any>(parsed.packages)) {
-      if (pkgPath === '' || !entry || typeof entry !== 'object') {
+      if (!/(?:^|\/)node_modules\//.test(pkgPath) || !entry || typeof entry !== 'object') {
         continue;
       }
       if (entry.version !== undefined && typeof entry.version !== 'string') return { ok: false, entries: new Map(), note: 'invalid resolved version' };
