@@ -10,6 +10,8 @@ JSON fields (`total`, `generation`, `months`, `headState`) never break
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-23
+
 ### Added
 
 - Per-dependency **Flow** tab with declared/resolved state cards, verified

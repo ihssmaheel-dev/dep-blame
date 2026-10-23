@@ -158,11 +158,12 @@ The workflow verifies the tag matches `packages/core/package.json`, then runs `n
 Maintainer checklist:
 
 1. `npm test` green on `main`, tarballs smoke-tested.
-2. Bump the version in `packages/core/package.json`.
+2. Run `npm version X.Y.Z --workspace packages/core --no-git-tag-version` to update both the package version and the root lockfile.
 3. Update [CHANGELOG.md](./CHANGELOG.md) under `Unreleased` → versioned section with date.
-4. Create the GitHub Release from the version tag and let the workflow publish.
-5. Verify from a clean directory: `npx dep-blame --version` and `dep-blame ui --help`.
-6. If a publish step fails transiently, re-run it via the workflow's `workflow_dispatch` input instead of pushing a new tag.
+4. Commit and push the version files and changelog before creating the tag. Create `dep-blame-vX.Y.Z` on that release commit and push the tag.
+5. Publish the GitHub Release using that tag and let the workflow publish to npm. A tag alone or a draft release does not trigger publishing.
+6. Verify from a clean directory: `npx dep-blame@latest --version` and `npx dep-blame@latest ui --help`.
+7. If a publish step fails transiently, use the workflow's `workflow_dispatch` with the release tag selected and `dry-run` disabled. A version mismatch requires correcting the version and release ref first; rerunning the same old commit cannot fix it. Check whether the version already exists on npm before retrying a publish.
 
 ## Getting help
 
